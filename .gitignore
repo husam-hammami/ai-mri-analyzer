@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# SpineAI data (uploaded DICOM files and analysis artifacts)
+data/
+*.dcm
+*.DCM
+
+# Environment / secrets
+.env
+.env.local
+
+# Logs
+*.log
+
+# Temporary work files
+/tmp/

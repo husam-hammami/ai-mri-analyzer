@@ -1,0 +1,1162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SpineAI — MRI Lumbar Spine Analysis</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ══════════════════════════════════════════════════
+       SpineAI Design System
+       PACS-inspired dark radiology theme with
+       medical-grade information hierarchy
+       ══════════════════════════════════════════════════ */
+
+    :root {
+      /* Core palette — inspired by radiology PACS workstations */
+      --bg-primary:     #0a0e17;
+      --bg-secondary:   #111827;
+      --bg-tertiary:    #1a2236;
+      --bg-elevated:    #1e293b;
+      --bg-hover:       #243049;
+
+      /* Text hierarchy */
+      --text-primary:   #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-tertiary:  #64748b;
+      --text-muted:     #475569;
+
+      /* Accent — medical blue (trust, precision) */
+      --accent:         #3b82f6;
+      --accent-hover:   #2563eb;
+      --accent-soft:    rgba(59, 130, 246, 0.15);
+      --accent-glow:    rgba(59, 130, 246, 0.3);
+
+      /* Semantic colors */
+      --success:        #10b981;
+      --success-soft:   rgba(16, 185, 129, 0.15);
+      --warning:        #f59e0b;
+      --warning-soft:   rgba(245, 158, 11, 0.15);
+      --danger:         #ef4444;
+      --danger-soft:    rgba(239, 68, 68, 0.12);
+      --info:           #06b6d4;
+
+      /* Tier colors (confidence grading) */
+      --tier-a:         #10b981;
+      --tier-b:         #f59e0b;
+      --tier-c:         #f97316;
+      --tier-d:         #6b7280;
+
+      /* Borders & surfaces */
+      --border:         #1e293b;
+      --border-subtle:  rgba(255, 255, 255, 0.06);
+      --surface-glass:  rgba(17, 24, 39, 0.8);
+
+      /* Spacing scale */
+      --space-xs: 4px;
+      --space-sm: 8px;
+      --space-md: 16px;
+      --space-lg: 24px;
+      --space-xl: 32px;
+      --space-2xl: 48px;
+
+      /* Radius */
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 16px;
+      --radius-xl: 20px;
+
+      /* Shadows */
+      --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.5);
+      --shadow-glow: 0 0 20px var(--accent-glow);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Layout ── */
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .top-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+    }
+
+    .logo-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      font-weight: 700;
+      color: white;
+      box-shadow: var(--shadow-glow);
+    }
+
+    .logo-text {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, var(--text-primary), var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .logo-badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+      padding: var(--space-xl);
+    }
+
+    /* ── Upload Zone ── */
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-xl);
+      padding: var(--space-2xl) var(--space-xl);
+      text-align: center;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      background: var(--bg-secondary);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .upload-zone.drag-over::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(circle at center, var(--accent-glow), transparent 70%);
+      pointer-events: none;
+    }
+
+    .upload-icon {
+      font-size: 48px;
+      margin-bottom: var(--space-md);
+      opacity: 0.7;
+    }
+
+    .upload-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: var(--space-sm);
+    }
+
+    .upload-subtitle {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-bottom: var(--space-lg);
+    }
+
+    .upload-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 28px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+    }
+
+    .upload-btn:hover {
+      background: var(--accent-hover);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-glow);
+    }
+
+    .upload-formats {
+      margin-top: var(--space-lg);
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ── Config Panel ── */
+    .config-panel {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      padding: var(--space-lg);
+      margin-top: var(--space-lg);
+    }
+
+    .config-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: var(--space-md);
+    }
+
+    .config-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--space-md);
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 6px;
+    }
+
+    .form-group input, .form-group textarea {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-primary);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus, .form-group textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 80px;
+      font-family: 'Inter', sans-serif;
+    }
+
+    .form-group.full-width {
+      grid-column: 1 / -1;
+    }
+
+    .start-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 16px;
+      margin-top: var(--space-lg);
+      background: linear-gradient(135deg, var(--accent), #7c3aed);
+      color: white;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-family: inherit;
+      letter-spacing: 0.3px;
+    }
+
+    .start-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+    }
+
+    .start-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* ── Progress ── */
+    .progress-container {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      padding: var(--space-xl);
+      margin-top: var(--space-lg);
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-md);
+    }
+
+    .progress-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .progress-pct {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: var(--bg-tertiary);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: var(--space-md);
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #8b5cf6);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+      box-shadow: 0 0 12px var(--accent-glow);
+    }
+
+    .progress-message {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+
+    .progress-steps {
+      display: flex;
+      gap: var(--space-sm);
+      margin-top: var(--space-lg);
+      flex-wrap: wrap;
+    }
+
+    .step-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      background: var(--bg-tertiary);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-subtle);
+      transition: all 0.3s;
+    }
+
+    .step-chip.active {
+      background: var(--accent-soft);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .step-chip.done {
+      background: var(--success-soft);
+      color: var(--success);
+      border-color: transparent;
+    }
+
+    /* ── Report View ── */
+    .report-container {
+      margin-top: var(--space-lg);
+      display: grid;
+      grid-template-columns: 300px 1fr;
+      gap: var(--space-lg);
+      min-height: 600px;
+    }
+
+    .report-sidebar {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .sidebar-section {
+      padding: var(--space-md);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: var(--space-sm);
+    }
+
+    .sidebar-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+      font-size: 14px;
+    }
+
+    .sidebar-item:hover { background: var(--bg-hover); }
+    .sidebar-item.active { background: var(--accent-soft); color: var(--accent); }
+
+    .level-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .level-indicator.severe { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+    .level-indicator.moderate { background: var(--warning); }
+    .level-indicator.mild { background: var(--info); }
+    .level-indicator.normal { background: var(--success); }
+
+    .report-main {
+      background: var(--bg-secondary);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+      overflow-y: auto;
+      max-height: calc(100vh - 200px);
+    }
+
+    .report-main-inner {
+      padding: var(--space-xl);
+    }
+
+    .report-section {
+      margin-bottom: var(--space-xl);
+    }
+
+    .report-section-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: var(--space-md);
+      padding-bottom: var(--space-sm);
+      border-bottom: 2px solid var(--accent);
+      display: inline-block;
+    }
+
+    /* ── Finding Cards ── */
+    .finding-card {
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      padding: var(--space-md);
+      margin-bottom: var(--space-md);
+      transition: border-color 0.2s;
+    }
+
+    .finding-card:hover {
+      border-color: var(--accent);
+    }
+
+    .finding-card.severity-severe {
+      border-left: 3px solid var(--danger);
+    }
+
+    .finding-card.severity-moderate {
+      border-left: 3px solid var(--warning);
+    }
+
+    .finding-card.severity-mild {
+      border-left: 3px solid var(--info);
+    }
+
+    .finding-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: var(--space-sm);
+    }
+
+    .finding-level {
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .tier-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 20px;
+      letter-spacing: 0.5px;
+    }
+
+    .tier-badge.tier-a { background: var(--success-soft); color: var(--tier-a); }
+    .tier-badge.tier-b { background: var(--warning-soft); color: var(--tier-b); }
+    .tier-badge.tier-c { background: rgba(249, 115, 22, 0.12); color: var(--tier-c); }
+
+    .finding-detail {
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text-secondary);
+    }
+
+    .finding-detail strong { color: var(--text-primary); }
+
+    .metric-row {
+      display: flex;
+      gap: var(--space-md);
+      margin-top: var(--space-sm);
+      flex-wrap: wrap;
+    }
+
+    .metric-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--bg-elevated);
+      border-radius: 6px;
+      font-size: 12px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .metric-label { color: var(--text-muted); }
+    .metric-value { color: var(--text-primary); font-weight: 600; }
+
+    /* ── Impression Box ── */
+    .impression-box {
+      background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(139, 92, 246, 0.08));
+      border: 1px solid rgba(59, 130, 246, 0.2);
+      border-radius: var(--radius-lg);
+      padding: var(--space-lg);
+    }
+
+    .impression-item {
+      display: flex;
+      gap: 12px;
+      margin-bottom: var(--space-md);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .impression-num {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      background: var(--accent);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    /* ── Image Viewer ── */
+    .image-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: var(--space-md);
+    }
+
+    .image-card {
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .image-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .image-card img {
+      width: 100%;
+      height: 200px;
+      object-fit: contain;
+      background: #000;
+    }
+
+    .image-caption {
+      padding: var(--space-sm) var(--space-md);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    /* ── Demographics Table ── */
+    .demo-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .demo-table td {
+      padding: 8px 14px;
+      font-size: 14px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .demo-table td:nth-child(odd) {
+      color: var(--text-muted);
+      font-weight: 500;
+      width: 160px;
+    }
+
+    .demo-table td:nth-child(even) {
+      color: var(--text-primary);
+    }
+
+    /* ── Disclaimer ── */
+    .disclaimer {
+      margin-top: var(--space-xl);
+      padding: var(--space-md);
+      background: var(--bg-tertiary);
+      border-radius: var(--radius-md);
+      border-left: 3px solid var(--text-muted);
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--text-muted);
+    }
+
+    /* ── Modal/Lightbox ── */
+    .lightbox-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      cursor: zoom-out;
+    }
+
+    .lightbox-overlay img {
+      max-width: 95vw;
+      max-height: 95vh;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+    }
+
+    /* ── Animations ── */
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+    .fade-in { animation: fadeIn 0.4s ease; }
+
+    /* ── Responsive ── */
+    @media (max-width: 900px) {
+      .report-container { grid-template-columns: 1fr; }
+      .config-grid { grid-template-columns: 1fr; }
+      .main-content { padding: var(--space-md); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useCallback } = React;
+
+    // ═══════════════════════════════════════════
+    // SpineAI Application
+    // ═══════════════════════════════════════════
+
+    const API_BASE = window.location.origin;
+
+    function App() {
+      const [view, setView] = useState('upload');  // upload | analyzing | report
+      const [jobId, setJobId] = useState(null);
+      const [apiKey, setApiKey] = useState('');
+      const [clinicalHistory, setClinicalHistory] = useState('');
+      const [uploadedFiles, setUploadedFiles] = useState([]);
+      const [progress, setProgress] = useState({ status: '', progress: 0, message: '' });
+      const [report, setReport] = useState(null);
+      const [activeLevel, setActiveLevel] = useState(null);
+      const [lightboxImg, setLightboxImg] = useState(null);
+      const [dragOver, setDragOver] = useState(false);
+
+      // ── Upload Handler ──
+      const handleFiles = useCallback(async (files) => {
+        const dcmFiles = Array.from(files).filter(f =>
+          f.name.toLowerCase().endsWith('.dcm')
+        );
+        if (dcmFiles.length === 0) {
+          alert('Please upload DICOM (.dcm) files');
+          return;
+        }
+        setUploadedFiles(dcmFiles);
+
+        const formData = new FormData();
+        dcmFiles.forEach(f => formData.append('files', f));
+
+        try {
+          const res = await fetch(`${API_BASE}/api/upload`, {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await res.json();
+          if (data.job_id) {
+            setJobId(data.job_id);
+          }
+        } catch (err) {
+          console.error('Upload failed:', err);
+          alert('Upload failed. Is the server running?');
+        }
+      }, []);
+
+      // ── Start Analysis ──
+      const startAnalysis = useCallback(async () => {
+        if (!jobId || !apiKey) return;
+        setView('analyzing');
+
+        try {
+          await fetch(`${API_BASE}/api/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              job_id: jobId,
+              api_key: apiKey,
+              clinical_history: clinicalHistory || null,
+            }),
+          });
+
+          // Poll for status
+          const poll = setInterval(async () => {
+            const res = await fetch(`${API_BASE}/api/status/${jobId}`);
+            const status = await res.json();
+            setProgress(status);
+
+            if (status.status === 'complete') {
+              clearInterval(poll);
+              const reportRes = await fetch(`${API_BASE}/api/report/${jobId}`);
+              const reportData = await reportRes.json();
+              setReport(reportData);
+              setView('report');
+            } else if (status.status === 'error') {
+              clearInterval(poll);
+              alert(`Analysis failed: ${status.error}`);
+              setView('upload');
+            }
+          }, 1000);
+        } catch (err) {
+          console.error('Analysis failed:', err);
+          setView('upload');
+        }
+      }, [jobId, apiKey, clinicalHistory]);
+
+      return (
+        <div className="app-container">
+          <TopBar />
+          <div className="main-content">
+            {view === 'upload' && (
+              <UploadView
+                dragOver={dragOver}
+                setDragOver={setDragOver}
+                handleFiles={handleFiles}
+                uploadedFiles={uploadedFiles}
+                jobId={jobId}
+                apiKey={apiKey}
+                setApiKey={setApiKey}
+                clinicalHistory={clinicalHistory}
+                setClinicalHistory={setClinicalHistory}
+                startAnalysis={startAnalysis}
+              />
+            )}
+            {view === 'analyzing' && (
+              <AnalyzingView progress={progress} />
+            )}
+            {view === 'report' && report && (
+              <ReportView
+                report={report}
+                jobId={jobId}
+                activeLevel={activeLevel}
+                setActiveLevel={setActiveLevel}
+                lightboxImg={lightboxImg}
+                setLightboxImg={setLightboxImg}
+              />
+            )}
+          </div>
+          {lightboxImg && (
+            <div className="lightbox-overlay" onClick={() => setLightboxImg(null)}>
+              <img src={lightboxImg} alt="Enlarged view" />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── Top Bar ──
+    function TopBar() {
+      return (
+        <div className="top-bar">
+          <div className="logo-group">
+            <div className="logo-icon">S</div>
+            <span className="logo-text">SpineAI</span>
+            <span className="logo-badge">Opus 4.6</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              AI-Assisted MRI Analysis
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Upload View ──
+    function UploadView({ dragOver, setDragOver, handleFiles, uploadedFiles, jobId, apiKey, setApiKey, clinicalHistory, setClinicalHistory, startAnalysis }) {
+      const fileInputRef = useRef(null);
+
+      const onDrop = (e) => {
+        e.preventDefault();
+        setDragOver(false);
+        handleFiles(e.dataTransfer.files);
+      };
+
+      return (
+        <div className="fade-in">
+          <div
+            className={`upload-zone ${dragOver ? 'drag-over' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".dcm,.DCM"
+              style={{ display: 'none' }}
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+            <div className="upload-icon">{uploadedFiles.length > 0 ? '✓' : '🧠'}</div>
+            <div className="upload-title">
+              {uploadedFiles.length > 0
+                ? `${uploadedFiles.length} DICOM files loaded`
+                : 'Drop DICOM files here'
+              }
+            </div>
+            <div className="upload-subtitle">
+              {uploadedFiles.length > 0
+                ? 'Files ready for analysis. Configure options below.'
+                : 'Upload your lumbar spine MRI study for AI-assisted analysis'
+              }
+            </div>
+            {uploadedFiles.length === 0 && (
+              <button className="upload-btn" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
+                Select DICOM Files
+              </button>
+            )}
+            <div className="upload-formats">
+              Supports: DICOM (.dcm) • All standard MRI sequences • Contrast and non-contrast studies
+            </div>
+          </div>
+
+          {jobId && (
+            <div className="config-panel fade-in">
+              <div className="config-title">Analysis Configuration</div>
+              <div className="config-grid">
+                <div className="form-group">
+                  <label>Anthropic API Key *</label>
+                  <input
+                    type="password"
+                    placeholder="sk-ant-..."
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Clinical History (optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Post-surgical evaluation, chronic low back pain..."
+                    value={clinicalHistory}
+                    onChange={(e) => setClinicalHistory(e.target.value)}
+                  />
+                </div>
+              </div>
+              <button
+                className="start-btn"
+                disabled={!apiKey}
+                onClick={startAnalysis}
+              >
+                🔬 Start Analysis with Claude Opus 4.6
+              </button>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── Analyzing View ──
+    function AnalyzingView({ progress }) {
+      const steps = [
+        { key: 'inventory', label: 'DICOM Inventory', threshold: 5 },
+        { key: 'levels', label: 'Level ID', threshold: 25 },
+        { key: 'measuring', label: 'Measurements', threshold: 40 },
+        { key: 'interpreting', label: 'AI Interpretation', threshold: 75 },
+        { key: 'complete', label: 'Complete', threshold: 100 },
+      ];
+
+      return (
+        <div className="progress-container fade-in">
+          <div className="progress-header">
+            <div className="progress-title">Analyzing MRI Study...</div>
+            <div className="progress-pct">{progress.progress}%</div>
+          </div>
+          <div className="progress-bar-bg">
+            <div className="progress-bar-fill" style={{ width: `${progress.progress}%` }} />
+          </div>
+          <div className="progress-message">
+            {progress.progress_message || progress.message || 'Initializing...'}
+          </div>
+          <div className="progress-steps">
+            {steps.map((step) => {
+              const isDone = progress.progress >= step.threshold;
+              const isActive = progress.status === step.key;
+              return (
+                <div
+                  key={step.key}
+                  className={`step-chip ${isActive ? 'active' : ''} ${isDone ? 'done' : ''}`}
+                >
+                  {isDone ? '✓' : isActive ? '◉' : '○'} {step.label}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ── Report View ──
+    function ReportView({ report, jobId, activeLevel, setActiveLevel, lightboxImg, setLightboxImg }) {
+      const { demographics, measurements, interpretation, annotated_images, calibration_status } = report;
+      const discMeasurements = measurements?.disc_measurements || [];
+      const findings = interpretation?.findings_by_level || {};
+      const impression = interpretation?.impression || [];
+
+      const levels = ['L1-L2', 'L2-L3', 'L3-L4', 'L4-L5', 'L5-S1'];
+
+      const getSeverity = (level) => {
+        const m = discMeasurements.find(d => d.level === level);
+        return m?.desiccation_grade || 'normal';
+      };
+
+      return (
+        <div className="fade-in">
+          <div className="report-container">
+            {/* Sidebar */}
+            <div className="report-sidebar">
+              <div className="sidebar-section">
+                <div className="sidebar-title">Patient</div>
+                <div style={{ fontSize: '14px', fontWeight: 600 }}>
+                  {demographics?.patient_name?.replace('^', ', ') || 'Unknown'}
+                </div>
+                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  {demographics?.study_date ? `Study: ${demographics.study_date.slice(0,4)}-${demographics.study_date.slice(4,6)}-${demographics.study_date.slice(6,8)}` : ''}
+                </div>
+                <div style={{ fontSize: '11px', color: calibration_status === 'DICOM-calibrated' ? 'var(--success)' : 'var(--warning)', marginTop: '6px' }}>
+                  ● {calibration_status}
+                </div>
+              </div>
+              <div className="sidebar-section">
+                <div className="sidebar-title">Disc Levels</div>
+                {levels.map(level => (
+                  <div
+                    key={level}
+                    className={`sidebar-item ${activeLevel === level ? 'active' : ''}`}
+                    onClick={() => setActiveLevel(level)}
+                  >
+                    <div className={`level-indicator ${getSeverity(level)}`} />
+                    <span>{level}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '11px', color: 'var(--text-muted)' }}>
+                      {getSeverity(level)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <div className="sidebar-section">
+                <div className="sidebar-title">Proof Images</div>
+                {annotated_images.map(name => (
+                  <div
+                    key={name}
+                    className="sidebar-item"
+                    onClick={() => setLightboxImg(`${API_BASE}/api/images/${jobId}/${name}`)}
+                    style={{ fontSize: '12px' }}
+                  >
+                    📷 {name.replace(/_/g, ' ')}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Main Content */}
+            <div className="report-main">
+              <div className="report-main-inner">
+                {/* Demographics */}
+                <div className="report-section">
+                  <div className="report-section-title">Patient & Study</div>
+                  <table className="demo-table">
+                    <tbody>
+                      <tr><td>Name</td><td>{demographics?.patient_name?.replace('^', ', ')}</td></tr>
+                      <tr><td>ID</td><td>{demographics?.patient_id}</td></tr>
+                      <tr><td>Age / Sex</td><td>{demographics?.age} / {demographics?.sex}</td></tr>
+                      <tr><td>Institution</td><td>{demographics?.institution}</td></tr>
+                      <tr><td>Field Strength</td><td>{demographics?.field_strength}T</td></tr>
+                      <tr><td>Contrast</td><td>{measurements?.has_contrast ? 'Yes' : 'No'}</td></tr>
+                      <tr><td>Model</td><td>{interpretation?.model_used || 'claude-opus-4-6'}</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Findings */}
+                <div className="report-section">
+                  <div className="report-section-title">Findings by Level</div>
+                  {discMeasurements.map(m => {
+                    const levelFindings = findings[m.level] || {};
+                    const severity = m.desiccation_grade;
+                    return (
+                      <div key={m.level} id={`level-${m.level}`}
+                           className={`finding-card severity-${severity}`}>
+                        <div className="finding-header">
+                          <span className="finding-level">{m.level}</span>
+                          <span className={`tier-badge tier-${m.confidence_tier?.toLowerCase()}`}>
+                            Tier {m.confidence_tier}
+                          </span>
+                        </div>
+                        <div className="finding-detail">
+                          {levelFindings.disc ? (
+                            <p><strong>Disc:</strong> {levelFindings.disc}</p>
+                          ) : (
+                            <p><strong>Disc:</strong> {severity === 'severe' ? 'Severe' : severity === 'moderate' ? 'Moderate' : severity === 'mild' ? 'Mild' : 'Normal'} disc desiccation (T2 signal ratio: {m.desiccation_ratio?.toFixed(2)})</p>
+                          )}
+                          {levelFindings.canal && <p><strong>Canal:</strong> {levelFindings.canal}</p>}
+                          {levelFindings.foramina && <p><strong>Foramina:</strong> {levelFindings.foramina}</p>}
+                          {levelFindings.endplates && <p><strong>Endplates:</strong> {levelFindings.endplates}</p>}
+                        </div>
+                        <div className="metric-row">
+                          <div className="metric-chip">
+                            <span className="metric-label">T2 Signal</span>
+                            <span className="metric-value">{m.disc_t2_signal?.toFixed(0)}</span>
+                          </div>
+                          <div className="metric-chip">
+                            <span className="metric-label">Ratio</span>
+                            <span className="metric-value">{m.desiccation_ratio?.toFixed(2)}</span>
+                          </div>
+                          <div className="metric-chip">
+                            <span className="metric-label">CSF</span>
+                            <span className="metric-value">{m.canal_csf_signal?.toFixed(0)}</span>
+                          </div>
+                          {m.canal_ap_mm > 0 && (
+                            <div className="metric-chip">
+                              <span className="metric-label">AP</span>
+                              <span className="metric-value">{m.canal_ap_mm?.toFixed(1)} mm</span>
+                            </div>
+                          )}
+                          {m.canal_csf_reduction_pct > 10 && (
+                            <div className="metric-chip" style={{color: 'var(--danger)'}}>
+                              <span className="metric-label">CSF↓</span>
+                              <span className="metric-value">{m.canal_csf_reduction_pct?.toFixed(0)}%</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Impression */}
+                {impression.length > 0 && (
+                  <div className="report-section">
+                    <div className="report-section-title">Impression</div>
+                    <div className="impression-box">
+                      {impression.map((item, i) => (
+                        <div key={i} className="impression-item">
+                          <div className="impression-num">{i + 1}</div>
+                          <div>{item}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Annotated Images */}
+                {annotated_images.length > 0 && (
+                  <div className="report-section">
+                    <div className="report-section-title">Annotated Proof Images</div>
+                    <div className="image-grid">
+                      {annotated_images.map(name => (
+                        <div key={name} className="image-card"
+                             onClick={() => setLightboxImg(`${API_BASE}/api/images/${jobId}/${name}`)}>
+                          <img src={`${API_BASE}/api/images/${jobId}/${name}`} alt={name} />
+                          <div className="image-caption">{name.replace(/_/g, ' ')}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Disclaimer */}
+                <div className="disclaimer">
+                  <strong>Disclaimer:</strong> This analysis was generated using AI-assisted image interpretation
+                  as a supplementary diagnostic tool. It does not constitute a formal radiological report and
+                  should not replace evaluation by a board-certified radiologist. The analyst did not have access
+                  to a PACS workstation, measurement calipers, or the ability to dynamically scroll through slices.
+                  All findings should be correlated with clinical history and physical examination.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ── Mount ──
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
+</body>
+</html>
