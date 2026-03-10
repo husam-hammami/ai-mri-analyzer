@@ -2,10 +2,14 @@
 MIKA — AI Medical MRI Analyzer — FastAPI Server
 ==================================================
 Multi-anatomy AI-powered MRI analysis platform.
-Supports Neuro, MSK, and Spine studies.
+Supports: Spine, Brain, MSK, Cardiac, Chest, Abdomen/Pelvis,
+          Breast, Vascular/MRA, Head & Neck, and Prostate studies.
+
+Input Formats: DICOM (.dcm), NIfTI (.nii/.nii.gz), NRRD (.nrrd),
+               Standard images (PNG/JPG/TIFF), ZIP archives.
 
 Architecture:
-  POST /api/upload          → Upload DICOM files
+  POST /api/upload          → Upload imaging files (any supported format)
   POST /api/analyze         → Run full analysis pipeline
   GET  /api/status/{job_id} → Check analysis progress (SSE)
   GET  /api/report/{job_id} → Get completed report
@@ -31,6 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from core.dicom_engine import DICOMEngine
+from core.format_converter import FormatConverter
 from services.claude_interpreter import (
     ClaudeInterpreter,
     InterpretationRequest,
@@ -51,8 +56,8 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 app = FastAPI(
     title="MIKA — AI Medical MRI Analyzer",
-    description="MIKA: AI-powered MRI analysis for Neuro, MSK & Spine — powered by Claude Opus 4.6",
-    version="2.0.0",
+    description="MIKA: Multi-anatomy AI MRI analysis — Spine, Brain, MSK, Cardiac, Chest, Abdomen, Breast, Vascular, Head & Neck, Prostate. Accepts DICOM, NIfTI, NRRD, PNG/JPG, ZIP. Powered by Claude Opus 4.6.",
+    version="3.0.0",
 )
 
 app.add_middleware(
@@ -115,31 +120,96 @@ class ReportResponse(BaseModel):
 
 # ── API Endpoints ──
 
+SUPPORTED_EXTENSIONS = {
+    ".dcm", ".DCM", ".ima", ".dicom",             # DICOM
+    ".nii", ".gz",                                  # NIfTI (.nii, .nii.gz)
+    ".nrrd", ".nhdr",                               # NRRD
+    ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp",  # Images
+    ".zip",                                         # Archives
+}
+
+
 @app.post("/api/upload")
-async def upload_dicom(files: list[UploadFile] = File(...)):
-    """Upload DICOM files and create a new analysis job."""
+async def upload_files(files: list[UploadFile] = File(...)):
+    """
+    Upload medical imaging files and create a new analysis job.
+    Supports: DICOM (.dcm), NIfTI (.nii/.nii.gz), NRRD (.nrrd),
+              images (PNG/JPG/TIFF), and ZIP archives containing any of these.
+    """
     job_id = str(uuid.uuid4())[:8]
-    job_dir = DATA_DIR / job_id / "dicom"
-    job_dir.mkdir(parents=True, exist_ok=True)
+    upload_dir = DATA_DIR / job_id / "upload"
+    dicom_dir = DATA_DIR / job_id / "dicom"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dicom_dir.mkdir(parents=True, exist_ok=True)
 
     file_count = 0
+    has_non_dicom = False
+
     for file in files:
-        if file.filename and (file.filename.endswith(".dcm") or file.filename.endswith(".DCM")):
-            dest = job_dir / file.filename
-            with open(str(dest), "wb") as f:
-                content = await file.read()
-                f.write(content)
-            file_count += 1
+        if not file.filename:
+            continue
+
+        # Check if file has a supported extension
+        fname = file.filename
+        fname_lower = fname.lower()
+        ext = Path(fname_lower).suffix
+
+        # Handle .nii.gz double extension
+        is_nifti_gz = fname_lower.endswith(".nii.gz")
+
+        is_supported = ext in SUPPORTED_EXTENSIONS or is_nifti_gz
+        # Also accept extensionless files (potential DICOM from PACS)
+        if not is_supported and ext == "":
+            is_supported = True
+
+        if not is_supported:
+            continue
+
+        is_dicom = ext in {".dcm", ".DCM", ".ima", ".dicom"} or ext == ""
+
+        # Save to appropriate directory
+        dest_dir = dicom_dir if is_dicom else upload_dir
+        dest = dest_dir / fname
+        with open(str(dest), "wb") as f:
+            content = await file.read()
+            f.write(content)
+        file_count += 1
+
+        if not is_dicom:
+            has_non_dicom = True
 
     if file_count == 0:
         shutil.rmtree(str(DATA_DIR / job_id))
-        raise HTTPException(400, "No DICOM (.dcm) files found in upload")
+        raise HTTPException(
+            400,
+            "No supported files found. Upload DICOM (.dcm), NIfTI (.nii/.nii.gz), "
+            "NRRD (.nrrd), images (PNG/JPG/TIFF), or ZIP archives.",
+        )
 
-    job = AnalysisJob(job_id=job_id, dicom_dir=str(job_dir))
+    # If we have non-DICOM files, run the format converter
+    input_format = "dicom"
+    conversion_warnings = []
+    if has_non_dicom:
+        converter = FormatConverter(str(upload_dir), str(dicom_dir))
+        result = converter.convert()
+        input_format = result.input_format
+        conversion_warnings = result.warnings
+
+        if not result.success:
+            shutil.rmtree(str(DATA_DIR / job_id))
+            raise HTTPException(400, f"Format conversion failed: {result.error}")
+
+        file_count = result.num_files
+        logger.info(f"Format conversion: {result.input_format} -> DICOM, {result.num_slices} slices")
+
+    job = AnalysisJob(job_id=job_id, dicom_dir=str(dicom_dir))
     JOBS[job_id] = job
 
-    logger.info(f"Upload complete: job={job_id}, files={file_count}")
-    return {"job_id": job_id, "file_count": file_count}
+    logger.info(f"Upload complete: job={job_id}, format={input_format}, files={file_count}")
+    response = {"job_id": job_id, "file_count": file_count, "input_format": input_format}
+    if conversion_warnings:
+        response["warnings"] = conversion_warnings
+    return response
 
 
 @app.post("/api/analyze")
@@ -235,14 +305,33 @@ async def get_report(job_id: str):
             "alignment": interp.alignment,
             "conus": interp.conus,
             "post_surgical_assessment": interp.post_surgical_assessment,
-            # Brain
+            # Brain / Chest / Head-Neck / Breast / Generic region-based
             "findings_by_region": interp.findings_by_region,
             "enhancement_pattern": interp.enhancement_pattern,
             "diffusion_findings": interp.diffusion_findings,
-            # MSK
+            # MSK / Cardiac structure-based
             "findings_by_structure": interp.findings_by_structure,
             "joint_effusion": interp.joint_effusion,
             "bone_marrow": interp.bone_marrow,
+            "wall_motion": interp.wall_motion,
+            "tissue_characterization": interp.tissue_characterization,
+            # Abdomen organ-based
+            "findings_by_organ": interp.findings_by_organ,
+            # Vascular vessel-based
+            "findings_by_vessel": interp.findings_by_vessel,
+            "vascular_territory": interp.vascular_territory,
+            "flow_assessment": interp.flow_assessment,
+            # Prostate zone-based
+            "findings_by_zone": interp.findings_by_zone,
+            "dominant_lesion": interp.dominant_lesion,
+            "pirads_category": interp.pirads_category,
+            "extraprostatic_extension": interp.extraprostatic_extension,
+            # Breast-specific
+            "background_parenchymal_enhancement": interp.background_parenchymal_enhancement,
+            "kinetic_assessment": interp.kinetic_assessment,
+            "birads_category": interp.birads_category,
+            # Head-Neck-specific
+            "cranial_nerves": interp.cranial_nerves,
             # Generic
             "identified_anatomy": interp.identified_anatomy,
             # Shared
@@ -462,7 +551,12 @@ async def _run_analysis_pipeline(
         # Phase 4: Claude interpretation
         job.status = "interpreting"
         job.progress = 75
-        anatomy_label = {"spine": "Spine", "brain": "Neuroimaging", "msk": "Musculoskeletal"}.get(detected_anatomy, "MRI")
+        anatomy_label = {
+            "spine": "Spine", "brain": "Neuroimaging", "msk": "Musculoskeletal",
+            "cardiac": "Cardiac", "chest": "Chest", "abdomen": "Abdomen/Pelvis",
+            "breast": "Breast", "vascular": "Vascular/MRA", "head_neck": "Head & Neck",
+            "prostate": "Prostate",
+        }.get(detected_anatomy, "MRI")
         job.progress_message = f"Claude Opus 4.6 is analyzing {anatomy_label} findings..."
 
         interpreter = ClaudeInterpreter(api_key=api_key)

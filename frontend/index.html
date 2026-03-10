@@ -476,8 +476,11 @@
     /* ── Capability Cards ── */
     .capability-row {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: var(--s-4);
+      grid-template-columns: repeat(5, 1fr);
+      gap: var(--s-3);
+      margin-bottom: var(--s-2);
+    }
+    .capability-row-2 {
       margin-bottom: var(--s-8);
     }
 
@@ -485,7 +488,7 @@
       background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
       border: 1px solid var(--border);
       border-radius: var(--r-xl);
-      padding: var(--s-6) var(--s-6) var(--s-5);
+      padding: var(--s-4) var(--s-3) var(--s-3);
       text-align: center;
       transition: all var(--duration-slow) var(--ease-out);
       position: relative;
@@ -516,10 +519,24 @@
     .capability-card.neuro::before { background: linear-gradient(90deg, #4c8dff, #38bdf8); }
     .capability-card.msk::before { background: linear-gradient(90deg, #22d3a0, #34d399); }
     .capability-card.spine-cap::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+    .capability-card.cardiac::before { background: linear-gradient(90deg, #f43f5e, #fb7185); }
+    .capability-card.chest-cap::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .capability-card.abdomen-cap::before { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
+    .capability-card.breast-cap::before { background: linear-gradient(90deg, #ec4899, #f472b6); }
+    .capability-card.prostate-cap::before { background: linear-gradient(90deg, #10b981, #6ee7b7); }
+    .capability-card.vascular-cap::before { background: linear-gradient(90deg, #ef4444, #f87171); }
+    .capability-card.headneck-cap::before { background: linear-gradient(90deg, #6366f1, #818cf8); }
 
     .capability-card.neuro::after { background: radial-gradient(ellipse at 50% 0%, rgba(76, 141, 255, 0.06), transparent 70%); }
     .capability-card.msk::after { background: radial-gradient(ellipse at 50% 0%, rgba(34, 211, 160, 0.06), transparent 70%); }
     .capability-card.spine-cap::after { background: radial-gradient(ellipse at 50% 0%, rgba(139, 92, 246, 0.06), transparent 70%); }
+    .capability-card.cardiac::after { background: radial-gradient(ellipse at 50% 0%, rgba(244, 63, 94, 0.06), transparent 70%); }
+    .capability-card.chest-cap::after { background: radial-gradient(ellipse at 50% 0%, rgba(245, 158, 11, 0.06), transparent 70%); }
+    .capability-card.abdomen-cap::after { background: radial-gradient(ellipse at 50% 0%, rgba(6, 182, 212, 0.06), transparent 70%); }
+    .capability-card.breast-cap::after { background: radial-gradient(ellipse at 50% 0%, rgba(236, 72, 153, 0.06), transparent 70%); }
+    .capability-card.prostate-cap::after { background: radial-gradient(ellipse at 50% 0%, rgba(16, 185, 129, 0.06), transparent 70%); }
+    .capability-card.vascular-cap::after { background: radial-gradient(ellipse at 50% 0%, rgba(239, 68, 68, 0.06), transparent 70%); }
+    .capability-card.headneck-cap::after { background: radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.06), transparent 70%); }
 
     .capability-card:hover {
       border-color: var(--border-strong);
@@ -528,9 +545,9 @@
     }
 
     .capability-icon {
-      width: 44px;
-      height: 44px;
-      margin: 0 auto var(--s-3);
+      width: 38px;
+      height: 38px;
+      margin: 0 auto var(--s-2);
       border-radius: var(--r-lg);
       display: flex;
       align-items: center;
@@ -542,20 +559,27 @@
     .capability-card.neuro .capability-icon { background: rgba(76, 141, 255, 0.12); color: #6ba1ff; }
     .capability-card.msk .capability-icon { background: rgba(34, 211, 160, 0.12); color: #34d399; }
     .capability-card.spine-cap .capability-icon { background: rgba(139, 92, 246, 0.12); color: #a78bfa; }
+    .capability-card.cardiac .capability-icon { background: rgba(244, 63, 94, 0.12); color: #fb7185; }
+    .capability-card.chest-cap .capability-icon { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
+    .capability-card.abdomen-cap .capability-icon { background: rgba(6, 182, 212, 0.12); color: #22d3ee; }
+    .capability-card.breast-cap .capability-icon { background: rgba(236, 72, 153, 0.12); color: #f472b6; }
+    .capability-card.prostate-cap .capability-icon { background: rgba(16, 185, 129, 0.12); color: #6ee7b7; }
+    .capability-card.vascular-cap .capability-icon { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+    .capability-card.headneck-cap .capability-icon { background: rgba(99, 102, 241, 0.12); color: #818cf8; }
 
     .capability-title {
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 700;
-      margin-bottom: var(--s-1);
+      margin-bottom: 2px;
       color: var(--text-primary);
       position: relative;
       z-index: 1;
     }
 
     .capability-desc {
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-tertiary);
-      line-height: 1.5;
+      line-height: 1.4;
       position: relative;
       z-index: 1;
     }
@@ -1888,7 +1912,8 @@
       .main-content { padding: var(--s-5) var(--s-4); }
       .top-bar { padding: 0 var(--s-4); }
       .mika-hero-logo { max-width: 320px; }
-      .capability-row { grid-template-columns: 1fr; }
+      .capability-row { grid-template-columns: repeat(3, 1fr); }
+      .capability-row-2 { grid-template-columns: repeat(3, 1fr); }
       .trust-bar { flex-wrap: wrap; gap: var(--s-3); }
       .upload-zone { padding: var(--s-10) var(--s-6); }
       .config-grid { grid-template-columns: 1fr; }
@@ -2083,18 +2108,21 @@
       const [dragOver, setDragOver] = useState(false);
       const { toasts, addToast } = useToast();
 
+      const SUPPORTED_EXTS = ['.dcm', '.nii', '.nii.gz', '.nrrd', '.nhdr', '.png', '.jpg', '.jpeg', '.tif', '.tiff', '.bmp', '.zip', '.ima', '.dicom'];
+
       const handleFiles = useCallback(async (files) => {
-        const dcmFiles = Array.from(files).filter(f =>
-          f.name.toLowerCase().endsWith('.dcm')
-        );
-        if (dcmFiles.length === 0) {
-          addToast('Please upload DICOM (.dcm) files', 'error');
+        const supportedFiles = Array.from(files).filter(f => {
+          const name = f.name.toLowerCase();
+          return SUPPORTED_EXTS.some(ext => name.endsWith(ext)) || !name.includes('.');
+        });
+        if (supportedFiles.length === 0) {
+          addToast('No supported files found. Upload DICOM, NIfTI, NRRD, images, or ZIP files.', 'error');
           return;
         }
-        setUploadedFiles(dcmFiles);
+        setUploadedFiles(supportedFiles);
 
         const formData = new FormData();
-        dcmFiles.forEach(f => formData.append('files', f));
+        supportedFiles.forEach(f => formData.append('files', f));
 
         try {
           const res = await fetch(`${API_BASE}/api/upload`, {
@@ -2104,7 +2132,13 @@
           const data = await res.json();
           if (data.job_id) {
             setJobId(data.job_id);
-            addToast(`${dcmFiles.length} DICOM files uploaded successfully`);
+            const fmt = data.input_format ? ` (${data.input_format.toUpperCase()})` : '';
+            addToast(`${data.file_count} files uploaded successfully${fmt}`);
+            if (data.warnings && data.warnings.length > 0) {
+              data.warnings.forEach(w => addToast(w, 'warning'));
+            }
+          } else if (data.detail) {
+            addToast(data.detail, 'error');
           }
         } catch (err) {
           console.error('Upload failed:', err);
@@ -2273,7 +2307,7 @@
               <img src="/assets/logo.png" alt="MIKA — AI Medical MRI Analyzer" className="mika-hero-img" />
             </div>
             <p className="upload-hero-subtitle">
-              Upload DICOM studies for AI-powered clinical interpretation with quantitative measurements and annotated proof images
+              Upload medical images for AI-powered clinical interpretation with quantitative measurements and annotated proof images
             </p>
           </div>
 
@@ -2287,19 +2321,8 @@
                   <path d="M5 6h10M5 14h10"/>
                 </svg>
               </div>
-              <div className="capability-title">Neuroimaging</div>
-              <div className="capability-desc">Brain MRI analysis and interpretation</div>
-            </div>
-            <div className="capability-card msk">
-              <div className="capability-icon">
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M7 3v6l-3 4v2h12v-2l-3-4V3"/>
-                  <path d="M5 17v1h10v-1"/>
-                  <path d="M9 3h2"/>
-                </svg>
-              </div>
-              <div className="capability-title">Musculoskeletal</div>
-              <div className="capability-desc">Knee, shoulder & joint assessment</div>
+              <div className="capability-title">Brain</div>
+              <div className="capability-desc">Neuroimaging analysis</div>
             </div>
             <div className="capability-card spine-cap">
               <div className="capability-icon">
@@ -2312,7 +2335,89 @@
                 </svg>
               </div>
               <div className="capability-title">Spine</div>
-              <div className="capability-desc">Cervical, thoracic & lumbar analysis</div>
+              <div className="capability-desc">Cervical to lumbar</div>
+            </div>
+            <div className="capability-card msk">
+              <div className="capability-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 3v6l-3 4v2h12v-2l-3-4V3"/>
+                  <path d="M5 17v1h10v-1"/>
+                  <path d="M9 3h2"/>
+                </svg>
+              </div>
+              <div className="capability-title">MSK</div>
+              <div className="capability-desc">Joints & soft tissue</div>
+            </div>
+            <div className="capability-card cardiac">
+              <div className="capability-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M10 17s-7-5-7-9a4 4 0 017-2 4 4 0 017 2c0 4-7 9-7 9z"/>
+                </svg>
+              </div>
+              <div className="capability-title">Cardiac</div>
+              <div className="capability-desc">Heart & vessels</div>
+            </div>
+            <div className="capability-card chest-cap">
+              <div className="capability-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M4 8c0-3 2-5 6-5s6 2 6 5v6c0 2-2 3-6 3s-6-1-6-3V8z"/>
+                  <path d="M8 8h4M7 11h6"/>
+                </svg>
+              </div>
+              <div className="capability-title">Chest</div>
+              <div className="capability-desc">Lungs & mediastinum</div>
+            </div>
+          </div>
+          <div className="capability-row capability-row-2 fade-in-up" style={{marginTop: '8px'}}>
+            <div className="capability-card abdomen-cap">
+              <div className="capability-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <ellipse cx="10" cy="11" rx="7" ry="6"/>
+                  <path d="M6 9c1 2 3 3 4 3s3-1 4-3"/>
+                </svg>
+              </div>
+              <div className="capability-title">Abdomen</div>
+              <div className="capability-desc">Organs & viscera</div>
+            </div>
+            <div className="capability-card breast-cap">
+              <div className="capability-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="10" cy="10" r="7"/>
+                  <path d="M7 8a3 3 0 006 0"/>
+                  <circle cx="10" cy="12" r="1"/>
+                </svg>
+              </div>
+              <div className="capability-title">Breast</div>
+              <div className="capability-desc">BI-RADS scoring</div>
+            </div>
+            <div className="capability-card prostate-cap">
+              <div className="capability-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <ellipse cx="10" cy="11" rx="5" ry="4"/>
+                  <path d="M7 7l6 0M10 7V4"/>
+                </svg>
+              </div>
+              <div className="capability-title">Prostate</div>
+              <div className="capability-desc">PI-RADS scoring</div>
+            </div>
+            <div className="capability-card vascular-cap">
+              <div className="capability-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <path d="M10 2v16M7 5c0 3 6 3 6 0M7 15c0-3 6-3 6 0"/>
+                </svg>
+              </div>
+              <div className="capability-title">Vascular</div>
+              <div className="capability-desc">MRA & flow</div>
+            </div>
+            <div className="capability-card headneck-cap">
+              <div className="capability-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <circle cx="10" cy="7" r="5"/>
+                  <path d="M8 12v5h4v-5"/>
+                </svg>
+              </div>
+              <div className="capability-title">Head/Neck</div>
+              <div className="capability-desc">ENT & skull base</div>
             </div>
           </div>
 
@@ -2329,7 +2434,7 @@
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".dcm,.DCM"
+              accept=".dcm,.DCM,.ima,.dicom,.nii,.nii.gz,.nrrd,.nhdr,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.zip"
               style={{ display: 'none' }}
               onChange={(e) => handleFiles(e.target.files)}
             />
@@ -2346,32 +2451,32 @@
 
             {hasFiles && (
               <div className="file-count-pill">
-                {uploadedFiles.length} DICOM files loaded
+                {uploadedFiles.length} file{uploadedFiles.length !== 1 ? 's' : ''} loaded
               </div>
             )}
 
             <div className="upload-title">
-              {hasFiles ? 'Study ready for analysis' : 'Drop DICOM files here'}
+              {hasFiles ? 'Study ready for analysis' : 'Drop medical imaging files here'}
             </div>
             <div className="upload-subtitle">
               {hasFiles
                 ? 'Configure analysis options below, or click to upload different files'
-                : 'Drag and drop your MRI study files'
+                : 'DICOM, NIfTI, NRRD, PNG/JPG, or ZIP archives'
               }
             </div>
 
             {!hasFiles && (
               <button className="upload-btn" onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}>
-                <Icons.upload /> Select DICOM Files
+                <Icons.upload /> Select Files
               </button>
             )}
 
             <div className="upload-meta">
-              <span className="upload-meta-item">DICOM (.dcm)</span>
+              <span className="upload-meta-item">DICOM · NIfTI · NRRD · Images · ZIP</span>
               <div className="upload-meta-dot" />
-              <span className="upload-meta-item">Brain, MSK & Spine</span>
+              <span className="upload-meta-item">10 Anatomy Types</span>
               <div className="upload-meta-dot" />
-              <span className="upload-meta-item">All MRI sequences</span>
+              <span className="upload-meta-item">All MRI Sequences</span>
             </div>
           </div>
 
@@ -2379,7 +2484,7 @@
           <div className="trust-bar">
             <span className="trust-item">
               <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"><rect x="2" y="2" width="10" height="10" rx="2"/><path d="M5 7l2 2 3-3"/></svg>
-              DICOM Compliant
+              Multi-Format
             </span>
             <div className="trust-separator" />
             <span className="trust-item">
@@ -2459,7 +2564,7 @@
     // ═══════════════════════════════════════════
     function AnalyzingView({ progress }) {
       const steps = [
-        { key: 'inventory', label: 'DICOM Inventory', desc: 'Cataloging sequences & detecting anatomy type', threshold: 5 },
+        { key: 'inventory', label: 'File Inventory', desc: 'Cataloging sequences & detecting anatomy type', threshold: 5 },
         { key: 'levels', label: 'Structure Identification', desc: 'Anatomical landmark mapping', threshold: 25 },
         { key: 'measuring', label: 'Quantitative Analysis', desc: 'Signal intensity, measurements & morphology', threshold: 40 },
         { key: 'interpreting', label: 'AI Interpretation', desc: 'Claude Opus 4.6 anatomy-specific clinical analysis', threshold: 75 },
@@ -2529,12 +2634,22 @@
       const findings = interpretation?.findings_by_level || {};
       const findingsByRegion = interpretation?.findings_by_region || {};
       const findingsByStructure = interpretation?.findings_by_structure || {};
+      const findingsByOrgan = interpretation?.findings_by_organ || {};
+      const findingsByVessel = interpretation?.findings_by_vessel || {};
+      const findingsByZone = interpretation?.findings_by_zone || {};
       const impression = interpretation?.impression || [];
 
       const anatomyLabels = {
         spine: 'MIKA Spine Analysis',
         brain: 'MIKA Neuroimaging',
         msk: 'MIKA Musculoskeletal',
+        cardiac: 'MIKA Cardiac MRI',
+        chest: 'MIKA Chest MRI',
+        abdomen: 'MIKA Abdomen/Pelvis',
+        breast: 'MIKA Breast MRI',
+        vascular: 'MIKA Vascular/MRA',
+        head_neck: 'MIKA Head & Neck',
+        prostate: 'MIKA Prostate MRI',
         unknown: 'MIKA Analysis',
       };
 
@@ -2545,16 +2660,22 @@
         return m?.desiccation_grade || 'normal';
       };
 
-      // Multi-anatomy finding counts
-      const findingsCount = anatomyType === 'spine' ? discMeasurements.length
-        : anatomyType === 'brain' ? Object.keys(findingsByRegion).length
-        : anatomyType === 'msk' ? Object.keys(findingsByStructure).length
-        : Object.keys(findingsByRegion).length;
-
-      const findingsLabel = anatomyType === 'spine' ? 'Levels Analyzed'
-        : anatomyType === 'brain' ? 'Regions Assessed'
-        : anatomyType === 'msk' ? 'Structures Assessed'
-        : 'Regions Assessed';
+      // Multi-anatomy finding counts — pick the right dict for each type
+      const anatomyFindingsMap = {
+        spine: { data: discMeasurements, label: 'Levels Analyzed', countFn: (d) => d.length },
+        brain: { data: findingsByRegion, label: 'Regions Assessed' },
+        msk: { data: findingsByStructure, label: 'Structures Assessed' },
+        cardiac: { data: findingsByStructure, label: 'Structures Assessed' },
+        chest: { data: findingsByRegion, label: 'Regions Assessed' },
+        abdomen: { data: findingsByOrgan, label: 'Organs Assessed' },
+        breast: { data: findingsByRegion, label: 'Regions Assessed' },
+        vascular: { data: findingsByVessel, label: 'Vessels Assessed' },
+        head_neck: { data: findingsByRegion, label: 'Regions Assessed' },
+        prostate: { data: findingsByZone, label: 'Zones Assessed' },
+      };
+      const afm = anatomyFindingsMap[anatomyType] || { data: findingsByRegion, label: 'Regions Assessed' };
+      const findingsCount = afm.countFn ? afm.countFn(afm.data) : Object.keys(afm.data).length;
+      const findingsLabel = afm.label;
 
       // Count findings by severity (spine-specific, fallback for others)
       const severityCounts = discMeasurements.reduce((acc, m) => {
@@ -3027,44 +3148,92 @@
                       </React.Fragment>
                     )}
 
-                    {/* ═══ GENERIC / UNKNOWN FINDINGS ═══ */}
-                    {anatomyType !== 'spine' && anatomyType !== 'brain' && anatomyType !== 'msk' && (
-                      <React.Fragment>
-                        <div className="section-header">
-                          <div className="section-icon blue">
-                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#4c8dff" strokeWidth="1.5" strokeLinecap="round">
-                              <rect x="2" y="2" width="10" height="10" rx="2"/>
-                              <path d="M5 7h4M7 5v4"/>
-                            </svg>
-                          </div>
-                          <div className="section-title">Findings{interpretation?.identified_anatomy ? ` \u2014 ${interpretation.identified_anatomy}` : ''}</div>
-                          <div className="section-divider" />
-                        </div>
+                    {/* ═══ ALL OTHER ANATOMY TYPES (Cardiac, Chest, Abdomen, Breast, Vascular, Head&Neck, Prostate, Unknown) ═══ */}
+                    {anatomyType !== 'spine' && anatomyType !== 'brain' && anatomyType !== 'msk' && (() => {
+                      // Pick the correct findings dict and section title for this anatomy
+                      const sectionConfigs = {
+                        cardiac: { dict: findingsByStructure, title: 'Cardiac Structures', extras: [
+                          { label: 'Wall Motion', value: interpretation?.wall_motion },
+                          { label: 'Tissue Characterization', value: interpretation?.tissue_characterization },
+                        ]},
+                        chest: { dict: findingsByRegion, title: 'Chest Regions' },
+                        abdomen: { dict: findingsByOrgan, title: 'Abdominal Organs', extras: [
+                          { label: 'Enhancement Pattern', value: interpretation?.enhancement_pattern },
+                        ]},
+                        breast: { dict: findingsByRegion, title: 'Breast Regions', extras: [
+                          { label: 'Background Parenchymal Enhancement', value: interpretation?.background_parenchymal_enhancement },
+                          { label: 'Kinetic Assessment', value: interpretation?.kinetic_assessment },
+                          { label: 'BI-RADS Category', value: interpretation?.birads_category },
+                        ]},
+                        vascular: { dict: findingsByVessel, title: 'Vascular Findings', extras: [
+                          { label: 'Vascular Territory', value: interpretation?.vascular_territory },
+                          { label: 'Flow Assessment', value: interpretation?.flow_assessment },
+                        ]},
+                        head_neck: { dict: findingsByRegion, title: 'Head & Neck Regions', extras: [
+                          { label: 'Enhancement Pattern', value: interpretation?.enhancement_pattern },
+                          { label: 'Cranial Nerves', value: interpretation?.cranial_nerves },
+                        ]},
+                        prostate: { dict: findingsByZone, title: 'Prostate Zones', extras: [
+                          { label: 'Dominant Lesion', value: interpretation?.dominant_lesion },
+                          { label: 'PI-RADS Category', value: interpretation?.pirads_category },
+                          { label: 'Extraprostatic Extension', value: interpretation?.extraprostatic_extension },
+                        ]},
+                      };
+                      const cfg = sectionConfigs[anatomyType] || { dict: findingsByRegion, title: 'Findings' };
+                      const regionDict = cfg.dict || {};
+                      const sectionTitle = cfg.title + (interpretation?.identified_anatomy ? ` \u2014 ${interpretation.identified_anatomy}` : '');
+                      const extras = (cfg.extras || []).filter(e => e.value);
 
-                        {Object.entries(findingsByRegion).length > 0 ? (
-                          Object.entries(findingsByRegion).map(([region, text]) => (
-                            <div key={region} className="finding-card severity-normal">
-                              <div className="finding-header">
-                                <div className="finding-level-group">
-                                  <span className="finding-level">{region.replace(/_/g, ' ')}</span>
-                                </div>
-                                <span className="tier-badge tier-b">Tier B</span>
-                              </div>
-                              <div className="finding-body">
-                                <div className="finding-row">
-                                  <span className="finding-label">Assessment</span>
-                                  {text}
-                                </div>
-                              </div>
+                      return (
+                        <React.Fragment>
+                          <div className="section-header">
+                            <div className="section-icon blue">
+                              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#4c8dff" strokeWidth="1.5" strokeLinecap="round">
+                                <rect x="2" y="2" width="10" height="10" rx="2"/>
+                                <path d="M5 7h4M7 5v4"/>
+                              </svg>
                             </div>
-                          ))
-                        ) : (
-                          <div style={{textAlign: 'center', padding: '48px', color: 'var(--text-muted)'}}>
-                            No structured findings available. See impression above.
+                            <div className="section-title">{sectionTitle}</div>
+                            <div className="section-divider" />
                           </div>
-                        )}
-                      </React.Fragment>
-                    )}
+
+                          {/* Anatomy-specific summary badges */}
+                          {extras.length > 0 && (
+                            <div style={{display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: 'var(--s-4)'}}>
+                              {extras.map((ex, i) => (
+                                <div key={i} style={{background: 'var(--glass-bg)', border: '1px solid var(--glass-border)', borderRadius: 'var(--r-md)', padding: '8px 14px', fontSize: '13px'}}>
+                                  <span style={{color: 'var(--text-muted)', marginRight: '6px'}}>{ex.label}:</span>
+                                  <span style={{color: 'var(--text-primary)'}}>{ex.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {Object.entries(regionDict).length > 0 ? (
+                            Object.entries(regionDict).map(([region, text]) => (
+                              <div key={region} className="finding-card severity-normal">
+                                <div className="finding-header">
+                                  <div className="finding-level-group">
+                                    <span className="finding-level">{region.replace(/_/g, ' ')}</span>
+                                  </div>
+                                  <span className="tier-badge tier-b">Tier B</span>
+                                </div>
+                                <div className="finding-body">
+                                  <div className="finding-row">
+                                    <span className="finding-label">Assessment</span>
+                                    {text}
+                                  </div>
+                                </div>
+                              </div>
+                            ))
+                          ) : (
+                            <div style={{textAlign: 'center', padding: '48px', color: 'var(--text-muted)'}}>
+                              No structured findings available. See impression above.
+                            </div>
+                          )}
+                        </React.Fragment>
+                      );
+                    })()}
 
                     {/* ═══ CONFIDENCE SUMMARY (shared across all anatomy types) ═══ */}
                     {interpretation?.confidence_summary && Object.keys(interpretation.confidence_summary).length > 0 && (
