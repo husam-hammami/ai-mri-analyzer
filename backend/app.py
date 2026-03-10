@@ -336,6 +336,9 @@ async def _run_analysis_pipeline(
         job.progress_message = "Converting DICOM to viewable format..."
         all_seqs = [sag_t2, sag_t1, sag_tirm, sag_t1_cont, ax_t2, ax_vibe_pre, ax_vibe_post, ax_flair, ax_dwi, ax_swi]
         seqs_to_convert = [s for s in all_seqs if s]
+        # If no named sequences matched, convert all available sequences
+        if not seqs_to_convert:
+            seqs_to_convert = list(inventory.sequences.keys())
         engine.convert_sequences(seqs_to_convert)
 
         midline = None
@@ -420,6 +423,14 @@ async def _run_analysis_pipeline(
             ax_info = inventory.sequences[ax_t2]
             ax_mid = ax_info.num_slices // 2
             panel_seqs.append((ax_t2, "T2 Ax", ax_mid))
+
+        # Fallback: if no named sequences matched, use the first available sequence
+        if not panel_seqs and inventory.sequences:
+            for seq_name, seq_info in inventory.sequences.items():
+                mid_slice = seq_info.num_slices // 2
+                panel_seqs.append((seq_name, seq_info.series_description or seq_name, mid_slice))
+                if len(panel_seqs) >= 4:
+                    break
 
         if panel_seqs:
             panel = engine.create_multi_sequence_panel(panel_seqs[:4])  # Max 4 panels

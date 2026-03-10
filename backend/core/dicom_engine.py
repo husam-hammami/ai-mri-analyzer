@@ -180,10 +180,19 @@ class DICOMEngine:
         if not dcm_files:
             raise FileNotFoundError(f"No DICOM files found in {self.dicom_dir}")
 
-        # Group files by sequence
+        # Group files by sequence (use DICOM SeriesDescription, fallback to filename prefix)
         seq_groups: dict[str, list[str]] = {}
         for f in dcm_files:
-            seq_name = f.rsplit("_Img", 1)[0]
+            try:
+                ds_tmp = pydicom.dcmread(str(self.dicom_dir / f), stop_before_pixels=True)
+                seq_name = str(getattr(ds_tmp, "SeriesDescription", "")).strip()
+                if not seq_name:
+                    seq_name = str(getattr(ds_tmp, "ProtocolName", "")).strip()
+                if not seq_name:
+                    # Fallback: strip trailing digits and extension
+                    seq_name = f.rsplit("_Img", 1)[0] if "_Img" in f else f.rsplit("_", 1)[0] if "_" in f else "unknown_series"
+            except Exception:
+                seq_name = f.rsplit("_Img", 1)[0] if "_Img" in f else f.rsplit("_", 1)[0] if "_" in f else "unknown_series"
             seq_groups.setdefault(seq_name, []).append(f)
 
         # Extract demographics from first file
@@ -305,10 +314,11 @@ class DICOMEngine:
             out_dir.mkdir(parents=True, exist_ok=True)
 
             paths = []
-            for f in seq.file_list:
+            for idx, f in enumerate(seq.file_list):
                 ds = pydicom.dcmread(str(self.dicom_dir / f))
                 arr = self._normalize_dicom(ds)
-                img_num = int(f.rsplit("Img", 1)[1].replace(".dcm", ""))
+                # Use InstanceNumber from DICOM if available, fallback to enumeration index
+                img_num = int(getattr(ds, "InstanceNumber", idx + 1))
                 out_path = out_dir / f"slice_{img_num:03d}.png"
                 Image.fromarray(arr).save(str(out_path))
                 paths.append(str(out_path))
@@ -746,9 +756,15 @@ class DICOMEngine:
 
         for seq_name, label, slice_idx in seq_files:
             safe = seq_name.replace(" ", "_").replace("-", "_")
-            path = self.work_dir / "raw_png" / safe / f"slice_{slice_idx:03d}.png"
+            slice_dir = self.work_dir / "raw_png" / safe
+            path = slice_dir / f"slice_{slice_idx:03d}.png"
             if not path.exists():
-                continue
+                # Find nearest available slice (sorted by name, pick middle)
+                available = sorted(slice_dir.glob("slice_*.png")) if slice_dir.exists() else []
+                if available:
+                    path = available[len(available) // 2]
+                else:
+                    continue
             img = Image.open(str(path)).convert("RGB")
             new_w = int(img.width * target_h / img.height)
             img = img.resize((new_w, target_h), Image.LANCZOS)
