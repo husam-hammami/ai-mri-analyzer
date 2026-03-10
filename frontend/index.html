@@ -474,13 +474,10 @@
     }
 
     /* ── Capability Cards ── */
-    .capability-row {
+    .capability-grid {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
       gap: var(--s-3);
-      margin-bottom: var(--s-2);
-    }
-    .capability-row-2 {
       margin-bottom: var(--s-8);
     }
 
@@ -1912,10 +1909,8 @@
       .main-content { padding: var(--s-5) var(--s-4); }
       .top-bar { padding: 0 var(--s-4); }
       .mika-hero-logo { max-width: 320px; }
-      .capability-row { grid-template-columns: repeat(3, 1fr); }
-      .capability-row-2 { grid-template-columns: repeat(3, 1fr); }
       .trust-bar { flex-wrap: wrap; gap: var(--s-3); }
-      .upload-zone { padding: var(--s-10) var(--s-6); }
+      .upload-zone { padding: var(--s-8) var(--s-5); }
       .config-grid { grid-template-columns: 1fr; }
       .metrics-row { grid-template-columns: 1fr; }
       .report-header-top { flex-direction: column; gap: var(--s-4); }
@@ -1923,8 +1918,13 @@
       .progress-card { padding: var(--s-6); }
       .progress-pct { font-size: 36px; }
       .image-gallery { grid-template-columns: 1fr; }
-      .upload-meta { flex-direction: column; gap: var(--s-2); }
       .report-tabs { overflow-x: auto; }
+    }
+
+    @media (max-width: 600px) {
+      .capability-grid { grid-template-columns: repeat(2, 1fr); gap: var(--s-2); }
+      .upload-meta { flex-direction: column; gap: var(--s-1); }
+      .upload-meta-dot { display: none; }
     }
 
     @media (max-width: 480px) {
@@ -2311,8 +2311,8 @@
             </p>
           </div>
 
-          {/* Capability Cards */}
-          <div className="capability-row fade-in-up">
+          {/* Capability Cards — single grid: 5 cols desktop, 2 cols mobile */}
+          <div className="capability-grid fade-in-up">
             <div className="capability-card neuro">
               <div className="capability-icon">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
@@ -2322,7 +2322,7 @@
                 </svg>
               </div>
               <div className="capability-title">Brain</div>
-              <div className="capability-desc">Neuroimaging analysis</div>
+              <div className="capability-desc">Neuro analysis</div>
             </div>
             <div className="capability-card spine-cap">
               <div className="capability-icon">
@@ -2367,8 +2367,6 @@
               <div className="capability-title">Chest</div>
               <div className="capability-desc">Lungs & mediastinum</div>
             </div>
-          </div>
-          <div className="capability-row capability-row-2 fade-in-up" style={{marginTop: '8px'}}>
             <div className="capability-card abdomen-cap">
               <div className="capability-icon">
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
