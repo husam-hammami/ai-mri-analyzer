@@ -1,8 +1,8 @@
 """
-SpineAI — FastAPI Application Server
-======================================
-REST API for DICOM upload, analysis pipeline orchestration,
-and report delivery. Serves the React frontend as static files.
+MIKA — AI Medical MRI Analyzer — FastAPI Server
+==================================================
+Multi-anatomy AI-powered MRI analysis platform.
+Supports Neuro, MSK, and Spine studies.
 
 Architecture:
   POST /api/upload          → Upload DICOM files
@@ -40,9 +40,9 @@ from services.claude_interpreter import (
 # ── Configuration ──
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("spineai.api")
+logger = logging.getLogger("mika.api")
 
-DATA_DIR = Path(os.environ.get("SPINEAI_DATA_DIR", "./data"))
+DATA_DIR = Path(os.environ.get("MIKA_DATA_DIR", os.environ.get("SPINEAI_DATA_DIR", "./data")))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -50,9 +50,9 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 # ── Application ──
 
 app = FastAPI(
-    title="SpineAI",
-    description="AI-Assisted MRI Lumbar Spine Analysis powered by Claude Opus 4.6",
-    version="1.0.0",
+    title="MIKA — AI Medical MRI Analyzer",
+    description="MIKA: AI-powered MRI analysis for Neuro, MSK & Spine — powered by Claude Opus 4.6",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -110,6 +110,7 @@ class ReportResponse(BaseModel):
     interpretation: dict
     annotated_images: list
     calibration_status: str
+    detected_anatomy: str
 
 
 # ── API Endpoints ──
@@ -226,20 +227,39 @@ async def get_report(job_id: str):
 
     interpretation_dict = {}
     if job.interpretation:
+        interp = job.interpretation
         interpretation_dict = {
-            "findings_by_level": job.interpretation.findings_by_level,
-            "alignment": job.interpretation.alignment,
-            "conus": job.interpretation.conus,
-            "post_surgical_assessment": job.interpretation.post_surgical_assessment,
-            "incidentals": job.interpretation.incidentals,
-            "impression": job.interpretation.impression,
-            "confidence_summary": job.interpretation.confidence_summary,
-            "model_used": job.interpretation.model_used,
+            "anatomy_type": interp.anatomy_type,
+            # Spine
+            "findings_by_level": interp.findings_by_level,
+            "alignment": interp.alignment,
+            "conus": interp.conus,
+            "post_surgical_assessment": interp.post_surgical_assessment,
+            # Brain
+            "findings_by_region": interp.findings_by_region,
+            "enhancement_pattern": interp.enhancement_pattern,
+            "diffusion_findings": interp.diffusion_findings,
+            # MSK
+            "findings_by_structure": interp.findings_by_structure,
+            "joint_effusion": interp.joint_effusion,
+            "bone_marrow": interp.bone_marrow,
+            # Generic
+            "identified_anatomy": interp.identified_anatomy,
+            # Shared
+            "incidentals": interp.incidentals,
+            "impression": interp.impression,
+            "confidence_summary": interp.confidence_summary,
+            "model_used": interp.model_used,
             "tokens": {
-                "input": job.interpretation.input_tokens,
-                "output": job.interpretation.output_tokens,
+                "input": interp.input_tokens,
+                "output": interp.output_tokens,
             },
         }
+
+    detected_anatomy = (
+        job.measurements.get("detected_anatomy", "unknown")
+        if job.measurements else "unknown"
+    )
 
     return {
         "job_id": job_id,
@@ -251,6 +271,7 @@ async def get_report(job_id: str):
             job.measurements.get("calibration_status", "unknown")
             if job.measurements else "unknown"
         ),
+        "detected_anatomy": detected_anatomy,
     }
 
 
@@ -282,93 +303,133 @@ async def _run_analysis_pipeline(
         engine = DICOMEngine(job.dicom_dir, job.work_dir)
         job.engine = engine
 
-        # Phase 0: Inventory
+        # Phase 0: Inventory & Anatomy Detection
         job.status = "inventory"
         job.progress = 5
-        job.progress_message = "Cataloging DICOM files and extracting calibration..."
+        job.progress_message = "Cataloging DICOM files and detecting anatomy type..."
         inventory = engine.run_inventory()
+        detected_anatomy = inventory.detected_anatomy
+        logger.info(f"Detected anatomy: {detected_anatomy}")
+        job.progress_message = f"Detected {detected_anatomy.upper() if detected_anatomy != 'unknown' else 'GENERAL'} MRI study — identifying sequences..."
 
         # Identify key sequences by their series descriptions
-        sag_t2 = _find_sequence(inventory, ["t2_tse_sag", "t2_sag"], plane="sagittal", contrast=False)
-        sag_t1 = _find_sequence(inventory, ["t1_tse_sag"], plane="sagittal", contrast=False, exclude=["FS", "fs", "CONT"])
-        sag_tirm = _find_sequence(inventory, ["tirm", "stir"], plane="sagittal", contrast=False)
-        sag_t1_cont = _find_sequence(inventory, ["t1_tse_sag"], plane="sagittal", contrast=True)
-        ax_t2 = _find_sequence(inventory, ["t2_tse_tra", "t2_tra"], plane="axial", contrast=False)
+        sag_t2 = _find_sequence(inventory, ["t2_tse_sag", "t2_sag", "t2_sag", "sag_t2"], plane="sagittal", contrast=False)
+        sag_t1 = _find_sequence(inventory, ["t1_tse_sag", "t1_sag", "sag_t1"], plane="sagittal", contrast=False, exclude=["FS", "fs", "CONT"])
+        sag_tirm = _find_sequence(inventory, ["tirm", "stir", "flair_sag"], plane="sagittal", contrast=False)
+        sag_t1_cont = _find_sequence(inventory, ["t1_tse_sag", "t1_sag"], plane="sagittal", contrast=True)
+        ax_t2 = _find_sequence(inventory, ["t2_tse_tra", "t2_tra", "tra_t2", "ax_t2"], plane="axial", contrast=False)
         ax_vibe_pre = _find_sequence(inventory, ["vibe_fs_tra", "vibe_tra"], plane="axial", contrast=False)
         ax_vibe_post = _find_sequence(inventory, ["vibe_fs_tra", "vibe_tra"], plane="axial", contrast=True)
 
-        if not sag_t2:
-            raise RuntimeError("Could not identify sagittal T2 sequence — required for analysis")
+        # For brain studies, also look for brain-specific sequences
+        ax_flair = _find_sequence(inventory, ["flair", "dark_fluid"], plane="axial", contrast=False)
+        ax_dwi = _find_sequence(inventory, ["dwi", "diffusion", "ep2d_diff"], plane="axial", contrast=False)
+        ax_swi = _find_sequence(inventory, ["swi", "suscept"], plane="axial", contrast=False)
+
+        # Spine requires sagittal T2 for quantitative analysis
+        is_spine_quant = detected_anatomy == "spine" and sag_t2
+        if detected_anatomy == "spine" and not sag_t2:
+            logger.warning("Spine study detected but no sagittal T2 found — falling back to visual-only interpretation")
 
         # Phase 0B: Convert key sequences
         job.progress = 15
         job.progress_message = "Converting DICOM to viewable format..."
-        seqs_to_convert = [s for s in [sag_t2, sag_t1, sag_tirm, sag_t1_cont, ax_t2, ax_vibe_pre, ax_vibe_post] if s]
+        all_seqs = [sag_t2, sag_t1, sag_tirm, sag_t1_cont, ax_t2, ax_vibe_pre, ax_vibe_post, ax_flair, ax_dwi, ax_swi]
+        seqs_to_convert = [s for s in all_seqs if s]
         engine.convert_sequences(seqs_to_convert)
 
-        # Phase 1: Level identification
-        job.status = "levels"
-        job.progress = 25
-        job.progress_message = "Identifying vertebral levels (sacrum-up protocol)..."
+        midline = None
 
-        # Find the best midline slice (middle of the sagittal stack)
-        seq_info = inventory.sequences[sag_t2]
-        midline = seq_info.num_slices // 2
-        engine.identify_levels(sag_t2, midline)
+        # ── Spine-specific quantitative pipeline ──
+        if is_spine_quant:
+            # Phase 1: Level identification
+            job.status = "levels"
+            job.progress = 25
+            job.progress_message = "Identifying vertebral levels (sacrum-up protocol)..."
 
-        # Phase 2: Measurements
-        job.status = "measuring"
-        job.progress = 40
-        job.progress_message = "Running DICOM-calibrated measurements at all disc levels..."
-        engine.measure_all_discs(sag_t2, midline)
+            seq_info = inventory.sequences[sag_t2]
+            midline = seq_info.num_slices // 2
+            engine.identify_levels(sag_t2, midline)
 
-        # Endplate assessment
-        job.progress = 50
-        job.progress_message = "Assessing endplate signal across multiple sequences..."
-        seq_map = {}
-        if sag_t1:
-            seq_map["T1"] = sag_t1
-        if sag_t2:
-            seq_map["T2"] = sag_t2
-        if sag_tirm:
-            seq_map["TIRM"] = sag_tirm
-        if sag_t1_cont:
-            seq_map["T1_CONT"] = sag_t1_cont
+            # Phase 2: Measurements
+            job.status = "measuring"
+            job.progress = 40
+            job.progress_message = "Running DICOM-calibrated measurements at all disc levels..."
+            engine.measure_all_discs(sag_t2, midline)
 
-        if len(seq_map) >= 2:
-            engine.assess_endplates(seq_map, midline, levels=["L4-L5", "L5-S1", "L3-L4"])
+            # Endplate assessment
+            job.progress = 50
+            job.progress_message = "Assessing endplate signal across multiple sequences..."
+            seq_map = {}
+            if sag_t1:
+                seq_map["T1"] = sag_t1
+            if sag_t2:
+                seq_map["T2"] = sag_t2
+            if sag_tirm:
+                seq_map["TIRM"] = sag_tirm
+            if sag_t1_cont:
+                seq_map["T1_CONT"] = sag_t1_cont
 
-        # Phase 3: Annotations
+            if len(seq_map) >= 2:
+                engine.assess_endplates(seq_map, midline, levels=["L4-L5", "L5-S1", "L3-L4"])
+        else:
+            # Non-spine or visual-only: skip quantitative pipeline
+            job.status = "measuring"
+            job.progress = 40
+            job.progress_message = f"Preparing {detected_anatomy.upper()} study for visual interpretation..."
+
+        # Phase 3: Annotations (anatomy-aware)
         job.progress = 60
-        job.progress_message = "Creating annotated proof images with intensity verification..."
+        job.progress_message = "Creating annotated proof images..."
 
-        level_ref = engine.create_level_reference(sag_t2, midline)
-        job.annotated_images["level_reference"] = level_ref
+        if is_spine_quant and midline is not None:
+            # Spine: full annotation pipeline
+            level_ref = engine.create_level_reference(sag_t2, midline)
+            job.annotated_images["level_reference"] = level_ref
 
-        sag_annotated = engine.create_annotated_sagittal(sag_t2, midline)
-        job.annotated_images["sag_t2_annotated"] = sag_annotated
+            sag_annotated = engine.create_annotated_sagittal(sag_t2, midline)
+            job.annotated_images["sag_t2_annotated"] = sag_annotated
 
-        # Multi-sequence panel
+        # Multi-sequence panel (useful for all anatomy types)
         panel_seqs = []
-        if sag_t2:
-            panel_seqs.append((sag_t2, "T2", midline))
-        if sag_t1:
-            panel_seqs.append((sag_t1, "T1", midline))
-        if sag_tirm:
-            panel_seqs.append((sag_tirm, "TIRM", midline))
-        if sag_t1_cont:
-            panel_seqs.append((sag_t1_cont, "T1+C", midline))
+        if sag_t2 and midline is not None:
+            panel_seqs.append((sag_t2, "T2 Sag", midline))
+        if sag_t1 and midline is not None:
+            panel_seqs.append((sag_t1, "T1 Sag", midline))
+        if sag_tirm and midline is not None:
+            panel_seqs.append((sag_tirm, "TIRM Sag", midline))
+        if sag_t1_cont and midline is not None:
+            panel_seqs.append((sag_t1_cont, "T1+C Sag", midline))
+
+        # Brain-specific panels
+        if ax_flair:
+            flair_info = inventory.sequences[ax_flair]
+            flair_mid = flair_info.num_slices // 2
+            panel_seqs.append((ax_flair, "FLAIR Ax", flair_mid))
+        if ax_dwi:
+            dwi_info = inventory.sequences[ax_dwi]
+            dwi_mid = dwi_info.num_slices // 2
+            panel_seqs.append((ax_dwi, "DWI Ax", dwi_mid))
+        if ax_swi:
+            swi_info = inventory.sequences[ax_swi]
+            swi_mid = swi_info.num_slices // 2
+            panel_seqs.append((ax_swi, "SWI Ax", swi_mid))
+
+        # Axial T2 (useful for all)
+        if ax_t2:
+            ax_info = inventory.sequences[ax_t2]
+            ax_mid = ax_info.num_slices // 2
+            panel_seqs.append((ax_t2, "T2 Ax", ax_mid))
 
         if panel_seqs:
-            panel = engine.create_multi_sequence_panel(panel_seqs)
+            panel = engine.create_multi_sequence_panel(panel_seqs[:4])  # Max 4 panels
             if panel:
                 job.annotated_images["multi_sequence_panel"] = panel
 
-        # Contrast comparison
-        if ax_vibe_pre and ax_vibe_post:
+        # Contrast comparison (spine-specific)
+        if is_spine_quant and ax_vibe_pre and ax_vibe_post:
             seq_pre = inventory.sequences[ax_vibe_pre]
             num_slices = seq_pre.num_slices
-            # Sample slices at ~60% and ~35% through the stack for L4-L5 and L5-S1
             l45_slice = int(num_slices * 0.55)
             l5s1_slice = int(num_slices * 0.35)
 
@@ -390,7 +451,8 @@ async def _run_analysis_pipeline(
         # Phase 4: Claude interpretation
         job.status = "interpreting"
         job.progress = 75
-        job.progress_message = "Claude Opus 4.6 is analyzing findings..."
+        anatomy_label = {"spine": "Spine", "brain": "Neuroimaging", "msk": "Musculoskeletal"}.get(detected_anatomy, "MRI")
+        job.progress_message = f"Claude Opus 4.6 is analyzing {anatomy_label} findings..."
 
         interpreter = ClaudeInterpreter(api_key=api_key)
 
@@ -399,6 +461,10 @@ async def _run_analysis_pipeline(
         for img_name in ["sag_t2_annotated", "level_reference", "multi_sequence_panel"]:
             if img_name in job.annotated_images:
                 key_images[img_name] = engine.get_image_base64(job.annotated_images[img_name])
+        # Also include contrast comparisons if available
+        for img_name in ["contrast_L4L5", "contrast_L5S1"]:
+            if img_name in job.annotated_images and len(key_images) < 4:
+                key_images[img_name] = engine.get_image_base64(job.annotated_images[img_name])
 
         request = InterpretationRequest(
             measurements_json=job.measurements,
@@ -406,6 +472,7 @@ async def _run_analysis_pipeline(
             clinical_history=clinical_history,
             surgical_notes=surgical_notes,
             prior_reports=prior_reports,
+            anatomy_type=detected_anatomy,
         )
 
         job.progress = 85
@@ -458,13 +525,18 @@ def _find_sequence(
 # ── Serve Frontend ──
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+ASSETS_DIR = FRONTEND_DIR / "assets"
+
+# Serve static assets (logo, images, etc.)
+if ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_frontend():
     index_path = FRONTEND_DIR / "index.html"
     if index_path.exists():
-        return HTMLResponse(content=index_path.read_text())
-    return HTMLResponse(content="<h1>SpineAI — Frontend not found</h1>")
+        return HTMLResponse(content=index_path.read_text(encoding="utf-8"))
+    return HTMLResponse(content="<h1>MIKA — Frontend not found</h1>")
 
 
 if __name__ == "__main__":

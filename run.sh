@@ -1,12 +1,12 @@
 #!/bin/bash
 # ══════════════════════════════════════════
-# SpineAI — Launch Script
+# MIKA — AI Medical MRI Analyzer
 # ══════════════════════════════════════════
 
 set -e
 
 echo "╔══════════════════════════════════════╗"
-echo "║  SpineAI — MRI Spine Analysis        ║"
+echo "║  MIKA — AI Medical MRI Analyzer      ║"
 echo "║  Powered by Claude Opus 4.6          ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
@@ -28,7 +28,7 @@ fi
 
 # Launch server
 echo ""
-echo "Starting SpineAI server..."
+echo "Starting MIKA server..."
 echo "Open http://localhost:8000 in your browser"
 echo ""
 

@@ -1,5 +1,5 @@
 """
-SpineAI — DICOM Processing Engine
+MIKA — DICOM Processing Engine
 ===================================
 Handles DICOM ingestion, calibration, conversion, and quantitative measurements.
 All measurements are DICOM-calibrated using PixelSpacing metadata.
@@ -30,7 +30,7 @@ try:
 except ImportError:
     PYDICOM_AVAILABLE = False
 
-logger = logging.getLogger("spineai.dicom")
+logger = logging.getLogger("mika.dicom")
 
 
 # ──────────────────────────────────────────────
@@ -80,6 +80,8 @@ class PatientDemographics:
     institution: str = ""
     referring_physician: str = ""
     field_strength: float = 0.0
+    body_part_examined: str = ""  # DICOM tag (0018,0015)
+    detected_anatomy: str = ""   # spine, brain, msk, unknown
 
 
 @dataclass
@@ -130,6 +132,7 @@ class StudyInventory:
     has_contrast: bool = False
     total_files: int = 0
     study_date: str = ""
+    detected_anatomy: str = ""  # spine, brain, msk, unknown
 
 
 # ──────────────────────────────────────────────
@@ -185,6 +188,10 @@ class DICOMEngine:
 
         # Extract demographics from first file
         first_ds = pydicom.dcmread(str(self.dicom_dir / dcm_files[0]))
+        body_part_raw = str(getattr(first_ds, "BodyPartExamined", "")).strip()
+        study_desc_raw = str(getattr(first_ds, "StudyDescription", "")).strip()
+        detected_anatomy = self._detect_anatomy(body_part_raw, study_desc_raw, dcm_files)
+
         demographics = PatientDemographics(
             patient_name=str(getattr(first_ds, "PatientName", "")),
             patient_id=str(getattr(first_ds, "PatientID", "")),
@@ -192,10 +199,12 @@ class DICOMEngine:
             sex=str(getattr(first_ds, "PatientSex", "")),
             age=str(getattr(first_ds, "PatientAge", "")),
             study_date=str(getattr(first_ds, "StudyDate", "")),
-            study_description=str(getattr(first_ds, "StudyDescription", "")),
+            study_description=study_desc_raw,
             institution=str(getattr(first_ds, "InstitutionName", "")),
             referring_physician=str(getattr(first_ds, "ReferringPhysicianName", "")),
             field_strength=float(getattr(first_ds, "MagneticFieldStrength", 0)),
+            body_part_examined=body_part_raw,
+            detected_anatomy=detected_anatomy,
         )
 
         # Process each sequence
@@ -266,12 +275,14 @@ class DICOMEngine:
             has_contrast=has_any_contrast,
             total_files=len(dcm_files),
             study_date=demographics.study_date,
+            detected_anatomy=detected_anatomy,
         )
 
         logger.info(
             f"Inventory complete: {len(dcm_files)} files, "
             f"{len(sequences)} sequences, "
-            f"calibrated={all_calibrated}, contrast={has_any_contrast}"
+            f"calibrated={all_calibrated}, contrast={has_any_contrast}, "
+            f"anatomy={detected_anatomy}"
         )
         return self.inventory
 
@@ -484,8 +495,14 @@ class DICOMEngine:
 
                 m.canal_ap_mm = (right - left) * ps
 
-            # Confidence tier
-            m.confidence_tier = "A" if ps and m.desiccation_grade != "normal" else "B"
+            # Confidence tier — aligned with prompt rules:
+            #   Calibrated + abnormal  → Tier A (DICOM-verified measurement)
+            #   Calibrated + normal    → Tier B (confirmed but no pathology)
+            #   Uncalibrated           → Tier C max (per prompt rule #3)
+            if ps:
+                m.confidence_tier = "A" if m.desiccation_grade != "normal" else "B"
+            else:
+                m.confidence_tier = "C"
 
             measurements.append(m)
 
@@ -773,6 +790,7 @@ class DICOMEngine:
         """Export all measurements as a JSON-serializable dict."""
         return {
             "demographics": asdict(self.inventory.demographics) if self.inventory else {},
+            "detected_anatomy": self.inventory.detected_anatomy if self.inventory else "unknown",
             "calibration_status": "DICOM-calibrated" if (
                 self.inventory and self.inventory.is_calibrated
             ) else "UNCALIBRATED",
@@ -783,6 +801,53 @@ class DICOMEngine:
         }
 
     # ── Private Helpers ──
+
+    @staticmethod
+    def _detect_anatomy(body_part: str, study_desc: str, dcm_files: list[str]) -> str:
+        """
+        Detect anatomy type from DICOM metadata using a multi-signal approach.
+
+        Priority order:
+          1. BodyPartExamined DICOM tag (0018,0015) — most reliable
+          2. StudyDescription free text — second best
+          3. File naming conventions — fallback
+
+        Returns: 'spine', 'brain', 'msk', or 'unknown'
+        """
+        combined = f"{body_part} {study_desc} {' '.join(dcm_files)}".upper()
+
+        # ── SPINE detection ──
+        spine_signals = [
+            "SPINE", "LUMBAR", "LSPINE", "CSPINE", "TSPINE",
+            "CERVICAL", "THORACIC", "SACRAL", "SACRUM",
+            "LWS", "HWS", "BWS",  # German: Lendenwirbelsäule, Halswirbelsäule, Brustwirbelsäule
+            "VERTEBRA", "DISC", "SPINAL",
+        ]
+        if any(s in combined for s in spine_signals):
+            return "spine"
+
+        # ── BRAIN detection ──
+        brain_signals = [
+            "BRAIN", "HEAD", "NEURO", "CRANIAL", "CEREBR",
+            "FLAIR", "SWI", "DWI", "DIFFUSION",
+            "SKULL", "INTRACRANIAL", "PITUITARY",
+            "KOPF", "SCHÄDEL",  # German
+        ]
+        if any(s in combined for s in brain_signals):
+            return "brain"
+
+        # ── MSK detection ──
+        msk_signals = [
+            "KNEE", "SHOULDER", "HIP", "ANKLE", "WRIST",
+            "ELBOW", "FOOT", "HAND", "PELVIS",
+            "EXTREMITY", "JOINT", "MUSCULOSKELETAL",
+            "MENISCUS", "ACL", "ROTATOR", "LABRUM",
+            "KNIE", "SCHULTER", "HÜFTE",  # German
+        ]
+        if any(s in combined for s in msk_signals):
+            return "msk"
+
+        return "unknown"
 
     @staticmethod
     def _normalize_dicom(ds) -> np.ndarray:

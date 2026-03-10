@@ -1,6 +1,6 @@
-# SpineAI — MRI Lumbar Spine Analyzer
+# MIKA — AI Medical MRI Analyzer
 
-AI-assisted MRI lumbar spine analysis powered by **Claude Opus 4.6**. Upload DICOM files, get a clinical-grade radiology report with annotated proof images, DICOM-calibrated measurements, and confidence-tiered findings.
+AI-powered MRI analysis for **Neuro**, **Musculoskeletal**, and **Spine** studies, powered by **Claude Opus 4.6**. Upload DICOM files, get a clinical-grade radiology report with annotated proof images, DICOM-calibrated measurements, and confidence-tiered findings.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green)
@@ -9,27 +9,28 @@ AI-assisted MRI lumbar spine analysis powered by **Claude Opus 4.6**. Upload DIC
 
 ## How It Works
 
-SpineAI splits the analysis into two layers:
+MIKA splits the analysis into two layers:
 
 **Layer 1 — Computational Engine** (deterministic, no AI):
 - DICOM ingestion and PixelSpacing calibration
-- Sacrum-up vertebral level identification
-- Quantitative measurements: disc T2 signal ratios, canal CSF intensity, AP diameters
+- Automatic anatomy detection (Spine, Brain, MSK) from DICOM metadata
+- Quantitative measurements: disc T2 signal ratios, canal CSF intensity, AP diameters (spine)
 - Multi-sequence endplate analysis for Modic classification
 - Annotated proof image generation with pixel intensity verification
 
 **Layer 2 — Clinical Interpretation** (Claude Opus 4.6 via Anthropic API):
 - Receives pre-computed measurements + key MRI images
+- Anatomy-specific prompt system (Neuroradiology, MSK Radiology, Spine)
 - Produces structured clinical findings with confidence tiers (A/B/C/D)
-- Generates impression, post-surgical assessment, and incidental findings
+- Generates impression, incidental findings, and anatomy-specific assessments
 - Every finding is traceable to a specific image and measurement
 
 ## Quick Start
 
 ```bash
 # Clone the repo
-git clone https://github.com/husam-hammami/spineai-mri-analyzer.git
-cd spineai-mri-analyzer
+git clone https://github.com/husam-hammami/ai-mri-analyzer.git
+cd ai-mri-analyzer
 
 # Install dependencies
 pip install -r requirements.txt
@@ -51,12 +52,12 @@ You'll need an [Anthropic API key](https://console.anthropic.com/) — enter it 
 ## Architecture
 
 ```
-spineai-mri-analyzer/
+ai-mri-analyzer/
 ├── backend/
 │   ├── core/
 │   │   └── dicom_engine.py      # DICOM processing, calibration, measurements
 │   ├── services/
-│   │   └── claude_interpreter.py # Claude Opus 4.6 API integration
+│   │   └── claude_interpreter.py # Claude Opus 4.6 multi-anatomy interpreter
 │   ├── api/
 │   ├── models/
 │   └── app.py                   # FastAPI server & pipeline orchestration
@@ -66,6 +67,15 @@ spineai-mri-analyzer/
 ├── run.sh
 └── README.md
 ```
+
+## Supported Anatomy Types
+
+| Anatomy | Detection | Quantitative | Prompt Template |
+|---------|-----------|-------------|-----------------|
+| **Spine** | DICOM tags + keywords | Disc desiccation, canal AP, CSF reduction | Neuroradiology spine specialist |
+| **Brain** | DICOM tags + keywords | Visual-only (Tier B max) | Neuroradiology brain specialist |
+| **MSK** | DICOM tags + keywords | Visual-only (Tier B max) | MSK radiology specialist |
+| **Unknown** | Fallback | Visual-only (Tier B max) | General radiology |
 
 ## API Endpoints
 
