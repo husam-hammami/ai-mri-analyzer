@@ -7,7 +7,10 @@ perineural spread detection, salivary gland characterization, temporal bone
 evaluation, orbital assessment, and cranial nerve mapping.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 HEAD_NECK_MASTER_PROMPT = BASE_RULES + """
 ## HEAD & NECK MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

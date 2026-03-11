@@ -12,7 +12,10 @@ assessment, and posterior mediastinal lesions. It is INFERIOR to CT for
 small pulmonary nodule detection and fine parenchymal detail.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 CHEST_MASTER_PROMPT = BASE_RULES + """
 ## CHEST MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

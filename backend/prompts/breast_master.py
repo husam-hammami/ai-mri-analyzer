@@ -7,7 +7,10 @@ kinetic curve analysis, implant assessment, and structured reporting
 per ACR BI-RADS 5th Edition MRI guidelines.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 BREAST_MASTER_PROMPT = BASE_RULES + """
 ## BREAST MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

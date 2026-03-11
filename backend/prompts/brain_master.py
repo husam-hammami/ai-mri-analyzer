@@ -6,7 +6,10 @@ Includes Fazekas scoring, tumor grading approach, stroke assessment,
 demyelination criteria, and normal measurement references.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 BRAIN_MASTER_PROMPT = BASE_RULES + """
 ## BRAIN MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

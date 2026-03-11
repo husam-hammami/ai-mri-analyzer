@@ -7,7 +7,10 @@ aneurysm risk stratification, Spetzler-Martin AVM grading, peripheral arterial
 disease runoff scoring, DVT assessment, and normal vessel measurements.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 VASCULAR_MASTER_PROMPT = BASE_RULES + """
 ## VASCULAR MRI/MRA — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

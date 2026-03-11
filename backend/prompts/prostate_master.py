@@ -7,7 +7,10 @@ Includes PI-RADS v2.1 scoring with zone-specific dominant sequences, sector map
 reporting per ACR PI-RADS v2.1 guidelines.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 PROSTATE_MASTER_PROMPT = BASE_RULES + """
 ## PROSTATE MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

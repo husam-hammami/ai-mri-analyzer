@@ -41,6 +41,8 @@ from services.claude_interpreter import (
     InterpretationRequest,
     ClinicalInterpretation,
 )
+from services.batch_sender import BatchSender
+from services.verification import VerificationPass
 
 # ── Configuration ──
 
@@ -561,35 +563,127 @@ async def _run_analysis_pipeline(
 
         interpreter = ClaudeInterpreter(api_key=api_key)
 
-        # Prepare key images for Claude (up to 4 to manage token cost)
-        key_images = {}
-        for img_name in ["sag_t2_annotated", "level_reference", "multi_sequence_panel"]:
-            if img_name in job.annotated_images:
-                key_images[img_name] = engine.get_image_base64(job.annotated_images[img_name])
-        # Also include contrast comparisons if available
-        for img_name in ["contrast_L4L5", "contrast_L5S1"]:
-            if img_name in job.annotated_images and len(key_images) < 4:
-                key_images[img_name] = engine.get_image_base64(job.annotated_images[img_name])
+        # ── BatchSender: Send ALL images to Claude (replaces 4-image bottleneck) ──
+        batch_sender = BatchSender(
+            work_dir=Path(job.work_dir),
+            anatomy_type=detected_anatomy,
+        )
+        image_content_blocks, image_count = batch_sender.build_message_content()
+        logger.info(f"BatchSender: {image_count} images prepared for Claude")
+
+        # Also include annotated proof images (level reference, etc.)
+        annotated_blocks = []
+        for img_name, img_path in job.annotated_images.items():
+            try:
+                b64 = engine.get_image_base64(img_path)
+                annotated_blocks.append({
+                    "type": "text",
+                    "text": f"\n=== ANNOTATED: {img_name} ===\n",
+                })
+                annotated_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": b64,
+                    },
+                })
+            except Exception as e:
+                logger.warning(f"Could not encode annotated image {img_name}: {e}")
+
+        # Combine: raw study images + annotated proof images
+        all_image_blocks = image_content_blocks + annotated_blocks
 
         request = InterpretationRequest(
             measurements_json=job.measurements,
-            key_images_b64=key_images,
+            image_content_blocks=all_image_blocks,
             clinical_history=clinical_history,
             surgical_notes=surgical_notes,
             prior_reports=prior_reports,
             anatomy_type=detected_anatomy,
         )
 
-        job.progress = 85
-        job.progress_message = "Receiving clinical interpretation from Claude Opus 4.6..."
+        job.progress = 80
+        job.progress_message = f"Claude Opus 4.6 analyzing {image_count} images..."
         interpretation = interpreter.interpret(request)
+        logger.info(
+            f"First pass complete: {interpretation.input_tokens} input, "
+            f"{interpretation.output_tokens} output tokens"
+        )
+
+        # ── VerificationPass: Senior attending self-review ──
+        job.progress = 90
+        job.progress_message = "Senior attending verification pass..."
+
+        try:
+            verifier = VerificationPass(api_key=api_key)
+
+            # Build initial report JSON for verification
+            initial_report = {}
+            if interpretation.findings_by_level:
+                initial_report["findings_by_level"] = interpretation.findings_by_level
+            if interpretation.findings_by_region:
+                initial_report["findings_by_region"] = interpretation.findings_by_region
+            if interpretation.findings_by_structure:
+                initial_report["findings_by_structure"] = interpretation.findings_by_structure
+            if interpretation.findings_by_organ:
+                initial_report["findings_by_organ"] = interpretation.findings_by_organ
+            if interpretation.findings_by_vessel:
+                initial_report["findings_by_vessel"] = interpretation.findings_by_vessel
+            if interpretation.findings_by_zone:
+                initial_report["findings_by_zone"] = interpretation.findings_by_zone
+            initial_report["impression"] = interpretation.impression
+            initial_report["confidence_summary"] = interpretation.confidence_summary
+            initial_report["incidentals"] = interpretation.incidentals
+
+            verified = verifier.verify(
+                initial_report=initial_report,
+                image_content_blocks=all_image_blocks,
+                measurements_json=job.measurements,
+                anatomy_type=detected_anatomy,
+            )
+
+            # Apply verified findings back to interpretation
+            if verified.verified_findings:
+                vf = verified.verified_findings
+                if "findings_by_level" in vf:
+                    interpretation.findings_by_level = vf["findings_by_level"]
+                if "findings_by_region" in vf:
+                    interpretation.findings_by_region = vf["findings_by_region"]
+                if "findings_by_structure" in vf:
+                    interpretation.findings_by_structure = vf["findings_by_structure"]
+                if "findings_by_organ" in vf:
+                    interpretation.findings_by_organ = vf["findings_by_organ"]
+                if "findings_by_vessel" in vf:
+                    interpretation.findings_by_vessel = vf["findings_by_vessel"]
+                if "findings_by_zone" in vf:
+                    interpretation.findings_by_zone = vf["findings_by_zone"]
+                if "impression" in vf:
+                    interpretation.impression = vf["impression"]
+                if "confidence_summary" in vf:
+                    interpretation.confidence_summary = vf["confidence_summary"]
+                if "incidentals" in vf:
+                    interpretation.incidentals = vf["incidentals"]
+
+            # Add verification metadata to tokens
+            interpretation.input_tokens += verified.input_tokens
+            interpretation.output_tokens += verified.output_tokens
+
+            logger.info(
+                f"Verification complete: quality_score={verified.quality_score}, "
+                f"corrections={len(verified.corrections)}, "
+                f"missed={len(verified.missed_findings)}"
+            )
+        except Exception as e:
+            logger.warning(f"Verification pass failed (using unverified report): {e}")
+
         job.interpretation = interpretation
 
         # Complete
         job.status = "complete"
         job.progress = 100
         job.progress_message = "Analysis complete"
-        logger.info(f"Job {job.job_id} complete")
+        logger.info(f"Job {job.job_id} complete — {image_count} images analyzed with verification")
 
     except Exception as e:
         logger.exception(f"Analysis failed for job {job.job_id}")

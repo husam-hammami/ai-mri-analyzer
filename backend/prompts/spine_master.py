@@ -6,7 +6,10 @@ Includes Pfirrmann grading, Modic classification, stenosis grading, herniation
 taxonomy, and normal measurement references.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 SPINE_MASTER_PROMPT = BASE_RULES + """
 ## SPINE MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

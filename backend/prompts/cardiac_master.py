@@ -8,7 +8,10 @@ cardiomyopathy pattern recognition, valvular assessment, pericardial
 disease grading, iron overload thresholds, and congenital anomaly screening.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 CARDIAC_MASTER_PROMPT = BASE_RULES + """
 ## CARDIAC MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

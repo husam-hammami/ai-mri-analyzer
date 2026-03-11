@@ -11,7 +11,10 @@ including solid organs, hollow viscera, peritoneum, retroperitoneum,
 vasculature, lymph nodes, and musculoskeletal structures in FOV.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 ABDOMEN_MASTER_PROMPT = BASE_RULES + """
 ## ABDOMEN MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

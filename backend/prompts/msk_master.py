@@ -8,7 +8,10 @@ tear classification (Ellman), bone marrow edema patterns, MOAKS/WORMS scoring,
 and normal measurement references for all major joints.
 """
 
-from backend.prompts.base_prompt import BASE_RULES
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
 
 MSK_MASTER_PROMPT = BASE_RULES + """
 ## MSK MRI — FELLOWSHIP-LEVEL SYSTEMATIC SEARCH PROTOCOL

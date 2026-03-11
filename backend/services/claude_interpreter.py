@@ -21,7 +21,10 @@ import logging
 from typing import Optional
 from dataclasses import dataclass, field
 
-from backend.prompts import get_master_prompt
+try:
+    from backend.prompts import get_master_prompt
+except ImportError:
+    from prompts import get_master_prompt
 
 logger = logging.getLogger("mika.claude")
 
@@ -40,7 +43,8 @@ def get_system_prompt(anatomy_type: str) -> str:
 class InterpretationRequest:
     """Package of data sent to Claude for interpretation."""
     measurements_json: dict
-    key_images_b64: dict = field(default_factory=dict)  # label -> base64 PNG
+    key_images_b64: dict = field(default_factory=dict)  # label -> base64 PNG (legacy 4-image path)
+    image_content_blocks: list = field(default_factory=list)  # NEW: from BatchSender (all images)
     prior_reports: Optional[str] = None
     surgical_notes: Optional[str] = None
     clinical_history: Optional[str] = None
@@ -148,20 +152,26 @@ class ClaudeInterpreter:
             ),
         })
 
-        # 2. Key images (vision)
-        for label, b64_data in request.key_images_b64.items():
-            content_blocks.append({
-                "type": "text",
-                "text": f"\n### Image: {label}\n",
-            })
-            content_blocks.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": b64_data,
-                },
-            })
+        # 2. Images — use BatchSender content blocks if available, else legacy 4-image dict
+        if request.image_content_blocks:
+            # NEW PATH: All images from BatchSender (20-80 images)
+            content_blocks.extend(request.image_content_blocks)
+            logger.info(f"  Using BatchSender: {len(request.image_content_blocks)} content blocks")
+        else:
+            # LEGACY PATH: 4-image dict (backward compatible)
+            for label, b64_data in request.key_images_b64.items():
+                content_blocks.append({
+                    "type": "text",
+                    "text": f"\n### Image: {label}\n",
+                })
+                content_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": b64_data,
+                    },
+                })
 
         # 3. Clinical context (if provided)
         if request.clinical_history:
@@ -203,13 +213,17 @@ class ClaudeInterpreter:
         })
 
         # Make the API call
+        n_images = len(request.image_content_blocks) if request.image_content_blocks else len(request.key_images_b64)
         logger.info(f"Sending {anatomy} interpretation request to {self.model}")
-        logger.info(f"  Images: {list(request.key_images_b64.keys())}")
+        logger.info(f"  Image blocks: {n_images}")
         logger.info(f"  Measurements keys: {list(request.measurements_json.keys())}")
+
+        # More images = more findings = need more output tokens
+        max_output_tokens = 16000 if request.image_content_blocks else 8000
 
         response = self.client.messages.create(
             model=self.model,
-            max_tokens=8000,
+            max_tokens=max_output_tokens,
             system=system_prompt,
             messages=[{
                 "role": "user",

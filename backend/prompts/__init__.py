@@ -14,17 +14,30 @@ Usage:
     prompt = get_master_prompt("spine")
 """
 
-from backend.prompts.base_prompt import BASE_RULES
-from backend.prompts.spine_master import SPINE_MASTER_PROMPT
-from backend.prompts.brain_master import BRAIN_MASTER_PROMPT
-from backend.prompts.msk_master import MSK_MASTER_PROMPT
-from backend.prompts.cardiac_master import CARDIAC_MASTER_PROMPT
-from backend.prompts.chest_master import CHEST_MASTER_PROMPT
-from backend.prompts.abdomen_master import ABDOMEN_MASTER_PROMPT
-from backend.prompts.breast_master import BREAST_MASTER_PROMPT
-from backend.prompts.vascular_master import VASCULAR_MASTER_PROMPT
-from backend.prompts.head_neck_master import HEAD_NECK_MASTER_PROMPT
-from backend.prompts.prostate_master import PROSTATE_MASTER_PROMPT
+try:
+    from backend.prompts.base_prompt import BASE_RULES
+    from backend.prompts.spine_master import SPINE_MASTER_PROMPT
+    from backend.prompts.brain_master import BRAIN_MASTER_PROMPT
+    from backend.prompts.msk_master import MSK_MASTER_PROMPT
+    from backend.prompts.cardiac_master import CARDIAC_MASTER_PROMPT
+    from backend.prompts.chest_master import CHEST_MASTER_PROMPT
+    from backend.prompts.abdomen_master import ABDOMEN_MASTER_PROMPT
+    from backend.prompts.breast_master import BREAST_MASTER_PROMPT
+    from backend.prompts.vascular_master import VASCULAR_MASTER_PROMPT
+    from backend.prompts.head_neck_master import HEAD_NECK_MASTER_PROMPT
+    from backend.prompts.prostate_master import PROSTATE_MASTER_PROMPT
+except ImportError:
+    from prompts.base_prompt import BASE_RULES
+    from prompts.spine_master import SPINE_MASTER_PROMPT
+    from prompts.brain_master import BRAIN_MASTER_PROMPT
+    from prompts.msk_master import MSK_MASTER_PROMPT
+    from prompts.cardiac_master import CARDIAC_MASTER_PROMPT
+    from prompts.chest_master import CHEST_MASTER_PROMPT
+    from prompts.abdomen_master import ABDOMEN_MASTER_PROMPT
+    from prompts.breast_master import BREAST_MASTER_PROMPT
+    from prompts.vascular_master import VASCULAR_MASTER_PROMPT
+    from prompts.head_neck_master import HEAD_NECK_MASTER_PROMPT
+    from prompts.prostate_master import PROSTATE_MASTER_PROMPT
 
 PROMPT_MAP = {
     "spine": SPINE_MASTER_PROMPT,
