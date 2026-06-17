@@ -1,0 +1,582 @@
+"""
+AgentRunner — run the mri-spine-analysis SKILL via Claude Code (headless), the same way
+cowork produced the definitive report.
+=============================================================================
+Instead of reimplementing the skill as a fixed Python pipeline (the "lite" mode in
+app.py), this drives the Claude Code CLI in print/headless mode with tools (bash, python,
+read, write). The agent loads the skill, does its own slice-by-slice analysis, places and
+verifies annotations, performs multi-study longitudinal comparison, and authors a PDF
+report — i.e. it *is* the skill, not an approximation of it.
+
+Auth: by default this uses Claude Code's stored login (your Claude subscription). The
+child process has ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN stripped so the subscription
+OAuth login is used — the app "only needs the subscription." Set MIKA_AGENT_USE_API_KEY=1
+to instead let an env API key through (metered billing).
+"""
+
+import os
+import json
+import shutil
+import logging
+import subprocess
+from pathlib import Path
+from typing import Optional
+from dataclasses import dataclass, field
+
+logger = logging.getLogger("mika.agent")
+
+# Vendored skill shipped with the app (self-contained — no dependency on a plugin session).
+SKILL_PATH = Path(__file__).resolve().parent.parent / "skills" / "mri-spine-analysis" / "SKILL.md"
+
+DEFAULT_MODEL = os.environ.get("MIKA_AGENT_MODEL", "opus")
+DEFAULT_PERMISSION_MODE = os.environ.get("MIKA_AGENT_PERMISSION_MODE", "bypassPermissions")
+DEFAULT_TIMEOUT_S = int(os.environ.get("MIKA_AGENT_TIMEOUT_S", "3600"))  # 60 min (max-effort runs are slow)
+DEFAULT_EFFORT = os.environ.get("MIKA_AGENT_EFFORT", "high")  # low|medium|high|xhigh|max
+
+ANATOMY_LABELS = {
+    "spine": "spine", "brain": "brain / neuro", "msk": "musculoskeletal", "cardiac": "cardiac",
+    "chest": "chest", "abdomen": "abdomen / pelvis", "breast": "breast", "vascular": "vascular / MRA",
+    "head_neck": "head & neck", "prostate": "prostate", "unknown": "medical imaging",
+}
+
+# DICOM Modality tag (0008,0060) -> plain label. Used so a CT / X-ray / ultrasound study is
+# read with the right physics instead of being forced through MRI sequence logic (T1/T2/STIR).
+MODALITY_LABELS = {
+    "MR": "MRI", "CT": "CT", "CR": "X-ray (radiograph)", "DX": "X-ray (radiograph)",
+    "RF": "fluoroscopy", "XA": "angiography (X-ray)", "MG": "mammography (X-ray)",
+    "US": "ultrasound", "PT": "PET", "NM": "nuclear medicine", "OT": "image",
+}
+# How to read each non-MR modality (anti-hallucination: do not invent MR signal on non-MR data).
+MODALITY_READING = {
+    "CT": ("Base findings on CT attenuation (Hounsfield units), reviewing bone and soft-tissue "
+           "windows; describe density (hypo-/iso-/hyperdense), calcification, fat, fluid, gas, and "
+           "contrast enhancement if a contrast phase is present."),
+    "CR": ("Base findings on radiographic density: alignment, cortical integrity, lucency vs "
+           "sclerosis, joint spaces, soft-tissue gas/swelling. This is a 2D projection — depth and "
+           "soft-tissue detail are limited."),
+    "DX": ("Base findings on radiographic density: alignment, cortical integrity, lucency vs "
+           "sclerosis, joint spaces, soft-tissue gas/swelling. This is a 2D projection — depth and "
+           "soft-tissue detail are limited."),
+    "MG": ("Base findings on mammographic density: masses, asymmetries, architectural distortion, "
+           "and calcification morphology/distribution; report a BI-RADS category."),
+    "XA": ("Base findings on vascular opacification: stenosis, occlusion, aneurysm, flow."),
+    "US": ("Base findings on echogenicity (an-/hypo-/hyperechoic), through-transmission, and "
+           "Doppler flow if present."),
+    "PT": ("Base findings on tracer uptake (e.g. SUV) and its anatomical correlate."),
+    "NM": ("Base findings on radiotracer distribution and focal uptake."),
+    "OT": ("The source was a plain image file with no DICOM modality tag. FIRST identify the "
+           "actual modality from the image itself (MRI, CT, radiograph/X-ray, ultrasound, etc.), "
+           "then read and report using that modality's features. Do not assume MRI."),
+}
+
+
+def detect_study_modality(study_dir) -> str:
+    """Read the DICOM Modality tag (0008,0060) from a few files so routing/prompts match the
+    actual modality. Returns a code like 'MR', 'CT', 'CR', 'DX', 'US', ... or 'MR' as the
+    default (this app is MRI-first; converted NIfTI/NRRD/image imports carry no real modality)."""
+    study = Path(study_dir)
+    try:
+        import pydicom
+    except Exception:
+        return "MR"
+    counts: dict[str, int] = {}
+    try:
+        for f in list(study.rglob("*.dcm"))[:12]:
+            try:
+                ds = pydicom.dcmread(str(f), stop_before_pixels=True, force=True)
+                mod = str(getattr(ds, "Modality", "")).strip().upper()
+                if mod:
+                    counts[mod] = counts.get(mod, 0) + 1
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if not counts:
+        return "MR"
+    # Most common real modality wins.
+    return max(counts.items(), key=lambda kv: kv[1])[0]
+
+
+def trigger_claude_login(claude_bin: Optional[str] = None, console: bool = False) -> dict:
+    """
+    Start the Claude sign-in flow: launches `claude auth login`, which opens the user's
+    browser to sign in to their own Claude account. Designed for the desktop/EXE build —
+    the "Connect with Claude" button calls this; the browser opens, the patient signs in,
+    and the connection becomes ready. Non-blocking: returns immediately; the UI then polls
+    /api/agent/availability until `connected` flips true.
+    """
+    binp = claude_bin or os.environ.get("MIKA_CLAUDE_BIN") or shutil.which("claude") or "claude"
+    resolved = shutil.which(binp) or (binp if os.path.exists(binp) else None)
+    if not resolved:
+        return {"started": False,
+                "error": "Claude is not installed on this computer. The MIKA app should "
+                         "bundle it; if you are running from source, install Claude Code first."}
+    env = dict(os.environ)
+    env.pop("ANTHROPIC_API_KEY", None)   # force the interactive subscription login
+    env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    args = [resolved, "auth", "login", "--console" if console else "--claudeai"]
+    try:
+        # Detach: it opens a browser and completes its own OAuth callback.
+        subprocess.Popen(args, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return {"started": True, "message": "A browser window is opening — sign in to your Claude account."}
+    except Exception as e:
+        return {"started": False, "error": str(e)}
+
+
+def detect_study_anatomy(study_dir) -> str:
+    """Best-effort anatomy detection for routing the agent (reuses the engine's detector).
+    Scans DICOM headers and filenames so a brain/chest/knee/etc. upload is NOT run through
+    the spine protocol."""
+    study = Path(study_dir)
+    try:
+        from core.dicom_engine import DICOMEngine
+    except ImportError:
+        from backend.core.dicom_engine import DICOMEngine
+
+    body_part, study_desc = "", ""
+    try:
+        import pydicom
+        for f in list(study.rglob("*.dcm"))[:8]:
+            try:
+                ds = pydicom.dcmread(str(f), stop_before_pixels=True, force=True)
+                body_part = body_part or str(getattr(ds, "BodyPartExamined", "")).strip()
+                study_desc = study_desc or str(getattr(ds, "StudyDescription", "")).strip()
+                if body_part or study_desc:
+                    break
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    try:
+        names = [p.name for p in list(study.rglob("*"))[:300]]
+    except Exception:
+        names = []
+    try:
+        return DICOMEngine._detect_anatomy(body_part, study_desc, names) or "unknown"
+    except Exception:
+        return "unknown"
+
+
+@dataclass
+class AgentResult:
+    success: bool
+    report_dir: str = ""
+    pdf_path: Optional[str] = None
+    figures: list = field(default_factory=list)     # produced PNG/figure paths
+    summary: dict = field(default_factory=dict)      # parsed summary.json if the agent wrote one
+    result_text: str = ""                            # the agent's final printed message
+    num_turns: int = 0
+    cost_usd: float = 0.0
+    error: Optional[str] = None
+    raw_meta: dict = field(default_factory=dict)
+
+
+class AgentRunner:
+    """Run the spine skill end-to-end via Claude Code headless."""
+
+    def __init__(
+        self,
+        model: str = DEFAULT_MODEL,
+        permission_mode: str = DEFAULT_PERMISSION_MODE,
+        timeout_s: int = DEFAULT_TIMEOUT_S,
+        effort: str = DEFAULT_EFFORT,
+        claude_bin: Optional[str] = None,
+        api_key: str = "",       # per-user credential (from sign-in); else host login
+        auth_token: str = "",    # per-user subscription token (from `claude setup-token`)
+    ):
+        self.model = model
+        self.permission_mode = permission_mode
+        self.timeout_s = timeout_s
+        self.effort = effort
+        self.api_key = api_key
+        self.auth_token = auth_token
+        self.claude_bin = claude_bin or os.environ.get("MIKA_CLAUDE_BIN") or shutil.which("claude") or "claude"
+
+    # ── Availability / self-check ──
+
+    def availability(self) -> dict:
+        """Report whether the Claude Code CLI is installed and how auth will resolve."""
+        path = shutil.which(self.claude_bin) or (self.claude_bin if os.path.exists(self.claude_bin) else None)
+        info = {
+            "claude_cli_found": path is not None,
+            "claude_bin": path or self.claude_bin,
+            "skill_present": SKILL_PATH.exists(),
+            "uses_api_key": bool(os.environ.get("MIKA_AGENT_USE_API_KEY")),
+            "version": None,
+            "auth_mode": "subscription (Claude Code login)",
+            "connected": False,           # is the host actually signed in to Claude?
+            "subscription_type": None,    # e.g. "max", "pro"
+        }
+        if info["uses_api_key"] and os.environ.get("ANTHROPIC_API_KEY"):
+            info["auth_mode"] = "api_key (metered)"
+            info["connected"] = True
+            info["subscription_type"] = "api"
+        if path:
+            try:
+                out = subprocess.run(
+                    [path, "--version"], capture_output=True, text=True, timeout=20
+                )
+                info["version"] = (out.stdout or out.stderr).strip().splitlines()[0] if (out.stdout or out.stderr) else None
+            except Exception as e:
+                info["version_error"] = str(e)
+            # Real, free login check (no inference): `claude auth status` returns JSON.
+            try:
+                auth = subprocess.run(
+                    [path, "auth", "status"], capture_output=True, text=True, timeout=20
+                )
+                raw = (auth.stdout or "").strip()
+                brace = raw.find("{")
+                if brace >= 0:
+                    data = json.loads(raw[brace:])
+                    info["connected"] = bool(data.get("loggedIn")) or info["connected"]
+                    info["subscription_type"] = data.get("subscriptionType") or info["subscription_type"]
+                elif "logged in" in raw.lower():
+                    info["connected"] = True
+            except Exception as e:
+                info["auth_error"] = str(e)
+        return info
+
+    # ── Child environment ──
+
+    def _child_env(self) -> dict:
+        env = dict(os.environ)
+        if self.api_key:
+            # Per-user API key → Claude Code uses it (metered to that user's API account).
+            env["ANTHROPIC_API_KEY"] = self.api_key
+            env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        elif self.auth_token:
+            # Per-user subscription token (from `claude setup-token`).
+            env["ANTHROPIC_AUTH_TOKEN"] = self.auth_token
+            env.pop("ANTHROPIC_API_KEY", None)
+        elif not os.environ.get("MIKA_AGENT_USE_API_KEY"):
+            # No per-user credential → fall back to the host's Claude Code login.
+            env.pop("ANTHROPIC_API_KEY", None)
+            env.pop("ANTHROPIC_AUTH_TOKEN", None)
+        return env
+
+    def _finalize_patient_report(self, out_dir: Path, summary: dict) -> None:
+        """
+        Render the patient-first report.pdf from summary['patient'] (deterministic).
+        The agent's own technical PDF, if any, is preserved as report_clinical.pdf.
+        Failures are non-fatal — the agent's PDF is left in place.
+        """
+        patient = (summary or {}).get("patient")
+        if not patient:
+            return
+        try:
+            try:
+                from backend.services.report_builder import build_patient_report
+            except ImportError:
+                from services.report_builder import build_patient_report
+            agent_pdf = out_dir / "report.pdf"
+            if agent_pdf.exists():
+                try:
+                    agent_pdf.replace(out_dir / "report_clinical.pdf")
+                except Exception:
+                    pass
+            build_patient_report(patient, out_dir, out_dir / "report.pdf")
+            logger.info("Patient-first report rendered (technical version kept as report_clinical.pdf)")
+        except Exception as e:
+            logger.warning(f"Patient report render failed (keeping agent PDF): {e}")
+
+    def _collect_outputs(self, out_dir: Path, result: AgentResult, require_pdf: bool) -> None:
+        """Gather figures + summary.json, render the patient report, set pdf_path.
+        Called on BOTH the normal and timeout paths so a run that produced output before
+        the cap is never reported as a total failure."""
+        if not out_dir.exists():
+            return
+        result.figures = [str(p) for p in sorted(out_dir.glob("*.png"))]
+        summary_file = out_dir / "summary.json"
+        if summary_file.exists():
+            try:
+                result.summary = json.loads(summary_file.read_text(encoding="utf-8"))
+            except Exception as e:
+                logger.warning(f"Could not parse summary.json: {e}")
+        self._finalize_patient_report(out_dir, result.summary)
+        pdfs = sorted(out_dir.glob("*.pdf"))
+        result.pdf_path = str(pdfs[0]) if pdfs else None  # report.pdf sorts before report_clinical.pdf
+
+    # ── Prompt ──
+
+    def _build_prompt(
+        self,
+        study_dir: Path,
+        out_dir: Path,
+        anatomy: str = "spine",
+        protocol_ref: Optional[Path] = None,
+        prior_studies: Optional[list] = None,
+        clinical_history: Optional[str] = None,
+        surgical_notes: Optional[str] = None,
+        prior_reports: Optional[str] = None,
+        modality: str = "MR",
+    ) -> str:
+        label = ANATOMY_LABELS.get(anatomy, "medical imaging")
+        is_spine = anatomy == "spine"
+        protocol_ref = protocol_ref or SKILL_PATH
+        progress_path = out_dir.parent / "progress.json"   # drives the live Wait readout (honest, no fabricated counts)
+
+        # Modality discipline: the protocols are MRI-tuned, so on a non-MR study tell the agent
+        # to apply that modality's physics and NOT to fabricate MR sequences/signal.
+        modality = (modality or "MR").upper()
+        modality_label = MODALITY_LABELS.get(modality, modality or "imaging")
+        modality_block = ""
+        if modality != "MR":
+            how = MODALITY_READING.get(modality, "Apply interpretation appropriate to this modality.")
+            modality_block = (
+                f"\nMODALITY — this is a {modality_label} study (DICOM Modality: {modality}), NOT MRI:\n"
+                f"  - {how}\n"
+                f"  - The protocol below is written for MRI. Use its ANATOMICAL search checklist, "
+                f"grading structure, and confidence-tier discipline (these are modality-independent), "
+                f"but DO NOT assume MRI pulse sequences (T1/T2/STIR/FLAIR) and DO NOT report MR signal "
+                f"characteristics — they do not exist on {modality_label}. Report only what THIS modality shows.\n"
+            )
+
+        priors = ""
+        if prior_studies:
+            priors = "\nPRIOR STUDY DIRECTORIES (older timepoints, for longitudinal comparison):\n" + \
+                     "\n".join(f"  - {p}" for p in prior_studies)
+        context = ""
+        if clinical_history:
+            context += f"\nClinical history / indication (symptoms only — NOT a prior read):\n{clinical_history}\n"
+        if surgical_notes:
+            context += f"\nSurgical / operative notes (use ONLY in reconciliation, AFTER your blind read):\n{surgical_notes}\n"
+        if prior_reports:
+            context += f"\nPrior radiology reports (use ONLY in reconciliation, AFTER your blind read):\n{prior_reports}\n"
+
+        # Anatomy-specific vs general wording (so a non-spine study is NOT forced through spine logic).
+        if is_spine:
+            ref_fig = "Figure 0 = Level Reference (midline, sacrum-up labels)"
+            location_rule = ("Confirm the vertebral LEVEL of every mark by counting from the sacrum on "
+                             "Figure 0. If you cannot confirm a level, render a labelled region band "
+                             "\"approx Lx-Ly\", NOT a pinpoint circle. Never assert a level you cannot confirm.")
+            shifting_rule = ("Structures whose plane shifts slice-to-slice (neural foramina, nerve-in-foramen) "
+                             "-> use a REGION box, never a false-pinpoint arrow.")
+            reading_extra = (
+                "  - On post-contrast, EXPLICITLY evaluate the symptomatic nerve root for intrinsic "
+                "enhancement vs the normal contralateral root; report neuritis ONLY if the root itself "
+                "enhances above the contralateral baseline. EXPLICITLY check facet joints for enhancing "
+                "synovitis. Grade canal/foraminal stenosis with explicit severity.\n")
+        else:
+            ref_fig = "Figure 0 = a labelled overview/reference figure that orients the rest of the figures"
+            location_rule = ("Confirm the anatomical location of every mark against the labelled reference "
+                             "figure (Figure 0). If you cannot confirm the location, render a labelled region "
+                             "band, NOT a pinpoint circle. Never assert a location you cannot confirm.")
+            shifting_rule = ("Structures whose location shifts across slices, or whose boundary is ambiguous, "
+                             "-> use a REGION box, never a false-pinpoint arrow.")
+            reading_extra = (
+                "  - On post-contrast, evaluate abnormal enhancement appropriately for this anatomy "
+                "(same-level/same-region pre vs post). Grade severity explicitly (mild/moderate/severe).\n")
+
+        return f"""You are running a clinical-grade {label} {modality_label} analysis.
+
+DETECTED ANATOMY: {anatomy}.  DETECTED MODALITY: {modality_label} ({modality}).
+FOLLOW THIS PROTOCOL EXACTLY — read it first, then execute it:
+  {protocol_ref}
+Use that protocol for the systematic search, grading, and confidence tiers. Produce the
+OUTPUTS specified at the bottom of THIS message (they override any output format in the protocol).
+{modality_block}
+PRIMARY STUDY DIRECTORY (current study — DICOM and/or images):
+  {study_dir}
+{priors}{context}
+TOOLS: You have bash, python, read, and write. Do your own slice-by-slice analysis —
+convert DICOM with windowing, run intensity profiling for landmark/structure localization
+and annotation, pixel-verify annotations, and re-read each annotated image. pydicom, numpy,
+scipy, and Pillow are installed; pip install matplotlib and reportlab if you need them.
+
+LIVE PROGRESS — the patient watches a status while you work, so keep them informed (and honest):
+  each time you BEGIN a new major step, OVERWRITE {progress_path} with a tiny JSON object:
+    {{"active_sequence": "<the sequence you are reading right now, e.g. 'Sag T2', or ''>",
+      "region": "<the level/region/structure you are EXAMINING right now — e.g. 'L4-L5', 'S1', 'frontal lobe', 'medial meniscus' — or ''>",
+      "note": "<ONE short plain sentence of what you are doing now, e.g. 'Reading the sagittal T2 — checking the lumbar levels'>"}}
+  Update it whenever you move to the next sequence/region/step. Write plain language (no jargon, no tier letters).
+  "region" is WHERE you are looking, not a finding — it drives a live highlight, so keep it to the area under review.
+  Do NOT invent slice numbers, counts, or findings you have not actually computed — report only the real step you are on.
+
+ORDERING (critical): perform the BLIND READ on the images BEFORE reading the surgical notes
+/ prior reports above; only use those in the reconciliation step.
+
+ANNOTATION PRECISION — every annotation must be pixel-accurate AND informative:
+  - Localize each structure by intensity analysis, place the tip, then VERIFY the tip's
+    3x3 pixel intensity against the expected range for that structure. If it fails,
+    auto-search the neighborhood and reposition; if none matches, DROP the annotation.
+    Re-read every saved figure and confirm on-target.
+  - {location_rule}
+  - {shifting_rule}
+  - On UNCALIBRATED (JPG/screenshot) studies, mark with REGION bands, not pinpoint circles.
+  - For each finding choose the slice where it is MAXIMAL (scan the stack; no fixed index).
+  - Keep on-image labels SHORT (one line, ~6 words): structure + finding + [Tier X]. Put any
+    measurements, ratios, or reasoning in the figure CAPTION, not on the arrow label.
+  - Place labels in the margin with a thin leader line so text never overlaps the anatomy.
+
+READING RIGOR — maximise diagnostic accuracy without overcalling:
+  - Work systematically per the protocol; prefer the LESS severe reading when genuinely
+    uncertain, but do not silently skip subtle findings.
+{reading_extra}
+WRITE ALL OUTPUTS into this directory (create it):
+  {out_dir}
+Produce:
+  1. Annotated proof figures as PNG ({ref_fig}; numbered figures for each finding).
+  2. A CLINICIAN/technical PDF named `report_clinical.pdf` (the full clinical format: tiered
+     findings with [Tier X] and [See Figure N], reconciliation vs prior reports, disclaimer).
+     This is for the doctor — NOT the patient. The patient-facing report is generated
+     automatically (see #3), so do NOT hand-write a patient PDF.
+  3. A machine-readable `summary.json`. Keep the technical detail here (calibration_status,
+     levels, findings [{{text, tier, figure}}], impression, discrepancies, incidentals,
+     figures [{{file, caption}}], self_audit) AND add a top-level "patient" block — this is
+     what the user actually sees, so write it in PLAIN language with NO tier letters, NO pixel
+     intensities, NO audit trail, NO calibration/DICOM jargon:
+     "patient": {{
+       "patient": {{"name","age","sex"}},
+       "study": {{"body_part" (plain, e.g. "Lower-back (lumbar) spine"), "modality" (e.g.
+                 "MRI with contrast"), "date", "comparison" (e.g. "compared with your earlier scans" or "")}},
+       "bottom_line": "ONE concise plain sentence - the single answer",
+       "key_points": ["3-5 short bullet points summarising the result", ...],
+       "confidence": {{"label": "High|Moderate|Low", "score": 0-100, "note": "one plain line"}},
+       "findings": [{{"plain": "ONE short bullet (a phrase, not a paragraph)", "certainty": "Confirmed|Likely|Possible",
+                     "figure": "<one figure filename>", "caption": "plain caption"}}],
+       "change_over_time": {{"points": ["short bullet", ...], "figure": "<longitudinal figure>"}} (omit if single study),
+       "what_it_means": ["short plain bullet, non-prescriptive", ...],
+       "worth_flagging": ["short plain bullet, e.g. a record discrepancy", ...] (optional),
+       "disclaimer": "<the mandatory disclaimer verbatim>"
+     }}
+     STYLE: concise PROFESSIONAL BULLET POINTS everywhere except bottom_line (one sentence) -
+     no long paragraphs. Write in a NEUTRAL, IMPERSONAL, PROFESSIONAL register (passive voice
+     where natural, like a radiology report): do NOT use first-person "we/us/our" and avoid
+     "you/your"; plain words, no jargon. Map tiers to plain certainty: Tier A -> "Confirmed",
+     Tier B -> "Likely", Tier C -> "Possible". Choose a sensible overall confidence.
+
+When finished, print a single JSON object: {{"pdf": "<path>", "summary": "<path to summary.json>", "figures": [<paths>], "status": "complete"}}.
+"""
+
+    # ── Run ──
+
+    def run(
+        self,
+        study_dir: str,
+        work_dir: str,
+        anatomy: Optional[str] = None,       # None -> auto-detect (spine/brain/chest/...)
+        prior_studies: Optional[list] = None,
+        clinical_history: Optional[str] = None,
+        surgical_notes: Optional[str] = None,
+        prior_reports: Optional[str] = None,
+        task_prompt: Optional[str] = None,   # override the full-report prompt (focused runs)
+        require_pdf: bool = True,            # focused runs succeed on figures alone
+    ) -> AgentResult:
+        study = Path(study_dir)
+        work = Path(work_dir)
+        out_dir = work / "report"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        # Route by anatomy so a non-spine study is never forced through the spine protocol.
+        anatomy = anatomy or detect_study_anatomy(study)
+        # Detect modality so a CT / X-ray / ultrasound study is read with the right physics
+        # instead of MRI sequence logic (the protocols are MRI-tuned).
+        modality = detect_study_modality(study)
+        if anatomy == "spine":
+            if not SKILL_PATH.exists():
+                return AgentResult(success=False, report_dir=str(out_dir),
+                                   error=f"Vendored spine skill not found at {SKILL_PATH}")
+            protocol_ref = SKILL_PATH
+        else:
+            # Non-spine: write that anatomy's master prompt as the protocol the agent follows.
+            try:
+                from prompts import get_master_prompt
+            except ImportError:
+                from backend.prompts import get_master_prompt
+            protocol_ref = work / "protocol.md"
+            try:
+                protocol_ref.write_text(get_master_prompt(anatomy), encoding="utf-8")
+            except Exception as e:
+                logger.warning(f"Could not write protocol for {anatomy}: {e}; falling back to spine skill")
+                protocol_ref = SKILL_PATH
+        logger.info(f"Agent routing: anatomy={anatomy}, modality={modality}, protocol={protocol_ref}")
+
+        prompt = task_prompt or self._build_prompt(
+            study, out_dir, anatomy, protocol_ref, prior_studies,
+            clinical_history, surgical_notes, prior_reports, modality,
+        )
+
+        # Pass the (large) prompt via STDIN, not argv: the Windows claude.CMD shim runs
+        # through cmd.exe, whose command line is capped at 8191 chars — embedding the
+        # surgical notes / prior reports in argv overflows it ("command line is too long").
+        cmd = [
+            self.claude_bin, "-p",
+            "--output-format", "json",
+            "--model", self.model,
+            "--effort", self.effort,
+            "--permission-mode", self.permission_mode,
+            "--add-dir", str(study), "--add-dir", str(work), "--add-dir", str(Path(protocol_ref).parent),
+        ]
+        # Grant tool access to each prior-study directory (longitudinal comparison).
+        for ps in (prior_studies or []):
+            cmd += ["--add-dir", str(ps)]
+        logger.info(
+            f"Launching Claude Code agent (model={self.model}, perm={self.permission_mode}, "
+            f"auth={'api_key' if os.environ.get('MIKA_AGENT_USE_API_KEY') else 'subscription'})"
+        )
+
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(work),
+                env=self._child_env(),
+                input=prompt,            # prompt delivered on stdin (see cmd note above)
+                capture_output=True,
+                text=True,
+                encoding="utf-8",        # force UTF-8 on the pipe — Windows defaults to cp1252,
+                errors="replace",        # which can't encode glyphs extracted from PDFs (e.g. )
+                timeout=self.timeout_s,
+            )
+        except subprocess.TimeoutExpired:
+            # The agent often finishes its files right around the cap — collect them rather
+            # than discard a usable result.
+            result = AgentResult(success=False, report_dir=str(out_dir),
+                                 error=f"Agent timed out after {self.timeout_s}s")
+            self._collect_outputs(out_dir, result, require_pdf)
+            deliverable = (result.pdf_path is not None) if require_pdf else (len(result.figures) > 0)
+            if deliverable:
+                result.success = True
+                result.error = f"Agent exceeded {self.timeout_s}s but had produced output before the cap."
+            return result
+        except FileNotFoundError:
+            return AgentResult(success=False, report_dir=str(out_dir),
+                               error=f"Claude Code CLI not found ({self.claude_bin}). Install it and run `claude` once to log in on your subscription.")
+
+        result = AgentResult(success=False, report_dir=str(out_dir))
+
+        # Parse the --output-format json envelope (final result + metadata).
+        try:
+            envelope = json.loads(proc.stdout.strip()) if proc.stdout.strip() else {}
+            result.raw_meta = {k: envelope.get(k) for k in ("subtype", "is_error", "duration_ms", "session_id")}
+            result.result_text = envelope.get("result", "") or ""
+            result.num_turns = envelope.get("num_turns", 0)
+            result.cost_usd = envelope.get("total_cost_usd", 0.0) or 0.0
+            agent_failed = bool(envelope.get("is_error"))
+        except (json.JSONDecodeError, AttributeError):
+            result.result_text = (proc.stdout or "").strip()
+            agent_failed = proc.returncode != 0
+
+        # Collect produced artifacts (figures, summary, patient-first PDF) regardless of how
+        # the agent phrased its final message.
+        self._collect_outputs(out_dir, result, require_pdf)
+
+        if proc.returncode != 0 and not result.pdf_path:
+            result.error = (proc.stderr or proc.stdout or "agent exited non-zero").strip()[:2000]
+            return result
+
+        # Success if the agent produced the deliverable. Full runs require the PDF; focused
+        # runs (require_pdf=False) succeed on figures alone.
+        deliverable = (result.pdf_path is not None) if require_pdf else (len(result.figures) > 0)
+        result.success = deliverable and not agent_failed
+        if not result.success and not result.error:
+            result.error = (
+                "Agent finished but produced no PDF report. See result_text."
+                if require_pdf else
+                "Agent finished but produced no annotated figures. See result_text."
+            )
+        logger.info(
+            f"Agent run done: success={result.success}, pdf={result.pdf_path}, "
+            f"figures={len(result.figures)}, turns={result.num_turns}, cost=${result.cost_usd:.2f}"
+        )
+        return result

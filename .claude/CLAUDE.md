@@ -1,10 +1,32 @@
-# MIKA — AI Medical MRI Analyzer
+# MIKA — AI Medical Imaging Analyzer
 
 ## Project Overview
-MIKA is a clinical-grade MRI interpretation system that uses Claude Opus 4.6
-to analyze medical MRI studies across 10 anatomy types. It processes DICOM files
-(and NIfTI, NRRD, PNG/JPG, ZIP), extracts quantitative measurements, and sends
-images + data to Claude for structured radiology reports.
+MIKA is a clinical-grade medical-imaging interpretation system that uses Claude Opus
+to analyze studies across 10 anatomy types AND all common modalities (MR, CT, X-ray,
+ultrasound, mammography, PET — not MR only). It processes DICOM files (and NIfTI, NRRD,
+PNG/JPG, ZIP), extracts quantitative measurements, and sends images + data to Claude for
+structured radiology reports.
+
+### Auth — runs on the user's Claude subscription (no API key)
+The default "agent" pipeline shells out to the installed `claude` CLI in headless mode
+(`claude -p --output-format json`), authenticated by the user's normal Claude login
+(`claude /login` / subscription). No Anthropic API key and no extra Python auth library are
+required — "just sign in and shoot". The `anthropic` SDK is an OPTIONAL, lazily-imported
+fallback used only by the "lite" pipeline when an API key/token is explicitly provided.
+Sign-in status is surfaced in the sidebar; `/api/connect` launches the browser login.
+
+### Durable persistence (reports never disappear)
+Every completed study is written to disk under a stable per-user data dir
+(`%LOCALAPPDATA%\MIKA\data` on Windows; `MIKA_DATA_DIR` overrides) as `report.json` +
+`meta.json`. The in-memory `JOBS` dict is only a hot cache — all report/image/pdf/status
+endpoints fall back to disk, so a finished study is always retrievable by `job_id` after a
+restart. `GET /api/reports` indexes them for the "Recent studies" screen.
+
+### Security (loopback desktop posture)
+Binds `127.0.0.1` by default; CORS pinned to an allow-list (no wildcard+credentials);
+job_ids validated (`^[0-9a-f]{8}$`); image/pdf paths confined to the job dir (anti
+path-traversal); ZIP extraction guarded against zip-slip; uploads size-capped + filename
+-sanitized; CSP + security headers on the app shell.
 
 ## Architecture
 

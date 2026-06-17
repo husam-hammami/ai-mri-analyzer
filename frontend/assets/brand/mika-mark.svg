@@ -1,0 +1,26 @@
+<svg viewBox="0 0 56 80" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MIKA">
+  <!-- Coil / helix ribbons (recolor via CSS `color`) -->
+  <g fill="none" stroke="currentColor" stroke-linecap="round">
+    <!-- back halves (behind the axis) -->
+    <g opacity="0.4" stroke-width="3">
+      <path d="M12 24 Q28 15 44 24"/>
+      <path d="M12 40 Q28 31 44 40"/>
+      <path d="M12 56 Q28 47 44 56"/>
+    </g>
+    <!-- front halves (over the axis) -->
+    <g stroke-width="4">
+      <path d="M12 24 Q28 33 44 24"/>
+      <path d="M12 40 Q28 49 44 40"/>
+      <path d="M12 56 Q28 65 44 56"/>
+    </g>
+  </g>
+  <!-- central dotted axis -->
+  <g fill="currentColor" opacity="0.55">
+    <circle cx="28" cy="6" r="1.4"/>
+    <circle cx="28" cy="11" r="1.4"/>
+    <circle cx="28" cy="69" r="1.4"/>
+    <circle cx="28" cy="74" r="1.4"/>
+  </g>
+  <!-- center node (brand blue, the "center of intelligence") -->
+  <circle cx="28" cy="40" r="4.2" fill="#2563EB"/>
+</svg>

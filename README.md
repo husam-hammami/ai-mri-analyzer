@@ -1,10 +1,10 @@
-# MIKA — AI Medical MRI Analyzer
+# MIKA — AI Medical Imaging Analyzer
 
-AI-powered MRI analysis for **Neuro**, **Musculoskeletal**, and **Spine** studies, powered by **Claude Opus 4.6**. Upload DICOM files, get a clinical-grade radiology report with annotated proof images, DICOM-calibrated measurements, and confidence-tiered findings.
+AI-powered analysis of medical imaging across **10 anatomy areas** (spine, brain, MSK, cardiac, chest, abdomen, breast, vascular, head & neck, prostate) and **all common modalities** — MR, CT, X-ray, ultrasound, mammography, PET — powered by **Claude Opus**. Runs on your own **Claude subscription** (sign in once with the Claude login — no API key required). Upload DICOM / NIfTI / NRRD / images / ZIP, get a clinical-grade report with annotated proof images, DICOM-calibrated measurements, and confidence-tiered findings. Reports are kept durably on your machine, so they never disappear.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.109-green)
-![Claude](https://img.shields.io/badge/Claude-Opus%204.6-purple)
+![Claude](https://img.shields.io/badge/Claude-Opus-blue)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 
 ## How It Works

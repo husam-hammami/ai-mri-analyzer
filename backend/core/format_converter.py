@@ -18,6 +18,7 @@ Architecture:
 
 import os
 import io
+import re
 import json
 import shutil
 import zipfile
@@ -240,17 +241,45 @@ class FormatConverter:
                 header = img.header
                 affine = img.affine
 
-                # Extract voxel dimensions (mm)
+                # Extract voxel dimensions (mm). Only treat the study as calibrated when
+                # the header actually carries usable positive spacing — otherwise we would
+                # fabricate authoritative-looking mm values from a 1.0mm fallback, which is
+                # the #1 failure mode the spine skill exists to prevent.
                 voxel_dims = header.get_zooms()
-                pixdim_row = float(voxel_dims[0]) if len(voxel_dims) > 0 else 1.0
-                pixdim_col = float(voxel_dims[1]) if len(voxel_dims) > 1 else 1.0
-                slice_thickness = float(voxel_dims[2]) if len(voxel_dims) > 2 else 1.0
+                has_spacing = (
+                    len(voxel_dims) >= 2
+                    and float(voxel_dims[0]) > 0
+                    and float(voxel_dims[1]) > 0
+                )
+                pixdim_row = float(voxel_dims[0]) if has_spacing else 1.0
+                pixdim_col = float(voxel_dims[1]) if has_spacing else 1.0
+                slice_thickness = (
+                    float(voxel_dims[2]) if len(voxel_dims) > 2 and float(voxel_dims[2]) > 0 else 1.0
+                )
+                if not has_spacing:
+                    warnings.append(
+                        f"{nii_path.name}: no usable voxel spacing in header — "
+                        "treating as UNCALIBRATED (no mm measurements will be reported)"
+                    )
 
                 # Derive sequence name from filename
                 seq_name = nii_path.stem
                 if seq_name.endswith(".nii"):
                     seq_name = seq_name[:-4]
                 sequences.append(seq_name)
+
+                # Guess the imaging modality from the filename so CT/PET/US/X-ray
+                # studies aren't hard-labeled MR. Fall back to MR but warn loudly.
+                guessed_modality = self._guess_modality_from_name(nii_path.name)
+                if guessed_modality is None:
+                    modality = "MR"
+                    warnings.append(
+                        "Modality could not be determined from a NIfTI/NRRD import and was "
+                        "assumed MR — if this is a CT/PET/ultrasound study the interpretation "
+                        "may be mislabeled."
+                    )
+                else:
+                    modality = guessed_modality
 
                 # Handle 3D and 4D volumes
                 if data.ndim == 4:
@@ -289,6 +318,8 @@ class FormatConverter:
                         rows=slice_data.shape[0],
                         cols=slice_data.shape[1],
                         study_description=f"NIfTI Import: {nii_path.name}",
+                        is_calibrated=has_spacing,
+                        modality=modality,
                     )
                     total_slices += 1
 
@@ -346,21 +377,42 @@ class FormatConverter:
                 seq_name = nrrd_path.stem
                 sequences.append(seq_name)
 
-                # Extract spacing from NRRD header
+                # Guess the imaging modality from the filename so CT/PET/US/X-ray
+                # studies aren't hard-labeled MR. Fall back to MR but warn loudly.
+                guessed_modality = self._guess_modality_from_name(nrrd_path.name)
+                if guessed_modality is None:
+                    modality = "MR"
+                    warnings.append(
+                        "Modality could not be determined from a NIfTI/NRRD import and was "
+                        "assumed MR — if this is a CT/PET/ultrasound study the interpretation "
+                        "may be mislabeled."
+                    )
+                else:
+                    modality = guessed_modality
+
+                # Extract spacing from NRRD header. Only mark calibrated when real spacing
+                # is present; otherwise stay UNCALIBRATED rather than fabricate mm values.
+                has_spacing = False
                 space_directions = header.get("space directions", None)
                 if space_directions is not None:
                     try:
                         pixdim_row = float(np.linalg.norm(space_directions[0]))
                         pixdim_col = float(np.linalg.norm(space_directions[1]))
                         slice_thickness = float(np.linalg.norm(space_directions[2])) if len(space_directions) > 2 else 1.0
+                        has_spacing = pixdim_row > 0 and pixdim_col > 0
                     except (IndexError, TypeError):
                         pixdim_row = pixdim_col = slice_thickness = 1.0
-                        warnings.append(f"{nrrd_path.name}: Could not parse space directions, using 1mm spacing")
+                        warnings.append(f"{nrrd_path.name}: Could not parse space directions — treating as UNCALIBRATED")
                 else:
-                    spacings = header.get("spacings", [1.0, 1.0, 1.0])
-                    pixdim_row = float(spacings[0]) if len(spacings) > 0 else 1.0
-                    pixdim_col = float(spacings[1]) if len(spacings) > 1 else 1.0
-                    slice_thickness = float(spacings[2]) if len(spacings) > 2 else 1.0
+                    spacings = header.get("spacings", None)
+                    if spacings is not None and len(spacings) >= 2:
+                        pixdim_row = float(spacings[0])
+                        pixdim_col = float(spacings[1])
+                        slice_thickness = float(spacings[2]) if len(spacings) > 2 else 1.0
+                        has_spacing = pixdim_row > 0 and pixdim_col > 0
+                    else:
+                        pixdim_row = pixdim_col = slice_thickness = 1.0
+                        warnings.append(f"{nrrd_path.name}: no spacing in header — treating as UNCALIBRATED")
 
                 # Handle 3D+ data
                 if data.ndim == 4:
@@ -394,6 +446,8 @@ class FormatConverter:
                         rows=slice_data.shape[0],
                         cols=slice_data.shape[1],
                         study_description=f"NRRD Import: {nrrd_path.name}",
+                        is_calibrated=has_spacing,
+                        modality=modality,
                     )
                     total_slices += 1
 
@@ -457,14 +511,17 @@ class FormatConverter:
                     cols=arr.shape[1],
                     study_description=f"Image Import ({len(image_files)} files)",
                     is_calibrated=False,
+                    modality="OT",  # plain image — true modality unknown; the reader identifies it
                 )
                 total_slices += 1
 
             except Exception as e:
                 warnings.append(f"Error processing {img_path.name}: {str(e)}")
 
-        if warnings:
-            warnings.insert(0, "Image import: no DICOM calibration available — measurements will be uncalibrated")
+        # Always surface the uncalibrated warning for raw image imports (not only when
+        # some other error happened) — PNG/JPG exports carry no PixelSpacing, so the
+        # whole study is uncalibrated and no mm values may be reported.
+        warnings.insert(0, "Image import: no DICOM calibration available — measurements will be uncalibrated (visual estimates only)")
 
         return ConversionResult(
             success=total_slices > 0,
@@ -496,9 +553,54 @@ class FormatConverter:
         extracted_dir = self.input_dir / "_extracted"
         extracted_dir.mkdir(exist_ok=True)
 
+        base_resolved = extracted_dir.resolve()
+        # Zip-bomb guards: a few-KB archive can declare gigabytes of decompressed content, so bound both
+        # the total declared uncompressed size and the member count before extracting anything.
+        max_unzipped = int(os.environ.get("MIKA_MAX_UNZIPPED_BYTES", str(8 * 1024 * 1024 * 1024)))
+        max_members = int(os.environ.get("MIKA_MAX_ZIP_MEMBERS", "200000"))
         for zf in zip_files:
             try:
                 with zipfile.ZipFile(str(zf), "r") as z:
+                    infos = z.infolist()
+                    if len(infos) > max_members:
+                        raise ValueError(
+                            f"Archive {zf.name} has too many entries ({len(infos)}) — refusing "
+                            f"(possible zip bomb)"
+                        )
+                    # Zip-slip guard: validate every member resolves to a path *inside* extracted_dir
+                    # before writing anything. Reject absolute paths, '..' traversal, or any escaping
+                    # member. Also accumulate the declared decompressed size to catch a zip bomb.
+                    total_unzipped = 0
+                    for info in infos:
+                        member = info.filename
+                        # Skip directory entries — they create no file content.
+                        if member.endswith("/") or info.is_dir():
+                            continue
+                        norm = member.replace("\\", "/")
+                        if os.path.isabs(norm) or norm.startswith("/"):
+                            raise ValueError(
+                                f"Refusing to extract absolute path member '{member}' "
+                                f"from {zf.name} (possible zip-slip attack)"
+                            )
+                        target = (extracted_dir / member).resolve()
+                        try:
+                            common = os.path.commonpath([str(base_resolved), str(target)])
+                        except ValueError:
+                            # Different drives (Windows) — definitely outside the base.
+                            common = ""
+                        if common != str(base_resolved):
+                            raise ValueError(
+                                f"Refusing to extract member '{member}' from {zf.name}: "
+                                f"resolved path escapes the extraction directory "
+                                f"(possible zip-slip attack)"
+                            )
+                        total_unzipped += int(getattr(info, "file_size", 0) or 0)
+                        if total_unzipped > max_unzipped:
+                            raise ValueError(
+                                f"Archive {zf.name} decompresses to over "
+                                f"{max_unzipped // (1024 * 1024 * 1024)} GB — refusing (possible zip bomb)"
+                            )
+                    # All members validated and within size limits — safe to extract.
                     z.extractall(str(extracted_dir))
             except Exception as e:
                 warnings.append(f"Error extracting {zf.name}: {str(e)}")
@@ -531,6 +633,51 @@ class FormatConverter:
 
         return result
 
+    # ── Modality Heuristic ──
+
+    @staticmethod
+    def _guess_modality_from_name(text: str) -> Optional[str]:
+        """
+        Conservatively guess the DICOM Modality code from a source filename and/or
+        study description. Returns a DICOM modality code ('CT', 'PT', 'US', 'CR', 'MR')
+        or None if no token matches.
+
+        Matching is lowercase and word-boundary-ish so we don't misfire on substrings
+        (e.g. 'ct' inside 'connect'). MR-family tokens are checked FIRST (this is an MRI-first
+        app) so an explicit 'mri'/'mra'/'angio' wins, and tokens that collide with everyday words
+        or MR terms — 'echo' (a normal MR term: multi-echo) and 'pt' ('patient') — are deliberately
+        NOT used, since they previously misrouted real MR studies to Ultrasound/PET.
+        """
+        if not text:
+            return None
+
+        # Lowercase and normalize common filename separators (_ - . /) to spaces so
+        # that \b word boundaries fire around tokens like 'ct' in 'patient_ct_chest'
+        # (underscore is a \w char, so without this 'ct' would never be word-bounded).
+        lowered = re.sub(r"[_\-./\\]+", " ", text.lower())
+
+        # Ordered (token_patterns, modality) — first match wins; MR first so it can't be lost to a
+        # weaker token. Patterns use word-ish boundaries so 'ct' won't match inside 'connect'.
+        token_map: list[tuple[list[str], str]] = [
+            ([r"\bmri\b", r"\bmra\b", r"\bangio\b", r"\bmr\b"], "MR"),
+            (["computed tomography", r"\bct\b"], "CT"),
+            ([r"\bpet\b"], "PT"),
+            (["ultrasound", r"\bsonograph", r"\bus\b"], "US"),
+            (["radiograph", "x-ray", r"\bxray\b", r"\bxr\b", r"\bcr\b", r"\bdx\b"], "CR"),
+        ]
+
+        for patterns, modality in token_map:
+            for pat in patterns:
+                if pat.startswith(r"\b") or pat.endswith(r"\b"):
+                    if re.search(pat, lowered):
+                        return modality
+                else:
+                    # Multi-word phrase — match as substring on word boundary.
+                    if re.search(r"\b" + re.escape(pat) + r"\b", lowered):
+                        return modality
+
+        return None
+
     # ── Synthetic DICOM Creator ──
 
     def _create_synthetic_dicom(
@@ -546,6 +693,7 @@ class FormatConverter:
         cols: int,
         study_description: str = "",
         is_calibrated: bool = True,
+        modality: str = "MR",
     ):
         """
         Create a minimal synthetic DICOM file from a 2D numpy array.
@@ -576,7 +724,7 @@ class FormatConverter:
         # Series info
         ds.SeriesDescription = series_description
         ds.ProtocolName = series_description
-        ds.Modality = "MR"
+        ds.Modality = modality
         ds.SeriesInstanceUID = pydicom.uid.generate_uid()
         ds.SOPClassUID = "1.2.840.10008.5.1.4.1.1.4"
         ds.SOPInstanceUID = pydicom.uid.generate_uid()
@@ -588,6 +736,15 @@ class FormatConverter:
         ds.SliceThickness = slice_thickness
         if is_calibrated:
             ds.PixelSpacing = pixel_spacing
+
+        # CT studies need a sensible default display window so downstream rendering
+        # shows tissue contrast instead of a globally-normalized image. Apply a
+        # soft-tissue window (C 40 / W 400) only for CT and only if not already set.
+        if modality == "CT":
+            if "WindowCenter" not in ds:
+                ds.WindowCenter = 40
+            if "WindowWidth" not in ds:
+                ds.WindowWidth = 400
 
         # Image data
         ds.Rows = rows

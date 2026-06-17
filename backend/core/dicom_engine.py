@@ -33,6 +33,20 @@ except ImportError:
 logger = logging.getLogger("mika.dicom")
 
 
+# Expected pixel-intensity ranges by structure type on T2-weighted sagittal (0-255 scale).
+# Used by the annotation double-check loop (skill Phase 3, Step 3C) to verify that every
+# arrow tip actually lands on the structure it claims to point at, before the image ships.
+EXPECTED_INTENSITY_RANGES = {
+    "canal_csf":       (120, 255),  # Bright CSF column
+    "disc_protrusion": (30, 110),   # Disc material, intermediate
+    "disc_space":      (20, 200),   # Wide — desiccated (dark) to hydrated (bright)
+    "disc_desiccated": (0, 95),     # A desiccated disc target should read dark
+    "vertebral_body":  (70, 170),   # Marrow signal
+    "canal_narrowing": (40, 140),   # Reduced but present CSF at a stenosis
+    "bone_cortex":     (0, 50),     # Very dark cortical bone
+}
+
+
 # ──────────────────────────────────────────────
 # Data Models
 # ──────────────────────────────────────────────
@@ -133,6 +147,7 @@ class StudyInventory:
     total_files: int = 0
     study_date: str = ""
     detected_anatomy: str = ""  # spine, brain, msk, unknown
+    anatomy_subregion: str = ""  # for msk: knee, shoulder, hip, ankle, wrist, elbow, foot, hand
 
 
 # ──────────────────────────────────────────────
@@ -160,11 +175,15 @@ class DICOMEngine:
         self.inventory: Optional[StudyInventory] = None
         self.level_map: dict = {}  # disc_level -> row in reference image
         self.body_map: dict = {}   # vertebra -> row
+        self.level_confidence: str = "unknown"   # high | moderate | low
+        self.level_confidence_reason: str = ""
         self.canal_col: int = 0
         self.body_col: int = 0
         self.reference_image: Optional[np.ndarray] = None
         self.disc_measurements: list[DiscMeasurement] = []
         self.endplate_assessments: list[EndplateAssessment] = []
+        self.canal_narrowing: list = []   # [{row, intensity, reduction_pct}] from Step 3A.3
+        self.annotation_audit: list = []  # Step 3C/3D record per arrow tip (for VerificationPass)
         self._converted_images: dict = {}  # seq_name/slice -> path
 
     # ── Phase 0: Inventory ──
@@ -200,6 +219,10 @@ class DICOMEngine:
         body_part_raw = str(getattr(first_ds, "BodyPartExamined", "")).strip()
         study_desc_raw = str(getattr(first_ds, "StudyDescription", "")).strip()
         detected_anatomy = self._detect_anatomy(body_part_raw, study_desc_raw, dcm_files)
+        anatomy_subregion = (
+            self._detect_msk_subregion(body_part_raw, study_desc_raw, dcm_files)
+            if detected_anatomy == "msk" else ""
+        )
 
         demographics = PatientDemographics(
             patient_name=str(getattr(first_ds, "PatientName", "")),
@@ -215,6 +238,7 @@ class DICOMEngine:
             body_part_examined=body_part_raw,
             detected_anatomy=detected_anatomy,
         )
+        self._anatomy_subregion = anatomy_subregion
 
         # Process each sequence
         sequences = {}
@@ -285,6 +309,7 @@ class DICOMEngine:
             total_files=len(dcm_files),
             study_date=demographics.study_date,
             detected_anatomy=detected_anatomy,
+            anatomy_subregion=anatomy_subregion,
         )
 
         logger.info(
@@ -410,7 +435,33 @@ class DICOMEngine:
         if disc_centers:
             self.body_map["S1"] = sacrum_row
 
-        logger.info(f"Level identification: {self.level_map}")
+        # Confidence in the deterministic sacrum-up map. The heuristic can mis-anchor on
+        # atypical anatomy (transitional vertebrae, 6 lumbar segments, poor T2). When the
+        # number/regularity of detected disc spaces is off, flag it so downstream findings
+        # get tier-capped and the model is told to rely on its own sacrum-up count.
+        mapped_rows = sorted(self.level_map.values())
+        n_levels = len(mapped_rows)
+        regularity = 0.0
+        if n_levels >= 2:
+            spacings = [mapped_rows[i + 1] - mapped_rows[i] for i in range(n_levels - 1)]
+            mean_sp = sum(spacings) / len(spacings)
+            if mean_sp > 0:
+                var = sum((s - mean_sp) ** 2 for s in spacings) / len(spacings)
+                regularity = (var ** 0.5) / mean_sp  # coefficient of variation
+        if n_levels >= 5 and regularity < 0.25:
+            self.level_confidence = "high"
+        elif n_levels >= 4 and regularity < 0.40:
+            self.level_confidence = "moderate"
+        else:
+            self.level_confidence = "low"
+        self.level_confidence_reason = (
+            f"{n_levels} disc spaces detected, spacing CoV={regularity:.2f}"
+        )
+
+        logger.info(
+            f"Level identification: {self.level_map} "
+            f"(confidence={self.level_confidence}; {self.level_confidence_reason})"
+        )
         return self.level_map
 
     # ── Phase 2: Quantitative Measurements ──
@@ -598,63 +649,164 @@ class DICOMEngine:
 
     # ── Phase 3: Annotation ──
 
+    def _localize_canal_narrowing(self, arr: np.ndarray) -> list:
+        """
+        Step 3A.3: locate points of maximum central-canal narrowing (stenosis) by
+        finding local minima of the canal CSF intensity profile. Returns a list of
+        {row, intensity, reduction_pct} sorted by severity (most narrowed first).
+        """
+        if self.canal_col <= 0:
+            return []
+        c0 = max(0, self.canal_col - 3)
+        c1 = self.canal_col + 4
+        canal_profile = arr[:, c0:c1].mean(axis=1).astype(float)
+        canal_smooth = gaussian_filter1d(canal_profile, sigma=2)
+        # Reference = the brightest (most patent) canal point = abundant CSF.
+        ref = float(canal_smooth.max()) if canal_smooth.size else 0.0
+        canal_inv = -canal_smooth
+        peaks, _ = find_peaks(canal_inv, distance=12, prominence=8)
+
+        narrowings = []
+        for p in peaks:
+            intensity = float(canal_smooth[p])
+            reduction = (1 - intensity / ref) * 100 if ref > 0 else 0.0
+            narrowings.append({
+                "row": int(p),
+                "intensity": round(intensity, 1),
+                "reduction_pct": round(reduction, 1),
+            })
+        narrowings.sort(key=lambda n: n["reduction_pct"], reverse=True)
+        self.canal_narrowing = narrowings
+        return narrowings
+
+    def _verify_and_reposition_tip(
+        self, raw_arr: np.ndarray, col: int, row: int,
+        structure_type: str, search_radius: int = 10,
+    ) -> tuple:
+        """
+        Step 3C: verify an arrow-tip pixel against the expected intensity range for the
+        structure it claims to mark. If it fails, auto-search the neighborhood for the
+        NEAREST pixel that does match and reposition to it. Returns
+        (col, row, mean_intensity, status) where status is 'verified' | 'repositioned' | 'failed'.
+        A 'failed' tip must NOT be drawn.
+        """
+        lo, hi = EXPECTED_INTENSITY_RANGES.get(structure_type, (0, 255))
+        h, w = raw_arr.shape[:2]
+
+        def mean3(r: int, c: int) -> float:
+            nb = raw_arr[max(0, r - 1):r + 2, max(0, c - 1):c + 2]
+            return float(nb.mean()) if nb.size else 0.0
+
+        val = mean3(row, col)
+        if lo <= val <= hi:
+            return col, row, round(val, 1), "verified"
+
+        best = None
+        best_dist = 1e9
+        for dr in range(-search_radius, search_radius + 1):
+            for dc in range(-search_radius, search_radius + 1):
+                r, c = row + dr, col + dc
+                if 0 <= r < h and 0 <= c < w:
+                    v = mean3(r, c)
+                    if lo <= v <= hi:
+                        dist = dr * dr + dc * dc
+                        if dist < best_dist:
+                            best_dist = dist
+                            best = (c, r, v)
+        if best is not None:
+            return best[0], best[1], round(best[2], 1), "repositioned"
+        return col, row, round(val, 1), "failed"
+
     def create_annotated_sagittal(
         self, sag_t2_seq_name: str, midline_slice: int = 8, scale: int = 2
     ) -> str:
-        """Create annotated sagittal T2 with verified arrow placements."""
+        """
+        Create annotated sagittal T2 with the skill's Phase-3 double-check loop:
+          3A  structure localization (canal, discs, canal narrowing) — already computed
+          3B  draw arrows + verification circle (via _draw_arrow)
+          3C  verify each tip against expected intensity; reposition or DROP on failure
+          3D  record an audit trail so the VerificationPass can re-read placement
+        Arrows that fail 3C verification are NEVER drawn — the skill forbids shipping
+        annotations that land on the wrong structure.
+        """
+        self.annotation_audit = []
         safe = sag_t2_seq_name.replace(" ", "_").replace("-", "_")
         raw_path = self.work_dir / "raw_png" / safe / f"slice_{midline_slice:03d}.png"
         raw_arr = np.array(Image.open(str(raw_path))).astype(float)
         if raw_arr.ndim > 2:
             raw_arr = raw_arr.mean(axis=-1)
 
+        # Step 3A.3 — locate canal narrowing on this slice.
+        self._localize_canal_narrowing(raw_arr)
+
         img = Image.open(str(raw_path)).convert("RGB")
         img = img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
         draw = ImageDraw.Draw(img)
 
-        font = self._get_font(13)
         font_sm = self._get_font(11)
         font_title = self._get_font(14)
 
-        # Build targets from measurements
-        targets = []
+        # Build candidate targets: (label, col, row, structure_type, color, side)
+        # side: 'left' draws the arrow from the left margin, 'right' from the right.
+        candidates = []
         for m in self.disc_measurements:
             if m.desiccation_grade in ("severe", "moderate"):
-                # Verify intensity
-                tip_row, tip_col = m.disc_row, m.body_col
-                neighborhood = raw_arr[max(0, tip_row - 1):tip_row + 2,
-                                      max(0, tip_col - 1):tip_col + 2]
-                mean_val = float(neighborhood.mean())
-
                 color = "red" if m.desiccation_grade == "severe" else "orange"
-                targets.append({
+                candidates.append({
                     "label": f"{m.level} ({m.desiccation_grade})",
-                    "tip": (tip_col, tip_row),
-                    "start_offset": (-50, 0),
-                    "color": color,
-                    "verified": mean_val < 80,
-                    "intensity": mean_val,
+                    "col": m.body_col, "row": m.disc_row,
+                    "structure": "disc_desiccated", "color": color,
+                    "side": "left", "level": m.level,
                 })
 
-        # Add reference CSF arrow
+        # Reference CSF arrow (proves a patent canal for comparison).
         l1_body = self.body_map.get("L1")
         if l1_body:
-            targets.append({
-                "label": "Normal CSF",
-                "tip": (self.canal_col + 10, l1_body),
-                "start_offset": (45, 0),
-                "color": "lime",
-                "verified": True,
-                "intensity": 0,
+            candidates.append({
+                "label": "Normal CSF", "col": self.canal_col + 8, "row": l1_body,
+                "structure": "canal_csf", "color": "lime", "side": "right", "level": None,
             })
 
-        # Draw
-        for t in targets:
-            tip = (t["tip"][0] * scale, t["tip"][1] * scale)
-            start = (tip[0] + t["start_offset"][0] * scale,
-                     tip[1] + t["start_offset"][1] * scale)
+        # Most-severe canal narrowing arrow (only if meaningfully reduced).
+        if self.canal_narrowing and self.canal_narrowing[0]["reduction_pct"] >= 25:
+            n = self.canal_narrowing[0]
+            candidates.append({
+                "label": f"Canal narrowing (~{int(n['reduction_pct'])}% CSF loss)",
+                "col": self.canal_col, "row": n["row"],
+                "structure": "canal_narrowing", "color": "yellow",
+                "side": "right", "level": None,
+            })
+
+        for t in candidates:
+            final_col, final_row, intensity, status = self._verify_and_reposition_tip(
+                raw_arr, int(t["col"]), int(t["row"]), t["structure"]
+            )
+            audit = {
+                "label": t["label"], "structure": t["structure"], "level": t["level"],
+                "requested_tip": [int(t["col"]), int(t["row"])],
+                "final_tip": [int(final_col), int(final_row)],
+                "intensity": intensity,
+                "expected_range": list(EXPECTED_INTENSITY_RANGES.get(t["structure"], (0, 255))),
+                "status": status,
+                "drawn": status != "failed",
+            }
+            self.annotation_audit.append(audit)
+
+            if status == "failed":
+                logger.warning(
+                    f"Annotation '{t['label']}' FAILED 3C verification "
+                    f"(intensity {intensity} not in {audit['expected_range']}) — NOT drawn"
+                )
+                continue
+
+            tip = (final_col * scale, final_row * scale)
+            if t["side"] == "right":
+                start = (tip[0] + 45 * scale, tip[1])
+                lx = start[0] + 5
+            else:
+                start = (tip[0] - 50 * scale, tip[1])
+                lx = start[0] - len(t["label"]) * 7
             self._draw_arrow(draw, start, tip, color=t["color"])
-            lx = start[0] + (5 if t["start_offset"][0] > 0 else -len(t["label"]) * 7)
             ly = start[1] - 8
             bbox = draw.textbbox((lx, ly), t["label"], font=font_sm)
             draw.rectangle([bbox[0] - 2, bbox[1] - 1, bbox[2] + 2, bbox[3] + 1], fill="black")
@@ -665,9 +817,13 @@ class DICOMEngine:
         out_path = str(self.work_dir / "annotated" / "sag_t2_annotated.png")
         img.save(out_path)
 
-        # Verification report
-        all_ok = all(t["verified"] for t in targets if t["intensity"] > 0)
-        logger.info(f"Annotation verification: {'ALL PASSED' if all_ok else 'ISSUES DETECTED'}")
+        drawn = sum(1 for a in self.annotation_audit if a["drawn"])
+        failed = sum(1 for a in self.annotation_audit if a["status"] == "failed")
+        repositioned = sum(1 for a in self.annotation_audit if a["status"] == "repositioned")
+        logger.info(
+            f"Annotation 3C verification: {drawn} drawn "
+            f"({repositioned} repositioned), {failed} dropped as unverifiable"
+        )
 
         return out_path
 
@@ -704,8 +860,10 @@ class DICOMEngine:
         draw.text((5, 3), "PRE-CONTRAST", fill="cyan", font=font)
         draw.text((w * 2 + 25, 3), "POST-CONTRAST", fill="cyan", font=font)
         draw.text((5, img.height - 18), f"Axial T1 VIBE FS at ~{label}", fill="white", font=font)
+        # Neutral guidance only — do NOT assert a conclusion. The reader/model decides
+        # whether enhancement is present by comparing these SAME-LEVEL pre/post images.
         draw.text((w * 2 + 25, img.height - 35),
-                  "Enhancement = epidural scar [Tier B]", fill="yellow", font=font_sm)
+                  "Same-level pre/post: scar enhances, recurrent disc does not", fill="yellow", font=font_sm)
 
         out_path = str(self.work_dir / "annotated" / f"contrast_{label.replace('-', '')}.png")
         img.save(out_path)
@@ -804,16 +962,52 @@ class DICOMEngine:
 
     def export_measurements_json(self) -> dict:
         """Export all measurements as a JSON-serializable dict."""
+        calibration_status = "DICOM-calibrated" if (
+            self.inventory and self.inventory.is_calibrated
+        ) else "UNCALIBRATED"
+
+        # Deterministic sequence catalog so the report can state the authoritative
+        # study description (dates / sequences / contrast) rather than inferring it.
+        sequence_catalog = []
+        if self.inventory:
+            for name, seq in self.inventory.sequences.items():
+                sequence_catalog.append({
+                    "name": name,
+                    "plane": seq.plane,
+                    "num_slices": seq.num_slices,
+                    "has_contrast": seq.has_contrast,
+                    "calibrated": seq.calibration is not None,
+                })
+
+        study_description = ""
+        if self.inventory:
+            demo = self.inventory.demographics
+            seq_names = ", ".join(s["name"] for s in sequence_catalog) or "n/a"
+            study_description = (
+                f"{demo.study_description or 'MRI study'} "
+                f"(date: {demo.study_date or 'unknown'}); "
+                f"{self.inventory.total_files} images across "
+                f"{len(sequence_catalog)} sequences [{seq_names}]; "
+                f"contrast administered: {'yes' if self.inventory.has_contrast else 'no'}; "
+                f"calibration: {calibration_status}"
+            )
+
         return {
             "demographics": asdict(self.inventory.demographics) if self.inventory else {},
             "detected_anatomy": self.inventory.detected_anatomy if self.inventory else "unknown",
-            "calibration_status": "DICOM-calibrated" if (
-                self.inventory and self.inventory.is_calibrated
-            ) else "UNCALIBRATED",
+            "anatomy_subregion": getattr(self.inventory, "anatomy_subregion", "") if self.inventory else "",
+            "calibration_status": calibration_status,
             "has_contrast": self.inventory.has_contrast if self.inventory else False,
+            "total_files": self.inventory.total_files if self.inventory else 0,
+            "study_description": study_description,
+            "sequence_catalog": sequence_catalog,
             "level_map": self.level_map,
+            "level_confidence": self.level_confidence,
+            "level_confidence_reason": self.level_confidence_reason,
             "disc_measurements": [asdict(m) for m in self.disc_measurements],
             "endplate_assessments": [asdict(e) for e in self.endplate_assessments],
+            "canal_narrowing": self.canal_narrowing,
+            "annotation_audit": self.annotation_audit,
         }
 
     # ── Private Helpers ──
@@ -947,6 +1141,32 @@ class DICOMEngine:
             return "msk"
 
         return "unknown"
+
+    @staticmethod
+    def _detect_msk_subregion(body_part: str, study_desc: str, dcm_files: list[str]) -> str:
+        """Identify the specific joint within an MSK study so the UI can show the right body figure
+        (knee vs hip vs shoulder …) instead of always rendering a knee. Returns '' when ambiguous.
+
+        BodyPartExamined (0018,0015) is weighted highest; study description and file names follow.
+        Order matters: more specific / less collision-prone joints are checked first.
+        """
+        combined = f"{body_part} {study_desc} {' '.join(dcm_files)}".upper()
+        # (subregion, signal tokens). Knee last among the common joints so an explicit hip/shoulder wins.
+        groups = [
+            ("shoulder", ["SHOULDER", "ROTATOR", "LABRUM", "GLENOID", "SUPRASPINATUS", "SCHULTER"]),
+            ("hip",      ["HIP", "ACETABUL", "FEMOROACETAB", "HÜFTE", "HUEFTE"]),
+            ("ankle",    ["ANKLE", "ACHILLES", "CALCANEUS", "TALUS", "SPRUNGGELENK"]),
+            ("wrist",    ["WRIST", "CARPAL", "SCAPHOID", "HANDGELENK"]),
+            ("elbow",    ["ELBOW", "OLECRANON", "EPICONDYL", "ELLBOGEN"]),
+            ("foot",     ["FOOT", "FOREFOOT", "MIDFOOT", "METATARS", "PLANTAR", "FUSS"]),
+            ("hand",     ["HAND", "FINGER", "THUMB", "METACARP", "PHALAN"]),
+            ("knee",     ["KNEE", "MENISCUS", "PATELLA", "ACL", "PCL", "MCL", "LCL",
+                          "CRUCIATE", "TIBIAL PLATEAU", "KNIE"]),
+        ]
+        for sub, tokens in groups:
+            if any(t in combined for t in tokens):
+                return sub
+        return ""
 
     @staticmethod
     def _normalize_dicom(ds) -> np.ndarray:

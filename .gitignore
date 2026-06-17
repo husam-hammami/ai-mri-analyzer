@@ -36,3 +36,14 @@ data/
 
 # Temporary work files
 /tmp/
+
+# Local demo-only proof images (real patient figures — never commit)
+frontend/assets/_demo/
+
+# Medical imaging test datasets (large, licensed; kept local — not in repo history)
+test_data/
+
+# Local scratch / verification artifacts
+.mika_test_data*/
+.mika_unit/
+backend/_verify_agent_run.py

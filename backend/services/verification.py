@@ -38,96 +38,116 @@ class VerifiedReport:
     verified_findings: dict = field(default_factory=dict)
     corrections: list = field(default_factory=list)
     missed_findings: list = field(default_factory=list)
+    audit: dict = field(default_factory=dict)            # 12-item self-audit pass/fail
+    annotation_review: list = field(default_factory=list)  # per-figure 3D re-read
     quality_score: int = 0
     quality_notes: str = ""
+    parsed_ok: bool = False                              # False if JSON parse failed
     raw_response: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
+
+    @property
+    def audit_failures(self) -> list:
+        """List of audit item keys that did not pass (status == 'fail')."""
+        return [k for k, v in self.audit.items() if str(v).lower() == "fail"]
 
 
 # ── Verification Prompt ──
 
 VERIFICATION_PROMPT = """
-## ROLE
-You are a senior attending radiologist with 20+ years of experience at a major
-academic medical center. A junior colleague has produced the initial report below.
-Your job is to VERIFY every finding against the actual images you are now reviewing.
-
-You have access to the SAME images that the junior radiologist reviewed.
+## ROLE — FINAL SELF-AUDIT (Phase 6)
+You are a senior attending radiologist performing the MANDATORY final self-audit before
+this report is delivered. A junior colleague produced the initial report below. You have
+the SAME images, the deterministic measurements, the annotation audit trail, and the
+figure inventory. Run the 12-item audit and fix any item that fails.
 
 ## THE INITIAL REPORT TO VERIFY
 ```json
 {initial_report}
 ```
 
-## THE ORIGINAL MEASUREMENTS DATA
+## DETERMINISTIC MEASUREMENTS (calibration + canal narrowing + level map)
 ```json
 {measurements}
 ```
 
-## YOUR REVIEW PROTOCOL — CHECK EVERY ITEM
+## ANNOTATION AUDIT TRAIL (per arrow tip: structure, intensity, expected range, status)
+```json
+{annotation_audit}
+```
 
-### A. VERIFY EACH EXISTING FINDING
-For EACH finding in the initial report:
-1. Can you see this finding in the images? (confirmed / not seen / uncertain)
-2. Is the grading/classification correct? (correct / should upgrade / should downgrade)
-3. Is the anatomical location correct? (correct / wrong location)
-4. Is the confidence tier appropriate? (correct / too high / too low)
-5. Are the measurements consistent with what you see? (consistent / inconsistent)
+## FIGURE INVENTORY (figure numbers you may reference / re-read)
+{figure_inventory}
+{prior_context}
+## THE 12-ITEM AUDIT — assign each item pass | fail | na
+1. mm_calibration: Every mm value is DICOM-calibrated, or is qualified as "(visual
+   estimate — no calibrated measurement available)". If calibration is UNCALIBRATED, NO
+   specific mm value may appear anywhere.
+2. annotation_coords: Every annotation tip in the audit trail came from intensity
+   analysis (status verified/repositioned), none from visual guessing.
+3. annotation_intensity: No annotation has status "failed" in the audit trail. If any
+   does, fail this item and note that the arrow was/should be dropped.
+4. annotation_reread: Re-READ each annotated figure in the images. For EACH, confirm the
+   arrow tip physically touches the intended structure, the level label is correct, and
+   (axial) laterality is correct. Report per-figure in "annotation_review".
+5. tier_criteria: Every confidence claim matches the tier framework (uncalibrated≤C,
+   single-sequence≤B, etc.).
+6. contradiction_language: Any divergence from a prior report uses soft framing
+   ("appears to be … may warrant evaluation"), acknowledges the prior radiologist had
+   full PACS tools, and never says "visual evidence contradicts". (na if no prior report.)
+7. image_support: Every finding can point to at least one supporting figure ([See Figure N]).
+8. level_counting: Recount vertebral levels from the SACRUM on the Level Reference
+   (Figure 0). Every reported level label must match. (na if not a spine study.)
+9. laterality: On every axial finding, patient-right = image-left. Confirm side-of-
+   pathology. (na if no axial findings.)
+10. incidentals_qualified: Every incidental is Tier C and ends with "dedicated imaging
+    recommended for further characterization".
+11. modic_concordance: Any Modic type rests on concordant T1+T2+STIR (or STIR-alone is
+    only "suggestive of Modic 1" at Tier B). (na if no Modic call / not spine.)
+12. enhancement_samelevel: Any enhancement/scar-vs-recurrence claim rests on a confirmed
+    SAME-LEVEL pre/post comparison, else capped at Tier B. (na if no contrast.)
 
-### B. CHECK FOR MISSED FINDINGS
-6. Are there any abnormalities visible in the images that are NOT in the report?
-7. Are all anatomical regions covered by the systematic checklist?
-8. Are incidental findings noted?
-
-### C. QUALITY CONTROL
-9. Does the impression accurately summarize the key findings?
-10. Are findings ordered by clinical significance in the impression?
-11. Is the language precise and unambiguous?
-12. Are confidence tiers correctly applied per the framework rules?
-
-### D. MEASUREMENT CROSS-CHECK
-13. Do measurement-based findings match the provided measurements data?
-14. Are uncalibrated measurements properly capped at Tier C?
-15. Are any measurements fabricated (not in the data but reported)?
-
-## CRITICAL RULES FOR VERIFICATION
+## CRITICAL RULES
 - If you CANNOT see a reported finding in the images, DOWNGRADE or REMOVE it.
-- If you see something the initial report MISSED, ADD it with proper tier.
-- If you see a grading error, CORRECT it with explanation.
-- Do NOT add findings you cannot see — that would make things worse.
+- If you see something the report MISSED, ADD it to missed_findings with a proper tier.
 - When in doubt, the LESS severe interpretation wins.
-- The initial report's structure and format should be preserved.
+- Preserve the initial report's JSON structure in "verified_findings"; only change values
+  where a correction is warranted.
 
-## OUTPUT FORMAT
-Return valid JSON:
+{spine_block}
+
+## OUTPUT FORMAT — return valid JSON only
 {{
-    "verified_findings": {{ ... corrected version of the full findings ... }},
+    "verified_findings": {{ ... corrected full findings, SAME structure as input ... }},
+    "audit": {{
+        "mm_calibration": "pass", "annotation_coords": "pass", "annotation_intensity": "pass",
+        "annotation_reread": "pass", "tier_criteria": "pass", "contradiction_language": "na",
+        "image_support": "pass", "level_counting": "pass", "laterality": "na",
+        "incidentals_qualified": "pass", "modic_concordance": "na", "enhancement_samelevel": "na"
+    }},
+    "annotation_review": [
+        {{"figure": "Figure 1", "arrow_on_target": true, "level_label_correct": true, "laterality_correct": true, "note": ""}}
+    ],
     "corrections": [
-        {{
-            "finding": "L4-L5 disc herniation",
-            "action": "downgraded",
-            "reason": "Signal appears more consistent with Pfirrmann II than III on review"
-        }},
-        {{
-            "finding": "L3-L4 foraminal stenosis left",
-            "action": "removed",
-            "reason": "Cannot confirm on available axial images — perineural fat appears preserved"
-        }}
+        {{"finding": "L4-L5 disc herniation", "action": "downgraded", "reason": "Signal more consistent with Pfirrmann II on review"}}
     ],
     "missed_findings": [
-        {{
-            "finding": "T12 mild compression fracture",
-            "tier": "B",
-            "reason": "Approximately 20% anterior height loss visible on sagittal T1, STIR shows no edema suggesting chronic"
-        }}
+        {{"finding": "T12 mild compression fracture", "tier": "B", "reason": "~20% anterior height loss on sagittal T1, STIR negative (chronic)"}}
     ],
     "quality_score": 82,
-    "quality_notes": "Good systematic coverage. Two findings overcalled, one compression fracture missed. Impression appropriately prioritized."
+    "quality_notes": "Concise summary of the audit outcome and any failed items."
 }}
+"""
 
-IMPORTANT: The "verified_findings" must have the SAME JSON structure as the input
-findings. Preserve all field names. Update values where corrections are needed.
+SPINE_AUDIT_BLOCK = """
+## SPINE EMPHASIS (this IS a spine study)
+- Item 8 is load-bearing: misidentifying ONE level invalidates every downstream finding.
+  Physically recount from the sacrum on Figure 0 before accepting any level label.
+- Item 9: reversed laterality on an axial nerve/foramen finding is a clinically dangerous
+  error — verify patient-right = image-left on every axial finding.
+- Item 11/12: do not let a single-sequence Modic type or a single-phase enhancement claim
+  survive at high confidence.
 """
 
 
@@ -137,8 +157,9 @@ class VerificationPass:
     Sends the initial report + all images to Claude as a senior attending.
     """
 
-    def __init__(self, api_key: str, model: str = "claude-opus-4-6"):
+    def __init__(self, api_key: str = "", model: str = "claude-opus-4-8", auth_token: str = ""):
         self.api_key = api_key
+        self.auth_token = auth_token
         self.model = model
         self._client = None
 
@@ -146,10 +167,10 @@ class VerificationPass:
     def client(self):
         if self._client is None:
             try:
-                import anthropic
-                self._client = anthropic.Anthropic(api_key=self.api_key)
+                from backend.services.claude_interpreter import build_anthropic_client
             except ImportError:
-                raise RuntimeError("anthropic SDK required")
+                from services.claude_interpreter import build_anthropic_client
+            self._client = build_anthropic_client(self.api_key, self.auth_token)
         return self._client
 
     def verify(
@@ -158,55 +179,70 @@ class VerificationPass:
         image_content_blocks: list[dict],
         measurements_json: dict,
         anatomy_type: str,
+        annotation_audit: Optional[list] = None,
+        figure_inventory: Optional[list] = None,
+        prior_reports: Optional[str] = None,
+        surgical_notes: Optional[str] = None,
     ) -> VerifiedReport:
         """
-        Send initial report + images to Claude for senior attending review.
+        Run the mandatory 12-item self-audit (skill Phase 6) on the initial report.
 
         Args:
-            initial_report: The raw JSON from the first Claude interpretation
-            image_content_blocks: Same image blocks sent to the first call
-            measurements_json: Same measurements data
-            anatomy_type: The detected anatomy type
+            initial_report: The raw JSON from the blind-read interpretation
+            image_content_blocks: Same image blocks sent to the first call (incl. figures)
+            measurements_json: Deterministic measurements (calibration, canal narrowing, …)
+            anatomy_type: Detected anatomy — switches in the spine-specific audit emphasis
+            annotation_audit: Per-tip 3C/3D audit from the DICOM engine
+            figure_inventory: List of {figure, name, description} for figure re-read
+            prior_reports / surgical_notes: For the contradiction-language audit (item 6)
 
         Returns:
-            VerifiedReport with corrections, missed findings, and quality score
+            VerifiedReport with corrections, missed findings, 12-item audit, and figure review.
         """
-        # Build the verification prompt with the initial report embedded
+        spine_block = SPINE_AUDIT_BLOCK if anatomy_type == "spine" else ""
+
+        fig_lines = []
+        for fig in (figure_inventory or []):
+            fig_lines.append(f"- {fig.get('figure', '?')}: {fig.get('description', fig.get('name', ''))}")
+        figure_inventory_text = "\n".join(fig_lines) if fig_lines else "(no annotated figures provided)"
+
+        prior_context = ""
+        if prior_reports or surgical_notes:
+            prior_context = "\n## PRIOR REPORTS / OPERATIVE NOTES (for item 6)\n"
+            if prior_reports:
+                prior_context += f"### Prior Radiology Reports\n{prior_reports}\n"
+            if surgical_notes:
+                prior_context += f"### Operative Notes\n{surgical_notes}\n"
+
         verification_text = VERIFICATION_PROMPT.format(
             initial_report=json.dumps(initial_report, indent=2),
             measurements=json.dumps(measurements_json, indent=2),
+            annotation_audit=json.dumps(annotation_audit or [], indent=2),
+            figure_inventory=figure_inventory_text,
+            prior_context=prior_context,
+            spine_block=spine_block,
         )
 
-        # Build content blocks: images first, then verification prompt
-        content_blocks = []
-
-        # Add all images (same as first pass)
-        content_blocks.extend(image_content_blocks)
-
-        # Add the verification task
-        content_blocks.append({
-            "type": "text",
-            "text": verification_text,
-        })
+        # Build content blocks: images first, then the audit task
+        content_blocks = list(image_content_blocks)
+        content_blocks.append({"type": "text", "text": verification_text})
 
         logger.info(
-            f"Running verification pass for {anatomy_type} "
-            f"({len(image_content_blocks)} image blocks)"
+            f"Running 12-item self-audit for {anatomy_type} "
+            f"({len(image_content_blocks)} image blocks, "
+            f"{len(annotation_audit or [])} annotations)"
         )
 
-        # Make the API call
         response = self.client.messages.create(
             model=self.model,
             max_tokens=8000,
             system=(
-                "You are a senior attending radiologist performing quality assurance "
-                "review of a junior colleague's MRI interpretation. Be thorough but fair. "
-                "Only correct genuine errors — do not make changes for the sake of change."
+                "You are a senior attending radiologist performing the mandatory final "
+                "self-audit of an MRI interpretation. Be thorough but fair. Only correct "
+                "genuine errors. Honestly mark any audit item that fails — an honest "
+                "'fail' is far better than a false 'pass'."
             ),
-            messages=[{
-                "role": "user",
-                "content": content_blocks,
-            }],
+            messages=[{"role": "user", "content": content_blocks}],
         )
 
         raw_text = response.content[0].text
@@ -215,7 +251,6 @@ class VerificationPass:
             f"{response.usage.output_tokens} output tokens"
         )
 
-        # Parse the verification result
         result = VerifiedReport(
             raw_response=raw_text,
             input_tokens=response.usage.input_tokens,
@@ -234,14 +269,19 @@ class VerificationPass:
             result.verified_findings = parsed.get("verified_findings", {})
             result.corrections = parsed.get("corrections", [])
             result.missed_findings = parsed.get("missed_findings", [])
+            result.audit = parsed.get("audit", {})
+            result.annotation_review = parsed.get("annotation_review", [])
             result.quality_score = parsed.get("quality_score", 0)
             result.quality_notes = parsed.get("quality_notes", "")
+            result.parsed_ok = True
 
         except (json.JSONDecodeError, IndexError) as e:
             logger.warning(f"Could not parse verification JSON: {e}")
-            # Fall back to using the initial report unchanged
+            # Fall back to the initial report unchanged, but mark the failure explicitly
+            # so it is NOT indistinguishable from a passed audit downstream.
             result.verified_findings = initial_report
             result.quality_notes = f"Verification parsing failed: {e}"
-            result.quality_score = 50
+            result.quality_score = 0
+            result.parsed_ok = False
 
         return result
