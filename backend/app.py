@@ -30,6 +30,7 @@ import tempfile
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse, JSONResponse
@@ -46,7 +47,7 @@ from services.claude_interpreter import (
 )
 from services.batch_sender import BatchSender
 from services.verification import VerificationPass
-from services.agent_runner import AgentRunner
+from services.agent_runner import AgentRunner, _normalize_summary, DEFAULT_TIMEOUT_S as AGENT_TIMEOUT_S
 try:
     from backend.prompts.base_prompt import REPORT_DISCLAIMER
 except ImportError:
@@ -135,10 +136,31 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MIKA_MAX_UPLOAD_BYTES", str(2 * 1024 * 10
 
 # ── Application ──
 
+@asynccontextmanager
+async def _lifespan(app: "FastAPI"):
+    """Fix 1/Fix 3 startup: validate the read environment, then reconcile any jobs left
+    non-terminal by a previous process that died mid-read (salvage finished reports, mark the
+    rest as interrupted). Runs once before the server accepts requests."""
+    env = check_env()
+    if env["ok"]:
+        logger.info(f"check_env OK — {env['versions']}")
+    else:
+        logger.warning(f"check_env reported a problem at startup: {env.get('import_error') or env.get('mismatches')}")
+    _warn_if_onedrive_data_dir()
+    try:
+        handled = _reconcile_jobs_on_boot()
+        if handled:
+            logger.info(f"Boot reconciliation handled {handled} interrupted/unpersisted job(s)")
+    except Exception:
+        logger.exception("Boot reconciliation failed")
+    yield
+
+
 app = FastAPI(
     title="MIKA — AI Medical Imaging Analyzer",
     description="MIKA: Multi-modality, multi-anatomy AI imaging analysis — MR, CT, X-ray, ultrasound, mammography, PET across Spine, Brain, MSK, Cardiac, Chest, Abdomen, Breast, Vascular, Head & Neck, Prostate. Accepts DICOM, NIfTI, NRRD, PNG/JPG, ZIP. Runs on your Claude subscription.",
     version="3.0.0",
+    lifespan=_lifespan,
 )
 
 # MIKA serves its own frontend (same origin) and, in the desktop build, runs on localhost only.
@@ -203,6 +225,8 @@ class AnalysisJob:
         self.agent: dict = {}                 # agent-mode result (pdf path, figures, summary)
         self.pdf_path: Optional[str] = None   # server-side path to the generated PDF (not exposed to client)
         self.cancelled: bool = False          # user requested cancel — honored by the agent loop + completion
+        self.truncated: bool = False          # read hit the time cap with partial output (Fix 4)
+        self.heartbeat_ts: float = time.time()  # last on-disk heartbeat (Fix 1 watchdog/boot recovery)
         self.error: Optional[str] = None
         self.created_at = datetime.utcnow().isoformat()
 
@@ -278,6 +302,7 @@ def _persist_report(job: "AnalysisJob") -> None:
             "images": images,
             "pdf": _rel_to_job(job.job_id, job.pdf_path) if job.pdf_path else None,
             "pdf_available": bool(job.agent.get("pdf_available")) if job.agent else False,
+            "truncated": bool(getattr(job, "truncated", False)),
         }
         (jd / "meta.json").write_text(json.dumps(meta, default=str), encoding="utf-8")
         logger.info(f"Persisted report for job {job.job_id} ({len(images)} images)")
@@ -333,6 +358,208 @@ def _list_reports() -> list[dict]:
     return out
 
 
+# ── Fix 3: runtime environment enforcement ──
+#
+# ABI-critical pins — these MUST match requirements.txt / requirements.lock. numpy<2 is HARD:
+# scipy 1.12.0 is built against the numpy 1.26 ABI, so numpy 2.x crashes every read (the real F2
+# incident, where a stray `pip install` pulled numpy 2.x and broke every read until it was pinned back).
+EXPECTED_VERSIONS = {"numpy": "1.26.4", "scipy": "1.12.0", "pydicom": "2.4.4", "Pillow": "10.2.0"}
+
+
+def check_env() -> dict:
+    """Confirm the read pipeline still imports AND that the ABI-critical deps match their pins.
+    Catches an out-of-band `pip install` that drifted numpy/scipy after boot. Non-raising —
+    returns a structured result; callers decide whether to fail the read or just surface it."""
+    versions, mismatches, import_error = {}, [], None
+    try:
+        import numpy, scipy, pydicom, PIL
+        from scipy.signal import find_peaks            # the exact read-path imports (dicom_engine.py:24-25)
+        from scipy.ndimage import gaussian_filter1d
+        versions = {"numpy": numpy.__version__, "scipy": scipy.__version__,
+                    "pydicom": pydicom.__version__, "Pillow": PIL.__version__}
+        if int(str(numpy.__version__).split(".")[0]) >= 2:
+            mismatches.append(f"numpy {numpy.__version__} is >=2 — scipy {scipy.__version__} needs the numpy 1.26 ABI")
+        for pkg, want in EXPECTED_VERSIONS.items():
+            got = versions.get(pkg)
+            if got and got != want:
+                mismatches.append(f"{pkg} {got} != pinned {want}")
+    except Exception as e:
+        import_error = f"{type(e).__name__}: {e}"
+    return {"ok": import_error is None and not mismatches,
+            "versions": versions, "mismatches": mismatches, "import_error": import_error}
+
+
+def _assert_env_for_read() -> None:
+    """Cheap per-read guard: a mid-session dependency drift fails the job cleanly with an
+    actionable message instead of an opaque crash deep in the pipeline."""
+    env = check_env()
+    if not env["ok"]:
+        detail = env["import_error"] or "; ".join(env["mismatches"])
+        raise RuntimeError(f"environment changed — restart MIKA ({detail})")
+
+
+def _warn_if_onedrive_data_dir() -> None:
+    """Deferred item: a OneDrive-synced data dir can lock files mid-read (an F1 trigger). Warn
+    only — never a hard gate."""
+    try:
+        if "onedrive" in str(DATA_DIR).lower():
+            logger.warning("MIKA_DATA_DIR appears to be inside OneDrive — cloud file locks/syncs can "
+                           "interrupt a read. Prefer a local disk path (set MIKA_DATA_DIR).")
+    except Exception:
+        pass
+
+
+# ── Fix 1: disk heartbeat, dead-worker recovery, and watchdog ──
+#
+# Reads run in-process via BackgroundTasks, so a *process* kill (OOM, OneDrive lock, OS reap)
+# bypasses the try/except and freezes the job at a non-terminal status forever. The defenses:
+#   1. each progress tick writes status.json with a wall-clock heartbeat (a killed worker leaves it stale)
+#   2. boot reconciliation salvages a finished-but-unpersisted report, or marks an interrupted one error
+#   3. a watchdog flips a live job stuck past the timeout+margin to error so SSE/status terminate honestly
+WATCHDOG_MARGIN_S = int(os.environ.get("MIKA_WATCHDOG_MARGIN_S", "120"))
+
+
+def _write_status_file(job_id: str, status: str, progress: int, message: str,
+                       heartbeat_ts: float, truncated: bool = False) -> None:
+    """Write DATA_DIR/<job>/status.json (the on-disk heartbeat). Non-fatal."""
+    try:
+        jd = _job_dir(job_id)
+        jd.mkdir(parents=True, exist_ok=True)
+        (jd / "status.json").write_text(json.dumps({
+            "job_id": job_id, "status": status, "progress": progress,
+            "message": message, "heartbeat_ts": heartbeat_ts, "truncated": truncated,
+        }), encoding="utf-8")
+    except Exception as e:
+        logger.debug(f"status.json write failed for {job_id}: {e}")
+
+
+def _write_status_heartbeat(job: "AnalysisJob") -> None:
+    """Stamp a fresh heartbeat for a live job and mirror its state to disk."""
+    ts = time.time()
+    job.heartbeat_ts = ts
+    _write_status_file(job.job_id, job.status, job.progress, job.progress_message or "",
+                       ts, bool(getattr(job, "truncated", False)))
+
+
+def _load_status(job_id: str) -> Optional[dict]:
+    try:
+        p = _job_dir(job_id) / "status.json"
+        if p.exists():
+            return json.loads(p.read_text(encoding="utf-8-sig"))  # tolerate a BOM from any writer
+    except Exception as e:
+        logger.warning(f"Could not read status for {job_id}: {e}")
+    return None
+
+
+def _salvage_report(job_id: str, out_dir: Path, pdfs: list, summary: dict, truncated: bool = False) -> None:
+    """F5: a previous process finished a DELIVERABLE report (PDF + a real patient summary on disk)
+    but died before persisting it. Reconstruct a minimal completed job from the artifacts and
+    persist it via the existing _persist_report so the finished study becomes retrievable.
+    The caller owns the deliverability gate (_has_patient) — mirroring the live success path so a
+    clinical-PDF-only / patient-less crash is never promoted to 'complete' on the recovery path."""
+    job = AnalysisJob(job_id=job_id, dicom_dir=str(_job_dir(job_id) / "dicom"))
+    job.mode = "agent"
+    job.status = "complete"
+    job.progress = 100
+    job.truncated = bool(truncated)   # preserve the Fix 4 "may be incomplete" signal across recovery
+    pngs = sorted(out_dir.glob("*.png"))
+    for p in pngs:
+        job.annotated_images[p.stem] = str(p)
+    seqthumb_dir = _job_dir(job_id) / "work" / "seqthumbs"
+    if seqthumb_dir.exists():
+        for p in sorted(seqthumb_dir.glob("*.png")):
+            job.annotated_images.setdefault(p.stem, str(p))   # for the Recent-studies thumbnail
+    job.pdf_path = str(pdfs[0])  # report.pdf sorts before report_clinical.pdf
+    top_study = summary.get("study") if isinstance(summary.get("study"), dict) else {}
+    job.agent = {
+        "success": True, "pdf_available": True,
+        "figures": [p.stem for p in pngs], "summary": summary,
+        "result_text": "", "num_turns": 0, "cost_usd": 0.0, "error": None,
+        "salvaged": True, "truncated": job.truncated,
+    }
+    job.measurements = {
+        "detected_anatomy": "unknown", "anatomy_subregion": "",
+        "modality": top_study.get("modality", ""),
+        "calibration_status": summary.get("calibration_status", "unknown"),
+        "study_description": summary.get("study_description", ""),
+        "agent_summary": summary,
+    }
+    _persist_report(job)
+
+
+def _reconcile_job_from_disk(job_id: str) -> Optional[str]:
+    """Bring one job dir to an honest terminal state. Idempotent.
+      • already persisted (report.json + meta.json) → no-op
+      • finished PDF + a REAL patient summary on disk, never persisted → salvage → 'complete'
+      • a non-terminal status.json, or partial/patient-less artifacts → mark 'error' (interrupted)
+    Salvage uses the SAME deliverability gate as the live success path (Fix 4): a clinical-PDF-only
+    / patient-less crash is never promoted to 'complete' on the recovery path — it falls through to
+    'error' instead. Returns the resulting terminal status, or None if nothing was done."""
+    jd = _job_dir(job_id)
+    if (jd / "report.json").exists() and (jd / "meta.json").exists():
+        return None
+    out_dir = jd / "work" / "report"
+    summary_file = out_dir / "summary.json"
+    pdfs = sorted(out_dir.glob("*.pdf")) if out_dir.exists() else []
+    st = _load_status(job_id)
+    prior_truncated = bool(st.get("truncated")) if st else False
+    has_artifacts = bool(pdfs) and summary_file.exists()
+    if has_artifacts:
+        try:
+            summary = _normalize_summary(json.loads(summary_file.read_text(encoding="utf-8-sig")))
+        except Exception:
+            summary = _normalize_summary({})
+        if AgentRunner._has_patient(summary):   # deliverable only — same gate as the live run
+            try:
+                _salvage_report(job_id, out_dir, pdfs, summary, truncated=prior_truncated)
+                _write_status_file(job_id, "complete", 100, "Report recovered after restart",
+                                   time.time(), truncated=prior_truncated)
+                logger.info(f"Salvaged finished report for job {job_id}")
+                return "complete"
+            except Exception as e:
+                logger.warning(f"Salvage failed for {job_id}: {e}")
+    # Not salvageable: a non-terminal status.json, OR artifacts that fail the deliverable gate
+    # (partial/patient-less). Either way the read did not finish a real report → mark it interrupted.
+    if (st and st.get("status") not in (None, "complete", "error")) or has_artifacts:
+        _write_status_file(job_id, "error", (st or {}).get("progress", 0),
+                           "read was interrupted — please re-run", time.time(),
+                           truncated=prior_truncated)
+        logger.info(f"Marked interrupted job {job_id} as error")
+        return "error"
+    return None
+
+
+def _reconcile_jobs_on_boot() -> int:
+    """At startup JOBS is empty and any worker that owned an in-flight read is gone, so every
+    non-terminal job on disk is orphaned. Salvage or mark each. Returns the count handled."""
+    handled = 0
+    try:
+        for d in DATA_DIR.iterdir():
+            if not d.is_dir() or not JOB_ID_RE.match(d.name):
+                continue
+            if _reconcile_job_from_disk(d.name):
+                handled += 1
+    except Exception as e:
+        logger.warning(f"Boot reconciliation scan failed: {e}")
+    return handled
+
+
+def _maybe_expire_job(job: "AnalysisJob") -> bool:
+    """Watchdog: a live job that's stayed non-terminal past the agent timeout + margin without a
+    fresh heartbeat is treated as dead — flip it to error so SSE/status terminate honestly instead
+    of looping at ~95% forever. Returns True if it expired the job."""
+    if job.status in ("complete", "error"):
+        return False
+    if time.time() - (job.heartbeat_ts or 0) <= AGENT_TIMEOUT_S + WATCHDOG_MARGIN_S:
+        return False
+    job.status = "error"
+    job.error = job.error or "read timed out — please re-run"
+    job.progress_message = "Read timed out"
+    _write_status_heartbeat(job)
+    logger.warning(f"Watchdog expired stuck job {job.job_id} (no heartbeat for >{AGENT_TIMEOUT_S + WATCHDOG_MARGIN_S}s)")
+    return True
+
+
 # ── Request/Response Models ──
 
 class AnalyzeRequest(BaseModel):
@@ -358,6 +585,7 @@ class JobStatus(BaseModel):
     est_total_seconds: Optional[int] = None
     active_sequence: Optional[str] = None
     active_region: Optional[str] = None
+    truncated: bool = False   # Fix 4: read hit the time cap with partial output — re-run recommended
 
 
 class ReportResponse(BaseModel):
@@ -484,6 +712,17 @@ async def agent_availability():
     return AgentRunner().availability()
 
 
+@app.get("/health")
+async def health():
+    """Fix 3: liveness + read-environment check. 200 when the read pipeline imports and the
+    ABI-critical deps match their pins; 503 (degraded) with the specific mismatch otherwise."""
+    env = check_env()
+    return JSONResponse(
+        {"status": "ok" if env["ok"] else "degraded", **env},
+        status_code=200 if env["ok"] else 503,
+    )
+
+
 @app.post("/api/connect")
 async def connect_claude(console: bool = False):
     """
@@ -564,8 +803,9 @@ async def get_status(job_id: str):
     _validate_job_id(job_id)
     job = JOBS.get(job_id)
     if not job:
-        # Restart / cache miss: a finished study still lives on disk — report it complete so the
-        # frontend resumes straight to the Read instead of showing "job not found".
+        # No live run. First bring the on-disk job to an honest terminal state (Fix 1): salvage a
+        # finished-but-unpersisted report, or mark an interrupted one as error.
+        _reconcile_job_from_disk(job_id)
         meta = _load_meta(job_id)
         if meta:
             st = meta.get("status", "complete")
@@ -573,9 +813,20 @@ async def get_status(job_id: str):
                 job_id=job_id, status=st, progress=100 if st == "complete" else 0,
                 progress_message="Report ready" if st == "complete" else (meta.get("error") or ""),
                 created_at=meta.get("created_at", ""), error=meta.get("error"),
+                truncated=bool(meta.get("truncated")),
+            )
+        disk = _load_status(job_id)
+        if disk:
+            st = disk.get("status", "error")
+            return JobStatus(
+                job_id=job_id, status=st, progress=disk.get("progress", 0),
+                progress_message=disk.get("message", ""), created_at="",
+                error=disk.get("message") if st == "error" else None,
+                truncated=bool(disk.get("truncated")),
             )
         raise HTTPException(404, f"Job {job_id} not found")
 
+    _maybe_expire_job(job)   # watchdog: close out a stuck live job before reporting
     return JobStatus(
         job_id=job.job_id,
         status=job.status,
@@ -587,6 +838,7 @@ async def get_status(job_id: str):
         est_total_seconds=job.est_total_seconds,
         active_sequence=job.active_sequence,
         active_region=job.active_region,
+        truncated=bool(getattr(job, "truncated", False)),
     )
 
 
@@ -596,12 +848,26 @@ async def stream_status(job_id: str):
     _validate_job_id(job_id)
     job = JOBS.get(job_id)
     if not job:
-        # No live run: if a finished report exists on disk, emit one terminal event and close.
+        # No live run: reconcile the on-disk job (Fix 1), then emit one terminal event and close.
+        _reconcile_job_from_disk(job_id)
+        payload = None
         meta = _load_meta(job_id)
         if meta:
             st = meta.get("status", "complete")
+            payload = {"status": st, "progress": 100 if st == "complete" else 0,
+                       "message": "Report ready" if st == "complete" else (meta.get("error") or ""),
+                       "error": meta.get("error"), "truncated": bool(meta.get("truncated"))}
+        else:
+            disk = _load_status(job_id)
+            if disk:
+                st = disk.get("status", "error")
+                payload = {"status": st, "progress": disk.get("progress", 0),
+                           "message": disk.get("message", ""),
+                           "error": disk.get("message") if st == "error" else None,
+                           "truncated": bool(disk.get("truncated"))}
+        if payload is not None:
             async def _one():
-                yield f"data: {json.dumps({'status': st, 'progress': 100 if st == 'complete' else 0, 'message': 'Report ready', 'error': meta.get('error')})}\n\n"
+                yield f"data: {json.dumps(payload)}\n\n"
             return StreamingResponse(_one(), media_type="text/event-stream")
         raise HTTPException(404, f"Job {job_id} not found")
 
@@ -609,7 +875,8 @@ async def stream_status(job_id: str):
         last = None
         since_ping = 0.0
         while True:
-            snapshot = (job.progress, job.eta_seconds, job.status, job.active_sequence, job.active_region, job.progress_message)
+            _maybe_expire_job(job)   # watchdog: terminate a stuck live stream honestly
+            snapshot = (job.progress, job.eta_seconds, job.status, job.active_sequence, job.active_region, job.progress_message, job.truncated)
             if snapshot != last or job.status in ("complete", "error"):
                 data = json.dumps({
                     "status": job.status,
@@ -620,6 +887,7 @@ async def stream_status(job_id: str):
                     "est_total_seconds": job.est_total_seconds,
                     "active_sequence": job.active_sequence,
                     "active_region": job.active_region,
+                    "truncated": job.truncated,
                 })
                 yield f"data: {data}\n\n"
                 last = snapshot
@@ -732,6 +1000,7 @@ def _build_report_payload(job: "AnalysisJob") -> dict:
         "mode": job.mode,
         "agent": job.agent,
         "pdf_available": bool(job.agent.get("pdf_available")),
+        "truncated": bool(getattr(job, "truncated", False)),   # Fix 4: read may be incomplete — re-run recommended
     }
 
 
@@ -879,6 +1148,7 @@ async def cancel_job(job_id: str):
     job.status = "error"
     job.error = "Cancelled by user"
     job.progress_message = "Cancelled"
+    _write_status_heartbeat(job)   # Fix 1: terminal heartbeat so boot recovery sees a clean error, not "interrupted"
     return {"job_id": job_id, "status": "error", "cancelled": True,
             "note": "Marked cancelled. An in-flight subscription run may still consume its credit."}
 
@@ -984,6 +1254,7 @@ async def _run_agent_pipeline(
     exactly the way cowork produced the definitive PDF report.
     """
     try:
+        _assert_env_for_read()   # Fix 3: fail cleanly if deps drifted mid-session (numpy/scipy ABI)
         # Study root holds the original uploaded files (dicom/ and upload/).
         study_root = str(Path(job.dicom_dir).parent)
 
@@ -1037,6 +1308,7 @@ async def _run_agent_pipeline(
         job.status = "interpreting"
         job.progress = 8
         job.progress_message = "Launching analysis on your subscription..."
+        _write_status_heartbeat(job)   # Fix 1: first on-disk heartbeat (boot recovery can detect a kill from here on)
 
         # Run the blocking CLI off the event loop, and tick a live, honest ETA while it runs:
         # the bar advances asymptotically toward 95% over the calibrated estimate and only
@@ -1073,6 +1345,7 @@ async def _run_agent_pipeline(
                 job.active_sequence = active_seq
                 job.active_region = active_reg
                 job.progress_message = note or ("Wrapping up…" if job.eta_seconds == 0 else "")
+            _write_status_heartbeat(job)   # Fix 1: refresh the on-disk heartbeat each tick
             if done or job.cancelled:
                 break
         # User cancelled mid-run: leave the 'error/Cancelled' state intact and do NOT overwrite it
@@ -1090,6 +1363,7 @@ async def _run_agent_pipeline(
             job.annotated_images[Path(p).stem] = p
 
         job.pdf_path = result.pdf_path or None   # authoritative path for this run (BACKEND-3); not exposed to client
+        job.truncated = bool(getattr(result, "truncated", False))   # Fix 4: ran past the time cap with partial output
         job.agent = {
             "success": result.success,
             "pdf_available": bool(result.pdf_path),
@@ -1099,6 +1373,7 @@ async def _run_agent_pipeline(
             "num_turns": result.num_turns,
             "cost_usd": result.cost_usd,
             "error": result.error,
+            "truncated": job.truncated,
         }
         # Best-effort: surface the agent's summary in the standard report fields.
         # Preserve the anatomy + sequence catalog detected by the §7.3 pre-step.
@@ -1116,20 +1391,27 @@ async def _run_agent_pipeline(
         if result.success:
             job.status = "complete"
             job.progress = 100
-            job.progress_message = "Agent analysis complete — PDF report ready"
-            logger.info(f"Agent job {job.job_id} complete: pdf ready, {len(result.figures)} figures")
+            job.progress_message = (
+                "Analysis complete — this read may be incomplete; re-run recommended"
+                if job.truncated else "Agent analysis complete — PDF report ready"
+            )
+            logger.info(f"Agent job {job.job_id} complete: pdf ready, {len(result.figures)} figures"
+                        f"{' (TRUNCATED)' if job.truncated else ''}")
             _persist_report(job)   # durable: survives restart, indexes into Recent studies
+            _write_status_heartbeat(job)   # Fix 1: terminal heartbeat
             _notify_email(notify_email, job.job_id, "complete")
         else:
             job.status = "error"
             job.error = result.error or "Agent run failed without producing a report"
             job.progress_message = f"Agent error: {job.error}"
+            _write_status_heartbeat(job)   # Fix 1: terminal heartbeat
             _notify_email(notify_email, job.job_id, "error")
     except Exception as e:
         logger.exception(f"Agent pipeline failed for job {job.job_id}")
         job.status = "error"
         job.error = str(e)
         job.progress_message = f"Error: {str(e)}"
+        _write_status_heartbeat(job)   # Fix 1: terminal heartbeat
         _notify_email(notify_email, job.job_id, "error")
 
 
@@ -1143,6 +1425,7 @@ async def _run_analysis_pipeline(
 ):
     """Execute the full analysis pipeline in the background."""
     try:
+        _assert_env_for_read()   # Fix 3: fail cleanly if deps drifted mid-session (numpy/scipy ABI)
         # Rough total for the time-remaining bar (lite is image+API bound, ~3 min).
         # The frontend derives remaining from progress when eta_seconds is not set live.
         job.est_total_seconds = 180
@@ -1153,6 +1436,7 @@ async def _run_analysis_pipeline(
         job.status = "inventory"
         job.progress = 5
         job.progress_message = "Cataloging DICOM files and detecting anatomy type..."
+        _write_status_heartbeat(job)   # Fix 1: first on-disk heartbeat (boot recovery can detect a kill from here on)
         inventory = engine.run_inventory()
         detected_anatomy = inventory.detected_anatomy
         try:
@@ -1505,12 +1789,14 @@ async def _run_analysis_pipeline(
         job.progress_message = "Analysis complete"
         logger.info(f"Job {job.job_id} complete — {image_count} images analyzed with verification")
         _persist_report(job)   # durable: survives restart, indexes into Recent studies
+        _write_status_heartbeat(job)   # Fix 1: terminal heartbeat
 
     except Exception as e:
         logger.exception(f"Analysis failed for job {job.job_id}")
         job.status = "error"
         job.error = str(e)
         job.progress_message = f"Error: {str(e)}"
+        _write_status_heartbeat(job)   # Fix 1: terminal heartbeat
 
 
 def _find_sequence(

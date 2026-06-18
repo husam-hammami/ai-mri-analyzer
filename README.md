@@ -32,8 +32,9 @@ MIKA splits the analysis into two layers:
 git clone https://github.com/husam-hammami/ai-mri-analyzer.git
 cd ai-mri-analyzer
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies — use the pinned transitive freeze for a reproducible, known-good
+# environment (numpy<2 is a hard ABI requirement for scipy 1.12). Fall back to requirements.txt.
+pip install -r requirements.lock   # or: pip install -r requirements.txt
 
 # Run the server
 cd backend

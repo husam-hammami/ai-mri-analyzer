@@ -17,9 +17,16 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-# Install dependencies
-echo "Installing dependencies..."
-pip install -r requirements.txt --break-system-packages -q 2>/dev/null || pip install -r requirements.txt -q
+# Install dependencies. Prefer the pinned transitive freeze (requirements.lock) for a
+# reproducible, known-good environment — numpy<2 is a hard ABI requirement for scipy 1.12.
+# Fall back to requirements.txt if the lock is absent.
+if [ -f requirements.lock ]; then
+    REQ_FILE="requirements.lock"
+else
+    REQ_FILE="requirements.txt"
+fi
+echo "Installing dependencies from $REQ_FILE..."
+pip install -r "$REQ_FILE" --break-system-packages -q 2>/dev/null || pip install -r "$REQ_FILE" -q
 
 # Set API key if provided as argument
 if [ -n "$1" ]; then
