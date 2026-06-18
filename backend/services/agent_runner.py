@@ -170,6 +170,71 @@ class AgentResult:
     cost_usd: float = 0.0
     error: Optional[str] = None
     raw_meta: dict = field(default_factory=dict)
+    truncated: bool = False                          # produced output but hit the time cap — may be incomplete (Fix 4)
+
+
+def _as_list_str(v) -> list:
+    """Coerce a value to a clean list[str] (drops empties). Mirrors the impression coercion at
+    claude_interpreter.py:393-401."""
+    if isinstance(v, list):
+        return [str(x) for x in v if str(x).strip()]
+    if isinstance(v, str):
+        return [v] if v.strip() else []
+    if v:
+        return [str(v)]
+    return []
+
+
+def _as_list_dict(v) -> list:
+    """Coerce to a list[dict], dropping non-dict items so a downstream `.get(...)` can't crash.
+    Non-destructive of valid (dict) findings."""
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, dict)]
+    if isinstance(v, dict):
+        return [v]
+    return []
+
+
+def _as_dict(v) -> dict:
+    return v if isinstance(v, dict) else {}
+
+
+def _normalize_summary(summary) -> dict:
+    """Fix 2 — shape-only normalization of the agent's summary.json so a string/null where the
+    report builder expects a list/dict can't garble or crash the PDF (the char-by-char
+    `impression` incident). Non-destructive of valid findings; missing keys → safe defaults.
+
+    The patient block is what report_builder.build_patient_report renders, so it gets the full
+    shape treatment; the top-level technical fields used by other consumers are coerced too.
+    """
+    if not isinstance(summary, dict):
+        return {"patient": {}}
+    s = dict(summary)
+
+    # Top-level technical fields (clinician PDF / SPA consumers).
+    s["impression"] = _as_list_str(s.get("impression"))
+    s["findings"] = _as_list_dict(s.get("findings"))
+    if not isinstance(s.get("discrepancies"), list):
+        s["discrepancies"] = _as_list_str(s.get("discrepancies"))
+
+    # Patient block (rendered by report_builder — every shape here is load-bearing).
+    p = _as_dict(s.get("patient"))
+    p["patient"] = _as_dict(p.get("patient"))
+    p["study"] = _as_dict(p.get("study"))
+    p["confidence"] = _as_dict(p.get("confidence"))
+    p["key_points"] = _as_list_str(p.get("key_points"))
+    p["what_it_means"] = _as_list_str(p.get("what_it_means"))
+    p["worth_flagging"] = _as_list_str(p.get("worth_flagging"))
+    p["findings"] = _as_list_dict(p.get("findings"))
+    cot = _as_dict(p.get("change_over_time"))
+    cot["points"] = _as_list_str(cot.get("points"))
+    p["change_over_time"] = cot
+    if not isinstance(p.get("bottom_line"), str):
+        p["bottom_line"] = str(p.get("bottom_line") or "")
+    if not isinstance(p.get("disclaimer"), str):
+        p["disclaimer"] = str(p.get("disclaimer") or "")
+    s["patient"] = p
+    return s
 
 
 class AgentRunner:
@@ -290,12 +355,32 @@ class AgentRunner:
         summary_file = out_dir / "summary.json"
         if summary_file.exists():
             try:
-                result.summary = json.loads(summary_file.read_text(encoding="utf-8"))
+                # Normalize the shape immediately (Fix 2) so a malformed summary can't reach the
+                # PDF builder as a string-where-a-list-is-expected.
+                result.summary = _normalize_summary(json.loads(summary_file.read_text(encoding="utf-8")))
             except Exception as e:
                 logger.warning(f"Could not parse summary.json: {e}")
         self._finalize_patient_report(out_dir, result.summary)
         pdfs = sorted(out_dir.glob("*.pdf"))
         result.pdf_path = str(pdfs[0]) if pdfs else None  # report.pdf sorts before report_clinical.pdf
+
+    @staticmethod
+    def _has_patient(summary: dict) -> bool:
+        """True if the summary carries a real patient answer (not just the empty scaffold that
+        _normalize_summary always builds). The prompt mandates a bottom_line; we also accept
+        findings/key_points so a slightly-off-shape but substantive block still counts."""
+        p = (summary or {}).get("patient") or {}
+        if not isinstance(p, dict):
+            return False
+        return bool(p.get("bottom_line") or p.get("findings") or p.get("key_points"))
+
+    @classmethod
+    def _is_deliverable(cls, result: AgentResult, require_pdf: bool) -> bool:
+        """A full run (require_pdf) needs BOTH a PDF AND a real patient summary (Fix 4) — a
+        clinical-PDF-only run no longer passes. Focused runs (require_pdf=False) pass on figures."""
+        if require_pdf:
+            return (result.pdf_path is not None) and cls._has_patient(result.summary)
+        return len(result.figures) > 0
 
     # ── Prompt ──
 
@@ -530,14 +615,17 @@ When finished, print a single JSON object: {{"pdf": "<path>", "summary": "<path 
             )
         except subprocess.TimeoutExpired:
             # The agent often finishes its files right around the cap — collect them rather
-            # than discard a usable result.
+            # than discard a usable result. A full run still requires a real patient summary
+            # (Fix 4) so a clinical-PDF-only partial isn't promoted to a clean success.
             result = AgentResult(success=False, report_dir=str(out_dir),
                                  error=f"Agent timed out after {self.timeout_s}s")
             self._collect_outputs(out_dir, result, require_pdf)
-            deliverable = (result.pdf_path is not None) if require_pdf else (len(result.figures) > 0)
+            deliverable = self._is_deliverable(result, require_pdf)
             if deliverable:
                 result.success = True
-                result.error = f"Agent exceeded {self.timeout_s}s but had produced output before the cap."
+                result.truncated = True   # produced before the cap — flag as possibly incomplete
+                result.error = (f"Agent exceeded {self.timeout_s}s but had produced a full report "
+                                f"before the cap — this read may be incomplete; re-run recommended.")
             return result
         except FileNotFoundError:
             return AgentResult(success=False, report_dir=str(out_dir),
@@ -565,16 +653,18 @@ When finished, print a single JSON object: {{"pdf": "<path>", "summary": "<path 
             result.error = (proc.stderr or proc.stdout or "agent exited non-zero").strip()[:2000]
             return result
 
-        # Success if the agent produced the deliverable. Full runs require the PDF; focused
-        # runs (require_pdf=False) succeed on figures alone.
-        deliverable = (result.pdf_path is not None) if require_pdf else (len(result.figures) > 0)
+        # Success if the agent produced the deliverable. Full runs require a PDF AND a real
+        # patient summary (Fix 4); focused runs (require_pdf=False) succeed on figures alone.
+        deliverable = self._is_deliverable(result, require_pdf)
         result.success = deliverable and not agent_failed
         if not result.success and not result.error:
-            result.error = (
-                "Agent finished but produced no PDF report. See result_text."
-                if require_pdf else
-                "Agent finished but produced no annotated figures. See result_text."
-            )
+            if require_pdf and result.pdf_path and not self._has_patient(result.summary):
+                result.error = ("Agent produced a PDF but no patient summary — the read may be "
+                                "incomplete; re-run recommended.")
+            elif require_pdf:
+                result.error = "Agent finished but produced no PDF report. See result_text."
+            else:
+                result.error = "Agent finished but produced no annotated figures. See result_text."
         logger.info(
             f"Agent run done: success={result.success}, pdf={result.pdf_path}, "
             f"figures={len(result.figures)}, turns={result.num_turns}, cost=${result.cost_usd:.2f}"

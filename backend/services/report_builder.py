@@ -81,14 +81,23 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
                             spaceBefore=1, spaceAfter=3)
 
     def bullets(items, style=BULLET):
+        # Belt-and-suspenders (Fix 2): a string here would iterate CHARACTER-BY-CHARACTER (the
+        # garbled-impression incident). Coerce any non-list shape to a list first.
+        if isinstance(items, str):
+            items = [items] if items.strip() else []
+        elif not isinstance(items, (list, tuple)):
+            items = [items] if items else []
         out = []
         for it in (items or []):
             out.append(Paragraph(str(it), style, bulletText="•"))
         return out
 
+    # A wrong top-level shape skips sections rather than crashing the render.
+    if not isinstance(patient, dict):
+        patient = {}
     flow = []
-    pat = patient.get("patient", {})
-    study = patient.get("study", {})
+    pat = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
+    study = patient.get("study") if isinstance(patient.get("study"), dict) else {}
 
     # Header
     flow.append(Paragraph("MIKA - Imaging analysis report", H1))
@@ -118,6 +127,8 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
 
     # 2. HOW SURE WE ARE
     conf = patient.get("confidence", {})
+    if not isinstance(conf, dict):
+        conf = {}
     if conf:
         label = conf.get("label", "Moderate")
         score = conf.get("score")
@@ -152,9 +163,15 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
 
     # 3. WHAT WE FOUND
     findings = patient.get("findings", [])
+    if isinstance(findings, dict):
+        findings = [findings]
+    elif not isinstance(findings, list):
+        findings = []
     if findings:
         flow.append(Paragraph("Findings", SECTION))
         for f in findings:
+            if not isinstance(f, dict):   # skip a malformed finding rather than crash
+                continue
             block = []
             cert = f.get("certainty", "")
             cert_col = CERTAINTY_COLOR.get(cert, MUTED)
@@ -180,6 +197,8 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
 
     # 4. WHAT CHANGED OVER TIME
     cot = patient.get("change_over_time")
+    if not isinstance(cot, dict):
+        cot = None
     if cot and (cot.get("points") or cot.get("plain")):
         flow.append(Paragraph("Change over time", SECTION))
         if cot.get("points"):
