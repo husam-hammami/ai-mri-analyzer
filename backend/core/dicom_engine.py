@@ -218,9 +218,10 @@ class DICOMEngine:
         first_ds = pydicom.dcmread(str(self.dicom_dir / dcm_files[0]))
         body_part_raw = str(getattr(first_ds, "BodyPartExamined", "")).strip()
         study_desc_raw = str(getattr(first_ds, "StudyDescription", "")).strip()
-        detected_anatomy = self._detect_anatomy(body_part_raw, study_desc_raw, dcm_files)
+        series_descs = list(seq_groups.keys())
+        detected_anatomy = self._detect_anatomy(body_part_raw, study_desc_raw, dcm_files, series_descs)
         anatomy_subregion = (
-            self._detect_msk_subregion(body_part_raw, study_desc_raw, dcm_files)
+            self._detect_msk_subregion(body_part_raw, study_desc_raw, dcm_files, series_descs)
             if detected_anatomy == "msk" else ""
         )
 
@@ -1013,144 +1014,164 @@ class DICOMEngine:
     # ── Private Helpers ──
 
     @staticmethod
-    def _detect_anatomy(body_part: str, study_desc: str, dcm_files: list[str]) -> str:
+    def _detect_anatomy(body_part: str, study_desc: str, dcm_files: list[str],
+                        series_descs: list[str] | None = None) -> str:
         """
         Detect anatomy type from DICOM metadata using a multi-signal approach.
 
         Priority order:
           1. BodyPartExamined DICOM tag (0018,0015) — most reliable
           2. StudyDescription free text — second best
-          3. File naming conventions — fallback
+          3. SeriesDescription / protocol names (sequence-level signals, e.g. FLAIR→brain,
+             T2 HASTE→abdomen) — these disambiguate coarse BodyPart labels like "HEAD_NECK"
+          4. File naming conventions — fallback
 
         Returns one of: 'spine', 'brain', 'msk', 'cardiac', 'chest',
                          'abdomen', 'breast', 'vascular', 'head_neck',
                          'prostate', or 'unknown'
         """
-        combined = f"{body_part} {study_desc} {' '.join(dcm_files)}".upper()
+        def _classify(text: str) -> str:
+            t = text.upper()
 
-        # ── SPINE detection ──
-        spine_signals = [
-            "SPINE", "LUMBAR", "LSPINE", "CSPINE", "TSPINE",
-            "CERVICAL", "THORACIC", "SACRAL", "SACRUM",
-            "LWS", "HWS", "BWS",  # German: Lendenwirbelsäule, Halswirbelsäule, Brustwirbelsäule
-            "VERTEBRA", "DISC", "SPINAL", "MYELOGRA",
-        ]
-        if any(s in combined for s in spine_signals):
-            return "spine"
+            # ── SPINE detection ──
+            spine_signals = [
+                "SPINE", "LUMBAR", "LSPINE", "CSPINE", "TSPINE",
+                "CERVICAL", "THORACIC", "SACRAL", "SACRUM",
+                "LWS", "HWS", "BWS",  # German: Lendenwirbelsäule, Halswirbelsäule, Brustwirbelsäule
+                "VERTEBRA", "DISC", "SPINAL", "MYELOGRA",
+            ]
+            if any(s in t for s in spine_signals):
+                return "spine"
 
-        # ── CARDIAC detection (before chest — more specific) ──
-        cardiac_signals = [
-            "CARDIAC", "HEART", "MYOCARD", "PERICARDI",
-            "CINE", "TRUFI", "FIESTA",
-            "LATE_GADOLINIUM", "LGE", "TAGGING",
-            "AORTIC_VALVE", "MITRAL", "VENTRICL",
-            "CARDIAC_MR", "CMR",
-            "HERZ", "KARDIO",  # German
-        ]
-        if any(s in combined for s in cardiac_signals):
-            return "cardiac"
+            # ── CARDIAC detection (before chest — more specific) ──
+            cardiac_signals = [
+                "CARDIAC", "HEART", "MYOCARD", "PERICARDI",
+                "CINE", "TRUFI", "FIESTA",
+                "LATE_GADOLINIUM", "LGE", "TAGGING",
+                "AORTIC_VALVE", "MITRAL", "VENTRICL",
+                "CARDIAC_MR", "CMR",
+                "HERZ", "KARDIO",  # German
+            ]
+            if any(s in t for s in cardiac_signals):
+                return "cardiac"
 
-        # ── BREAST detection (before chest — more specific) ──
-        breast_signals = [
-            "BREAST", "MAMMA", "BIRADS", "BI-RADS",
-            "SILICONE", "IMPLANT_BREAST",
-            "VIBRANT", "THRIVE",
-            "BRUST",  # German
-        ]
-        if any(s in combined for s in breast_signals):
-            return "breast"
+            # ── BREAST detection (before chest — more specific) ──
+            breast_signals = [
+                "BREAST", "MAMMA", "BIRADS", "BI-RADS",
+                "SILICONE", "IMPLANT_BREAST",
+                "VIBRANT", "THRIVE",
+                "BRUST",  # German
+            ]
+            if any(s in t for s in breast_signals):
+                return "breast"
 
-        # ── BRAIN detection ──
-        brain_signals = [
-            "BRAIN", "NEURO", "CRANIAL", "CEREBR",
-            "FLAIR", "SWI", "DWI", "DIFFUSION",
-            "INTRACRANIAL", "PITUITARY", "SELLA",
-            "KOPF",  # German
-        ]
-        if any(s in combined for s in brain_signals):
-            return "brain"
+            # ── PROSTATE detection (before brain/abdomen — a specific organ) ──
+            prostate_signals = [
+                "PROSTATE", "PROSTATA", "PIRADS", "PI-RADS",
+                "SEMINAL", "TRANSITION_ZONE", "PERIPHERAL_ZONE",
+            ]
+            if any(s in t for s in prostate_signals):
+                return "prostate"
 
-        # ── HEAD & NECK detection (after brain — less specific) ──
-        head_neck_signals = [
-            "HEAD", "NECK", "ORBIT", "TEMPORAL",
-            "PAROTID", "THYROID", "LARYNX", "PHARYNX",
-            "SINUSES", "PARANASAL", "NASOPHARYN",
-            "TONGUE", "ORAL", "MANDIBLE", "MAXILLA",
-            "SKULL", "MASTOID", "IAC", "BRACHIAL",
-            "HALS",  # German
-        ]
-        if any(s in combined for s in head_neck_signals):
-            return "head_neck"
+            # ── BRAIN detection ──
+            brain_signals = [
+                "BRAIN", "NEURO", "CRANIAL", "CEREBR",
+                "FLAIR", "SWI", "DWI", "DIFFUSION",
+                "INTRACRANIAL", "PITUITARY", "SELLA",
+                "HIPPOCAMP", "MPRAGE", "TENSOR",  # hippocampus, brain-volumetric & DTI sequences
+                "KOPF",  # German
+            ]
+            if any(s in t for s in brain_signals):
+                return "brain"
 
-        # ── PROSTATE detection (before abdomen — more specific) ──
-        prostate_signals = [
-            "PROSTATE", "PROSTATA", "PIRADS", "PI-RADS",
-            "SEMINAL", "TRANSITION_ZONE", "PERIPHERAL_ZONE",
-        ]
-        if any(s in combined for s in prostate_signals):
-            return "prostate"
+            # ── HEAD & NECK detection (after brain — less specific) ──
+            head_neck_signals = [
+                "HEAD", "NECK", "ORBIT", "TEMPORAL",
+                "PAROTID", "THYROID", "LARYNX", "PHARYNX",
+                "SINUSES", "PARANASAL", "NASOPHARYN",
+                "TONGUE", "ORAL", "MANDIBLE", "MAXILLA",
+                "SKULL", "MASTOID", "IAC", "BRACHIAL",
+                "HALS",  # German
+            ]
+            if any(s in t for s in head_neck_signals):
+                return "head_neck"
 
-        # ── VASCULAR / MRA detection ──
-        vascular_signals = [
-            "MRA", "ANGIOGRA", "ANGIO",
-            "VESSEL", "ARTERIAL", "VENOUS",
-            "TOF", "TIME_OF_FLIGHT",
-            "CAROTID", "CIRCLE_OF_WILLIS", "AORTA",
-            "RENAL_ARTERY", "MESENTERIC",
-            "PHASE_CONTRAST", "FLOW",
-        ]
-        if any(s in combined for s in vascular_signals):
-            return "vascular"
+            # ── VASCULAR / MRA detection ──
+            vascular_signals = [
+                "MRA", "ANGIOGRA", "ANGIO",
+                "VESSEL", "ARTERIAL", "VENOUS",
+                "TOF", "TIME_OF_FLIGHT",
+                "CAROTID", "CIRCLE_OF_WILLIS", "AORTA",
+                "RENAL_ARTERY", "MESENTERIC",
+                "PHASE_CONTRAST", "FLOW",
+            ]
+            if any(s in t for s in vascular_signals):
+                return "vascular"
 
-        # ── CHEST / THORAX detection ──
-        chest_signals = [
-            "CHEST", "THORAX", "LUNG", "PULMONARY",
-            "MEDIASTIN", "PLEURA", "DIAPHRAGM",
-            "HILUM", "BRONCH",
-            "LUNGE", "THORAX",  # German
-        ]
-        if any(s in combined for s in chest_signals):
-            return "chest"
+            # ── CHEST / THORAX detection ──
+            chest_signals = [
+                "CHEST", "THORAX", "LUNG", "PULMONARY",
+                "MEDIASTIN", "PLEURA", "DIAPHRAGM",
+                "HILUM", "BRONCH", "CXR",  # CXR = chest X-ray (filename hint for plain radiographs)
+                "LUNGE", "THORAX",  # German
+            ]
+            if any(s in t for s in chest_signals):
+                return "chest"
 
-        # ── ABDOMEN / PELVIS detection ──
-        abdomen_signals = [
-            "ABDOMEN", "ABDOMINAL", "LIVER", "HEPAT",
-            "KIDNEY", "RENAL", "PANCREA", "SPLEEN",
-            "ADRENAL", "GALLBLADDER", "BILE", "BILIARY",
-            "BOWEL", "COLON", "RECTAL", "RECTUM",
-            "PELVIS", "PELVIC", "UTERUS", "OVARY", "OVARIAN",
-            "BLADDER", "URETER",
-            "PERITON", "RETROPERITON", "MESENTERY",
-            "LEBER", "NIERE", "BAUCH", "BECKEN",  # German
-        ]
-        if any(s in combined for s in abdomen_signals):
-            return "abdomen"
+            # ── ABDOMEN / PELVIS detection ──
+            abdomen_signals = [
+                "ABDOMEN", "ABDOMINAL", "LIVER", "HEPAT",
+                "KIDNEY", "RENAL", "PANCREA", "SPLEEN",
+                "ADRENAL", "GALLBLADDER", "BILE", "BILIARY",
+                "BOWEL", "COLON", "RECTAL", "RECTUM",
+                "PELVIS", "PELVIC", "UTERUS", "OVARY", "OVARIAN",
+                "BLADDER", "URETER",
+                "PERITON", "RETROPERITON", "MESENTERY",
+                "LEBER", "NIERE", "BAUCH", "BECKEN",  # German
+            ]
+            if any(s in t for s in abdomen_signals):
+                return "abdomen"
 
-        # ── MSK detection (broad catch-all for extremities) ──
-        msk_signals = [
-            "KNEE", "SHOULDER", "HIP", "ANKLE", "WRIST",
-            "ELBOW", "FOOT", "HAND", "FINGER", "THUMB",
-            "EXTREMITY", "JOINT", "MUSCULOSKELETAL",
-            "MENISCUS", "ACL", "PCL", "MCL", "LCL",
-            "ROTATOR", "LABRUM", "TENDON", "LIGAMENT",
-            "FEMUR", "TIBIA", "HUMERUS", "RADIUS", "ULNA",
-            "CALCANEUS", "ACHILLES", "PLANTAR",
-            "KNIE", "SCHULTER", "HÜFTE",  # German
-        ]
-        if any(s in combined for s in msk_signals):
-            return "msk"
+            # ── MSK detection (broad catch-all for extremities) ──
+            msk_signals = [
+                "KNEE", "SHOULDER", "HIP", "ANKLE", "WRIST",
+                "ELBOW", "FOOT", "HAND", "FINGER", "THUMB",
+                "EXTREMITY", "JOINT", "MUSCULOSKELETAL",
+                "MENISCUS", "ACL", "PCL", "MCL", "LCL",
+                "ROTATOR", "LABRUM", "TENDON", "LIGAMENT",
+                "FEMUR", "TIBIA", "HUMERUS", "RADIUS", "ULNA",
+                "CALCANEUS", "ACHILLES", "PLANTAR",
+                "KNIE", "SCHULTER", "HÜFTE",  # German
+            ]
+            if any(s in t for s in msk_signals):
+                return "msk"
 
-        return "unknown"
+            return "unknown"
+
+        # BodyPartExamined is the most reliable signal: a SPECIFIC organ label (PROSTATE, LIVER,
+        # KIDNEY, LUNG…) is authoritative and must NOT be overridden by sequence-name hints (e.g.
+        # a prostate ADC series literally named "Apparent Diffusion Coefficient" must not become
+        # 'brain'). Only a coarse/empty label ('HEAD_NECK', 'HEAD', or missing) defers to the
+        # study/series/file signals so things like a FLAIR series can upgrade 'HEAD_NECK'→'brain'.
+        bp_result = _classify(body_part) if body_part.strip() else "unknown"
+        if bp_result not in ("unknown", "head_neck"):
+            return bp_result
+        rest = f"{body_part} {study_desc} {' '.join(series_descs or [])} {' '.join(dcm_files)}"
+        full_result = _classify(rest)
+        return full_result if full_result != "unknown" else bp_result
 
     @staticmethod
-    def _detect_msk_subregion(body_part: str, study_desc: str, dcm_files: list[str]) -> str:
+    def _detect_msk_subregion(body_part: str, study_desc: str, dcm_files: list[str],
+                              series_descs: list[str] | None = None) -> str:
         """Identify the specific joint within an MSK study so the UI can show the right body figure
         (knee vs hip vs shoulder …) instead of always rendering a knee. Returns '' when ambiguous.
 
         BodyPartExamined (0018,0015) is weighted highest; study description and file names follow.
         Order matters: more specific / less collision-prone joints are checked first.
         """
-        combined = f"{body_part} {study_desc} {' '.join(dcm_files)}".upper()
+        combined = (
+            f"{body_part} {study_desc} {' '.join(series_descs or [])} {' '.join(dcm_files)}".upper()
+        )
         # (subregion, signal tokens). Knee last among the common joints so an explicit hip/shoulder wins.
         groups = [
             ("shoulder", ["SHOULDER", "ROTATOR", "LABRUM", "GLENOID", "SUPRASPINATUS", "SCHULTER"]),

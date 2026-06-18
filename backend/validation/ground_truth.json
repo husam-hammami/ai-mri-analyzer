@@ -1,0 +1,28 @@
+{
+  "_help": "Ground truth for accuracy scoring. 'anatomy'/'modality'/'calibrated' are scored FREE (no Claude). Set any of them to null to skip that check. 'expect_findings' = list of key findings the read SHOULD mention; each has a 'label' and 'keywords' (matched any-of, case-insensitive) — scored only when --read is used (or a cached read exists). 'expect_absent' = terms that should NOT appear (overcall check). Fill these in with the real clinical truth for each study to get meaningful reading-recall numbers.",
+  "studies": [
+    { "path": "test_data/blind_spine_sag", "anatomy": "spine", "modality": "MR", "calibrated": true,
+      "notes": "lumbar sagittal (SPIDER)", "expect_findings": [], "expect_absent": [] },
+    { "path": "test_data/blind_spine_ax", "anatomy": "spine", "modality": "MR", "calibrated": true,
+      "expect_findings": [], "expect_absent": [] },
+    { "path": "test_data/blind_msk", "anatomy": "msk", "modality": "MR", "calibrated": true,
+      "notes": "extremity / both legs", "expect_findings": [], "expect_absent": [] },
+    { "path": "test_data/blind_neuro", "anatomy": "brain", "modality": "MR", "calibrated": true,
+      "expect_findings": [], "expect_absent": [] },
+    { "path": "test_data/blind_case", "anatomy": null, "modality": null,
+      "notes": "unknown anatomy — set the truth before scoring", "expect_findings": [], "expect_absent": [] },
+
+    { "path": "test_data/online_samples/brain_MRHead.nrrd", "anatomy": "brain", "modality": "MR",
+      "notes": "normal head MRI", "expect_findings": [], "expect_absent": [] },
+    { "path": "test_data/online_samples/brain_tumor_MRBrainTumor1.nrrd", "anatomy": "brain", "modality": "MR",
+      "notes": "known brain tumor",
+      "expect_findings": [ { "label": "tumor/mass", "keywords": ["tumor", "mass", "lesion", "neoplasm"] } ],
+      "expect_absent": [] },
+    { "path": "test_data/online_samples/chest_CTChest.nrrd", "anatomy": "chest", "modality": "CT",
+      "expect_findings": [], "expect_absent": [] },
+    { "path": "test_data/online_samples/cardiac_CTACardio.nrrd", "anatomy": "cardiac", "modality": "CT",
+      "expect_findings": [], "expect_absent": [] },
+    { "path": "test_data/online_samples/abdomen_CTLiver.nrrd", "anatomy": "abdomen", "modality": "CT",
+      "notes": "large (279MB) — included only with --max-src-mb 1000", "expect_findings": [], "expect_absent": [] }
+  ]
+}

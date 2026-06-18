@@ -47,3 +47,15 @@ test_data/
 .mika_test_data*/
 .mika_unit/
 backend/_verify_agent_run.py
+.firecrawl/
+
+# Validation harness outputs (the code is committed; results/cache are local)
+backend/validation/cache/
+backend/validation/validation_results.json
+backend/validation/validation_report.md
+backend/validation/ground_truth_labeled.json
+backend/validation/*.log
+backend/validation/_mask_cache/
+backend/validation/annotation_overlap_results.json
+backend/validation/cache_chexpert/
+backend/validation/chexpert_results.json

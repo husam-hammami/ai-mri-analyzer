@@ -489,7 +489,18 @@ class FormatConverter:
 
         warnings = []
         total_slices = 0
-        seq_name = "image_series"
+
+        # Preserve the source filename as a signal: anatomy/modality detection reads the
+        # SeriesDescription + filenames, so carrying e.g. "...CXR..." through lets a plain PNG
+        # X-ray still be recognized as a chest radiograph instead of an unknown "OT" blob.
+        guessed_modality = "OT"
+        for f in image_files:
+            g = self._guess_modality_from_name(f.name)
+            if g:
+                guessed_modality = g
+                break
+        stems = sorted({re.sub(r"[^A-Za-z0-9_-]+", "_", f.stem) or "image" for f in image_files})
+        study_desc = ("Image Import: " + ", ".join(stems))[:120]
 
         # Try to group by subdirectory or naming pattern
         # For flat directory: treat all as one sequence
@@ -498,20 +509,23 @@ class FormatConverter:
                 img = Image.open(str(img_path)).convert("L")  # Grayscale
                 arr = np.array(img)
 
-                dcm_filename = f"{seq_name}_Img{i+1:04d}.dcm"
+                safe_stem = re.sub(r"[^A-Za-z0-9_-]+", "_", img_path.stem) or "image"
+                dcm_filename = f"{safe_stem}_Img{i+1:04d}.dcm"
                 self._create_synthetic_dicom(
                     pixel_data=arr,
                     output_path=self.output_dir / dcm_filename,
-                    series_description=seq_name,
+                    series_description=safe_stem,
                     instance_number=i + 1,
                     slice_location=float(i),
                     pixel_spacing=[1.0, 1.0],  # Unknown spacing
                     slice_thickness=1.0,
                     rows=arr.shape[0],
                     cols=arr.shape[1],
-                    study_description=f"Image Import ({len(image_files)} files)",
+                    study_description=study_desc,
                     is_calibrated=False,
-                    modality="OT",  # plain image — true modality unknown; the reader identifies it
+                    # Guessed from filename when possible (e.g. CXR→CR); else OT — the reader
+                    # still identifies the true modality from the pixels.
+                    modality=guessed_modality,
                 )
                 total_slices += 1
 
@@ -529,7 +543,7 @@ class FormatConverter:
             dicom_dir=str(self.output_dir),
             num_files=total_slices,
             num_slices=total_slices,
-            sequences_detected=[seq_name],
+            sequences_detected=stems,
             metadata={"source_format": "images", "num_files": len(image_files)},
             warnings=warnings,
         )
@@ -651,19 +665,24 @@ class FormatConverter:
         if not text:
             return None
 
-        # Lowercase and normalize common filename separators (_ - . /) to spaces so
-        # that \b word boundaries fire around tokens like 'ct' in 'patient_ct_chest'
-        # (underscore is a \w char, so without this 'ct' would never be word-bounded).
-        lowered = re.sub(r"[_\-./\\]+", " ", text.lower())
+        # Split camelCase / concatenated names so modality prefixes become their own tokens
+        # ('CTChest' -> 'CT Chest', 'CTACardio' -> 'CTA Cardio', 'MRHead' -> 'MR Head'), then
+        # lowercase and normalize separators (_ - . /) to spaces so \b word boundaries fire around
+        # short tokens like 'ct' (underscore is a \w char, so without this 'ct' would never be bounded).
+        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)
+        spaced = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", spaced)
+        lowered = re.sub(r"[_\-./\\]+", " ", spaced.lower())
 
         # Ordered (token_patterns, modality) — first match wins; MR first so it can't be lost to a
         # weaker token. Patterns use word-ish boundaries so 'ct' won't match inside 'connect'.
         token_map: list[tuple[list[str], str]] = [
             ([r"\bmri\b", r"\bmra\b", r"\bangio\b", r"\bmr\b"], "MR"),
-            (["computed tomography", r"\bct\b"], "CT"),
+            (["computed tomography", r"\bcta\b", r"\bct\b"], "CT"),
             ([r"\bpet\b"], "PT"),
             (["ultrasound", r"\bsonograph", r"\bus\b"], "US"),
-            (["radiograph", "x-ray", r"\bxray\b", r"\bxr\b", r"\bcr\b", r"\bdx\b"], "CR"),
+            # 'cxr\b' (suffix boundary, applied as a regex) matches the chest-X-ray token even when it's
+            # glued to a prefix in dataset filenames, e.g. MCUCXR_/CHNCXR_; plain '\bcxr\b' would not.
+            (["radiograph", "x-ray", r"\bxray\b", r"\bxr\b", r"\bcr\b", r"\bdx\b", r"cxr\b"], "CR"),
         ]
 
         for patterns, modality in token_map:

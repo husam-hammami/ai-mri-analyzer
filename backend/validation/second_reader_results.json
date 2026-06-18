@@ -1,0 +1,38 @@
+[
+  {
+    "name": "tcia-qin-prostate-tumor",
+    "truth": "Prostate carcinoma \u2014 QIN-PROSTATE patient PCAMPMRI-00012. VE",
+    "first_verdict": "missed",
+    "first_score": 25,
+    "second_verdict": "correct",
+    "second_score": 95,
+    "second_bottom_line": "A small suspicious focus in the LEFT posterolateral peripheral zone (mid-to-apex), with measured restricted diffusion and concordant high-b and early-enhancement signal, warrants targeted biopsy - the first read under-called it."
+  },
+  {
+    "name": "tcia-tcga-lihc-liver-full",
+    "truth": "Hepatocellular carcinoma (HCC) \u2014 TCGA-LIHC patient TCGA-BC-A",
+    "first_verdict": "correct",
+    "first_score": 82,
+    "second_verdict": "partial",
+    "second_score": 55,
+    "second_bottom_line": "An independent, pixel-by-pixel second read confirms a real ~2 cm solid hypovascular mass in the right hepatic lobe (segment V/VIII) that is suspicious but lacks the arterial hyperenhancement that defines HCC, so it stays LI-RADS LR-3/indeterminate and warrants biopsy or follow-up; the first read is confirmed."
+  },
+  {
+    "name": "nlm-shenzhen-cxr-normal",
+    "truth": "Normal chest radiograph (Shenzhen CHNCXR_0001_0, label _0 = ",
+    "first_verdict": "correct",
+    "first_score": 100,
+    "second_verdict": "correct",
+    "second_score": 100,
+    "second_bottom_line": "On focused, measured second review the chest radiograph is normal \u2014 no discrete focal lung lesion, mass, consolidation, effusion, or pneumothorax \u2014 and the first read's normal conclusion is confirmed."
+  },
+  {
+    "name": "msd-hippocampus-mr",
+    "truth": "Normal hippocampus MR (MSD Task04, no pathology) \u2014 overcall ",
+    "first_verdict": "correct",
+    "first_score": 100,
+    "second_verdict": "correct",
+    "second_score": 100,
+    "second_bottom_line": "On focused, measured second review the visualised medial-temporal-lobe tissue is normal with no discrete focal lesion; the first read's benign conclusion is confirmed."
+  }
+]
