@@ -85,7 +85,8 @@
       background: var(--canvas);
       color: var(--ink);
       height:100%;
-      min-height: 100vh;
+      min-width:1180px;
+      min-height:720px;
       overflow:hidden;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -105,7 +106,7 @@
     }
 
     /* ════════════════════ Shell ════════════════════ */
-    .shell { display:flex; height:100dvh; min-height:0; overflow:hidden; }
+    .shell { display:flex; height:100dvh; min-width:1180px; min-height:720px; overflow:hidden; }
 
     /* ── Sidebar (dark navy rail) ── */
     .sidebar {
@@ -279,15 +280,15 @@
     .mk.active .mk-chip { stroke: var(--accent-strong); stroke-width:1.4; }
 
     /* ════════════════════ HOME ════════════════════ */
-    .home-grid { position:relative; display:grid; grid-template-columns: minmax(0,1fr) minmax(0,0.9fr) var(--rail); gap: var(--s-10); align-items:stretch; flex:1; }
+    .home-grid { position:relative; display:grid; grid-template-columns: minmax(420px,1fr) minmax(230px,0.55fr) 260px; gap: var(--s-8); align-items:stretch; flex:1; }
     .page-home { display:flex; flex-direction:column; }
     .page-home .home-grid { min-height:0; }
     /* each column centers its content vertically in the now-equal-height row → slack becomes balanced
        top/bottom breathing room instead of one big void under the shortest column */
-    .home-hero { display:flex; flex-direction:column; justify-content:center; gap: var(--s-5); max-width:520px; }
+    .home-hero { display:flex; flex-direction:column; justify-content:center; gap: var(--s-4); max-width:560px; }
     .home-body { display:flex; flex-direction:column; justify-content:center; }
-    .home-body .bodyfig { --bodyfig-max:360px; }
-    .coverage { display:flex; flex-direction:column; justify-content:center; }
+    .home-body .bodyfig { --bodyfig-max:330px; }
+    .coverage { display:flex; flex-direction:column; justify-content:center; opacity:.9; }
     .home-leaders { position:absolute; inset:0; pointer-events:none; z-index:5; overflow:visible; }
     .leader-path { fill:none; stroke: var(--accent-line); stroke-width:1; }
     .leader-cap { fill: var(--accent); }
@@ -295,10 +296,10 @@
     .home-hero-pretitle { font-size:12px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color: var(--accent); margin-bottom: var(--s-4); }
     .home-title { font-size:42px; line-height:1.08; font-weight:700; letter-spacing:-1.2px; color: var(--ink); margin-bottom: var(--s-5); }
     .home-title .accent { color: var(--accent); }
-    .home-sub { font-size:15.5px; line-height:1.6; color: var(--slate); max-width:420px; margin-bottom: var(--s-8); }
+    .home-sub { font-size:15.5px; line-height:1.55; color: var(--slate); max-width:460px; margin-bottom: var(--s-5); }
 
     .dropzone { background: var(--surface); border:1.5px dashed var(--line); border-radius: var(--r-lg);
-      padding: var(--s-8); text-align:center; min-height:280px; display:flex; flex-direction:column; justify-content:center;
+      padding: var(--s-7); text-align:center; min-height:252px; display:flex; flex-direction:column; justify-content:center;
       transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out); }
     .dropzone.over { border-color: var(--accent); border-style:solid; background: var(--accent-softer); box-shadow: 0 0 0 4px var(--accent-glow); }
     .dropzone.ready { border-style:solid; border-color: var(--accent-line); }
@@ -323,7 +324,7 @@
     .coverage { }
     .cov-title { font-size:11px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color: var(--slate-300); margin-bottom: var(--s-4); }
     .cov-list { display:flex; flex-direction:column; gap: var(--s-1); }
-    .cov-row { display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius: var(--r-sm); }
+    .cov-row { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius: var(--r-sm); }
     .cov-row .cov-ico { width:18px; height:18px; color: var(--slate); flex-shrink:0; display:flex; }
     .cov-row .cov-name { font-size:13px; color: var(--ink); font-weight:500; }
     .cov-row .cov-dot { margin-left:auto; width:8px; height:8px; border-radius:50%; }
@@ -344,7 +345,7 @@
 
     /* ════════════════════ WAIT ════════════════════ */
     /* status+slice viewer | body figure (tallest hero) | sequences + latest view — columns share one height */
-    .wait-grid { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,0.82fr) 300px; gap: var(--s-8); align-items:stretch; }
+    .wait-grid { display:grid; grid-template-columns: minmax(0,1.14fr) minmax(240px,0.56fr) 300px; gap: var(--s-7); align-items:stretch; }
     .page-wait { display:flex; flex-direction:column; }
     .page-wait .wait-grid { min-height:0; flex:1; }
     .page-wait .wait-left, .page-wait .wait-right { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
@@ -352,10 +353,10 @@
     .wait-left { display:flex; flex-direction:column; }
     .wait-left .safe-leave { margin-top:auto; }   /* docks the reassurance to the bottom — fills the column, no gap */
     .wait-body { display:flex; align-items:center; justify-content:center; }
-    .wait-body .bodyfig { --bodyfig-max:390px; }
+    .wait-body .bodyfig { --bodyfig-max:330px; }
     .wait-right { display:flex; flex-direction:column; }
     .wait-heading { font-size:26px; line-height:1.3; font-weight:700; letter-spacing:-0.5px; color: var(--ink); max-width:440px; margin-bottom: var(--s-3); }
-    .wait-facts { display:grid; grid-template-columns: repeat(4, minmax(92px, max-content)); gap: var(--s-3); margin-bottom: var(--s-8); }
+    .wait-facts { display:grid; grid-template-columns: repeat(4, minmax(86px, max-content)); gap: var(--s-2); margin-bottom: var(--s-6); }
     .wait-fact { display:flex; flex-direction:column; gap:2px; padding:8px 10px; background: var(--surface); border:1px solid var(--line); border-radius: var(--r-sm); }
     .wait-fact-label { font-size:10px; line-height:1.2; font-weight:700; letter-spacing:.55px; text-transform:uppercase; color: var(--slate-300); }
     .wait-fact-value { font-size:13px; line-height:1.25; font-weight:650; color: var(--ink); white-space:nowrap; }
@@ -372,7 +373,7 @@
     .phase.pending .phase-b { color: var(--slate-300); }
     .phase-b { font-size:12.5px; line-height:1.5; color: var(--slate); margin-top:2px; }
     /* visual stepper (patient-facing, icon-driven; minimal text) */
-    .stepper { position:relative; display:flex; justify-content:space-between; align-items:flex-start; max-width:440px; margin: var(--s-6) 0 var(--s-5); }
+    .stepper { position:relative; display:flex; justify-content:space-between; align-items:flex-start; max-width:460px; margin: var(--s-5) 0 var(--s-4); }
     .stepper-track { position:absolute; top:24px; left:24px; right:24px; height:3px; border-radius:2px; background: var(--line); overflow:hidden; }
     .stepper-fill { height:100%; border-radius:2px; background: linear-gradient(90deg, var(--accent), var(--accent-strong)); transition: width var(--dur-progress) var(--ease-out); }
     .step { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; gap:9px; flex:1; }
@@ -383,10 +384,10 @@
     .step-label { font-size:12.5px; font-weight:600; color: var(--slate-300); }
     .step.done .step-label { color: var(--slate); }
     .step.active .step-label { color: var(--accent-strong); }
-    .wait-live { min-height:20px; font-size:13.5px; font-weight:500; color: var(--accent-strong); margin-bottom: var(--s-4); }
+    .wait-live { min-height:20px; max-width:460px; font-size:13.5px; font-weight:650; color: var(--accent-strong); margin-bottom: var(--s-3); padding:9px 11px; background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:var(--r-sm); }
     /* cinematic slice viewer — real study images being read (scanner-style frame) */
-    .reading-viewer { max-width:290px; margin: var(--s-2) 0 var(--s-4); }
-    .rv-stage { position:relative; aspect-ratio:1/1; border-radius:14px; overflow:hidden; background:#04070e;
+    .reading-viewer { width:100%; max-width:430px; margin: var(--s-2) 0 var(--s-4); }
+    .rv-stage { position:relative; aspect-ratio:4/3; border-radius:14px; overflow:hidden; background:#04070e;
       box-shadow: 0 10px 34px rgba(37,99,235,.20), inset 0 0 0 1px var(--accent-line); }
     .rv-slice { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; transform: scale(1.0); transition: opacity 1300ms var(--ease-out); filter: contrast(1.06) brightness(1.02); will-change: opacity, transform; }
     .rv-slice.on { opacity:1; animation: rvKen 6000ms var(--ease-out) both; }   /* slow Ken-Burns zoom on the slice being read */
@@ -405,7 +406,7 @@
     .rv-hud { position:absolute; top:14px; left:38px; right:38px; display:flex; align-items:center; gap:10px; }
     .rv-tag { font-size:10px; font-weight:700; letter-spacing:1.6px; color:#fff; background: var(--accent); padding:4px 8px; border-radius:4px; }
     .rv-meta { font-family: ui-monospace, 'Cascadia Code', Consolas, monospace; font-size:10.5px; letter-spacing:.8px; color:#a8c8ff; }
-    .safe-leave { display:flex; gap:10px; align-items:center; margin-top: var(--s-4); padding: var(--s-4); background: var(--accent-soft); border:1px solid var(--accent-line); border-radius: var(--r-md); font-size:13px; color: var(--accent-strong); font-weight:500; }
+    .safe-leave { display:flex; gap:10px; align-items:center; margin-top: var(--s-4); padding: var(--s-3); background: var(--surface); border:1px solid var(--line); border-radius: var(--r-md); font-size:12.5px; line-height:1.45; color: var(--slate); font-weight:500; }
     .safe-leave svg { width:18px; height:18px; flex-shrink:0; }
 
     .seq-panel { }
@@ -432,7 +433,7 @@
     .wait-latest-img { flex:1 1 0; min-height:0; position:relative; border-radius: var(--r-md); overflow:hidden; background: var(--navy-900); box-shadow: inset 0 0 0 1px var(--accent-line); }
     .wait-latest-img img { width:100%; height:100%; object-fit:contain; display:block; }
     .wait-latest-scan { position:absolute; left:0; right:0; top:0; height:2px; background: linear-gradient(90deg, transparent, #60a5fa, transparent); box-shadow:0 0 8px 1px var(--accent); animation: seqScan 2.6s var(--ease-calm) infinite; }
-    .progress-block { margin-top: var(--s-6); }
+    .progress-block { margin-top: var(--s-4); padding: var(--s-4); background:var(--surface); border:1px solid var(--line); border-radius:var(--r-md); }
     .progress-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px; }
     .progress-head .ph-l { font-size:13px; font-weight:600; color: var(--ink); }
     .progress-head .ph-r { font-size:13px; font-weight:700; color: var(--accent); }
@@ -469,6 +470,7 @@
     .page-read .thread .read-wtm h4 { margin-bottom: var(--s-2); }
     .page-read .thread .read-wtm li { font-size:12.5px; line-height:1.45; }
     .page-read .read-disclaimer { margin-top:0; }
+    .read-grid.empty-read-grid { grid-template-columns:minmax(520px,0.96fr) minmax(320px,0.54fr); gap:var(--s-8); }
     .read-figwrap { display:grid; grid-template-columns: minmax(0,0.82fr) minmax(0,1fr); gap: var(--s-6); align-items:start; }
     .read-left .bodyfig { --bodyfig-max:340px; margin:0 auto; }
     .thread { display:flex; flex-direction:column; gap: var(--s-2); }
@@ -482,6 +484,9 @@
     .frow.active .frow-num { background: var(--accent); color:#fff; box-shadow:none; }
     .frow-plain { font-size:14px; font-weight:600; color: var(--ink); line-height:1.4; }
     .frow-cap { font-size:12.5px; color: var(--slate); line-height:1.5; margin-top:4px; }
+    .frow-extra { margin-top:10px; padding-top:10px; border-top:1px solid var(--line-soft); }
+    .frow-extra h4 { font-size:12px; font-weight:700; color:var(--accent-strong); margin-bottom:7px; }
+    .frow-extra .sec-block li { font-size:12.5px; line-height:1.45; }
     .legend-row { display:flex; gap: var(--s-5); margin-top: var(--s-4); font-size:12px; color: var(--slate); }
     .legend-row span { display:inline-flex; align-items:center; gap:6px; }
 
@@ -539,6 +544,8 @@
 
     /* clinician view */
     .clin { display:flex; flex-direction:column; gap: var(--s-4); }
+    .clin-strip { display:grid; grid-template-columns:1fr auto; gap:var(--s-3); align-items:center; background:var(--surface); border:1px solid var(--line); border-radius:var(--r-md); padding:var(--s-4) var(--s-5); }
+    .clin-strip .clin-h { margin-bottom:6px; }
     .clin-card { background: var(--surface); border:1px solid var(--line); border-radius: var(--r-md); padding: var(--s-4) var(--s-5); }
     .clin-h { font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color: var(--slate-300); margin-bottom: var(--s-3); }
     .clin-verline { display:flex; align-items:center; gap:10px; }
@@ -553,6 +560,12 @@
     .clin-row-body { flex:1; }
     .clin-text { font-size:13px; line-height:1.5; color: var(--ink); }
     .clin-figlink { display:inline-flex; align-items:center; gap:5px; margin-top:5px; font-size:12px; font-weight:600; color: var(--accent); background:none; border:none; cursor:pointer; padding:0; }
+    .clin-proof { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-md); overflow:hidden; }
+    .clin-proof-head { display:flex; justify-content:space-between; align-items:center; gap:var(--s-3); padding:var(--s-3) var(--s-4); border-bottom:1px solid var(--line-soft); }
+    .clin-proof-title { font-size:12.5px; font-weight:700; color:var(--ink); line-height:1.35; }
+    .clin-proof-img { height:220px; background:var(--navy-900); display:flex; align-items:center; justify-content:center; cursor:zoom-in; }
+    .clin-proof-img img { width:100%; height:100%; object-fit:contain; display:block; }
+    .clin-proof-empty { padding:var(--s-5); font-size:12.5px; line-height:1.5; color:var(--slate); background:var(--surface-2); }
     .tier-badge { display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; padding:2px 8px; border-radius: var(--r-sm); margin-right:6px; flex-shrink:0; }
     .tier-badge.tA { color:#fff; background: var(--accent); }
     .tier-badge.tB { color: var(--accent-strong); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
@@ -564,6 +577,25 @@
     .empty-banner { padding: var(--s-5); background: var(--surface); border:1px solid var(--accent-line); border-left:3px solid var(--accent); border-radius: var(--r-md); margin-bottom: var(--s-6); }
     .empty-banner .eb-t { font-size:15px; font-weight:600; color: var(--ink); margin-bottom:6px; }
     .empty-banner .eb-b { font-size:13.5px; line-height:1.6; color: var(--slate); }
+    .empty-read-main { min-height:0; overflow:auto; scrollbar-gutter:stable; padding-right:var(--s-2); }
+    .empty-result-card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-lg); padding:var(--s-6); box-shadow:var(--shadow-sm); }
+    .empty-status { display:flex; align-items:center; gap:var(--s-3); margin-bottom:var(--s-4); }
+    .empty-status-icon { width:38px; height:38px; border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; color:var(--accent); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line); flex-shrink:0; }
+    .empty-status-title { font-size:22px; line-height:1.2; font-weight:700; color:var(--ink); letter-spacing:-.4px; }
+    .empty-status-sub { font-size:13.5px; line-height:1.55; color:var(--slate); max-width:680px; }
+    .empty-checklist { margin-top:var(--s-5); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--s-3); }
+    .empty-checkitem { padding:var(--s-4); border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface-2); }
+    .empty-checkitem-t { font-size:12px; font-weight:700; color:var(--ink); margin-bottom:5px; }
+    .empty-checkitem-b { font-size:12.5px; line-height:1.5; color:var(--slate); }
+    .empty-actions { display:flex; gap:var(--s-3); align-items:center; margin-top:var(--s-5); flex-wrap:wrap; }
+    .empty-side { min-height:0; overflow:auto; scrollbar-gutter:stable; padding-right:var(--s-2); display:flex; flex-direction:column; gap:var(--s-4); }
+    .empty-side-card { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-md); padding:var(--s-4); }
+    .empty-side-card .bodyfig { max-width:190px !important; }
+    .empty-side-title { font-size:11px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--slate-300); margin-bottom:var(--s-3); }
+    .empty-side-row { display:flex; justify-content:space-between; gap:var(--s-3); padding:8px 0; border-top:1px solid var(--line-soft); font-size:12.5px; }
+    .empty-side-row:first-of-type { border-top:none; }
+    .empty-side-row span:first-child { color:var(--slate); }
+    .empty-side-row span:last-child { color:var(--ink); font-weight:650; text-align:right; }
     /* Honest self-audit caution (CERT-2) — uses the existing warn token, distinct from the neutral empty-banner. */
     .verify-banner { padding: var(--s-5); background:#fff7ed; border:1px solid #fed7aa; border-left:3px solid #ea580c; border-radius: var(--r-md); margin-bottom: var(--s-5); }
     .verify-banner .vb-t { font-size:15px; font-weight:700; color:#9a3412; margin-bottom:5px; }
@@ -606,48 +638,9 @@
     .fade-up { animation: fadeUp var(--duration-slow) var(--ease-out) both; }
     @keyframes fadeUp { from{opacity:0; transform: translateY(10px);} to{opacity:1; transform:none;} }
 
-    /* ════════════════════ Responsive ════════════════════ */
-    @media (max-width: 1180px) {
-      /* below true desktop, revert the viewport-fill behavior — natural stacked flow is correct here */
-      .page-inner { min-height:0; display:block; }
-      .home-grid, .wait-grid, .read-grid { align-items:start; flex:initial; }
-      /* revert the Read figure-fills-height behavior to natural width-driven sizing once columns stop stretching */
-      .read-left { display:block; }
-      .read-figwrap { flex:initial; align-items:start; }
-      .read-left .bodyfig { height:auto; max-width:250px; margin:0 auto; }
-      .read-left .bodyfig-stage { height:auto; width:100%; }
-      .home-grid { grid-template-columns: minmax(0,1fr) 220px; }
-      .home-body { grid-column: 1 / -1; order:3; }
-      .home-body .bodyfig { max-width:360px; }
-      .wait-grid { grid-template-columns: minmax(0,1fr) 280px; }
-      .wait-body { grid-column: 1 / -1; order:3; }
-      .reading-viewer { max-width:520px; }
-    }
-    @media (max-width: 1024px) {
-      .read-grid { grid-template-columns: 1fr; }
-      .read-figwrap { grid-template-columns: minmax(0,0.7fr) minmax(0,1fr); }
-    }
-    @media (max-width: 860px) {
-      .sidebar { display:none; }
-      .home-grid, .wait-grid { grid-template-columns: 1fr; }
-      .coverage, .seq-panel, .wait-right { grid-column: 1 / -1; }
-      .trust { grid-template-columns: 1fr 1fr; }
-      .page-inner { padding: var(--s-6); }
-      .home-title { font-size:34px; }
-      .read-bottom-line { font-size:24px; }
-    }
-    @media (max-width: 600px) {
-      .read-figwrap { grid-template-columns: 1fr; }
-      .bf-markers { display:none; } /* markers dropped <600px; thread is canonical */
-      .trust { grid-template-columns: 1fr; }
-      .read-bottom-line { font-size:21px; }
-      .bodyfig { max-width: 320px; }
-      /* tap targets ≥44px (WCAG 2.5.5 / mobile) */
-      .btn { min-height: 44px; }
-      .toggle button { min-height: 40px; }
-      .topbar { flex-wrap: wrap; height: auto; padding: 10px var(--s-4); gap: 8px; }
-      .topbar-r { flex-wrap: wrap; }
-      .dz-actions .btn { flex: 1; }
+    /* Desktop app boundary: the EXE is not a mobile surface. Keep the desktop composition stable. */
+    @media (max-width: 1180px), (max-height: 720px) {
+      html, body, #root, .shell { min-width:1180px; min-height:720px; }
     }
   </style>
 </head>
@@ -666,8 +659,8 @@
       brand: { name:'MIKA', sub:'Clinical imaging intelligence', tagline:'From scan to clear answers.' },
       home: {
         pretitle: 'Clinical imaging intelligence',
-        title1: 'From scan to clear', titleAccent: 'answers', title2: '.',
-        sub: 'Upload a scan and MIKA will organize the images, measurements, and proof views into a clear read.',
+        title1: 'From scan to clear ', titleAccent: 'answers', title2: '.',
+        sub: 'Upload an imaging study. MIKA will organize the images, measurements, and proof views into a clear read.',
         dropTitle: 'Upload an imaging study', dropSub: 'DICOM folders, ZIP files, or standard image formats',
         choose: 'Choose files', folder: 'Select DICOM folder',
         ready: 'scan ready', coverageTitle: 'Analysis coverage',
@@ -679,7 +672,7 @@
         topbar: 'Reading in progress',
         heading: 'Reading the study now.',
         leaveBtn: 'Notify me when ready',
-        safe: 'You can keep MIKA open while the read runs. Desktop notifications work only after you enable them.',
+        safe: 'You can keep MIKA open while the read runs. Enable notifications if you want a desktop alert.',
         seqTitle: 'Study sequences', seqPlaceholder: 'Sequences will appear here after the scan is organized.',
         progress: 'Study progress', overall: 'Study progress',
       },
@@ -742,21 +735,21 @@
     // because they key off the resolved diagram asset, not the demo mode flag.
     // max: pane width in px; zoom/y: visual fit inside the stable artboard, preserving marker geometry.
     const FIGURE_FIT_BY_STATE = {
-      home: { default:{ max:360 }, body:{ max:360 } },
+      home: { default:{ max:330 }, body:{ max:330 } },
       wait: {
-        default:{ max:420, zoom:1.02 },
-        body:{ max:390 },
-        spine:{ max:430 },
-        brain:{ max:500, zoom:1.04 },
-        'head-neck':{ max:500, zoom:1.04 },
-        chest:{ max:500, zoom:1.02 },
-        abdomen:{ max:445, zoom:1.02 },
-        vascular:{ max:445, zoom:1.02 },
-        hip:{ max:430, zoom:1.04, y:-6 },
-        knee:{ max:430, zoom:1.06, y:-8 },
-        shoulder:{ max:500, zoom:1.04 },
-        breast:{ max:430, zoom:1.04, y:-4 },
-        prostate:{ max:430, zoom:1.05, y:-8 },
+        default:{ max:380, zoom:1.02 },
+        body:{ max:340 },
+        spine:{ max:380 },
+        brain:{ max:430, zoom:1.04 },
+        'head-neck':{ max:430, zoom:1.04 },
+        chest:{ max:430, zoom:1.02 },
+        abdomen:{ max:400, zoom:1.02 },
+        vascular:{ max:400, zoom:1.02 },
+        hip:{ max:380, zoom:1.04, y:-6 },
+        knee:{ max:380, zoom:1.06, y:-8 },
+        shoulder:{ max:430, zoom:1.04 },
+        breast:{ max:380, zoom:1.04, y:-4 },
+        prostate:{ max:380, zoom:1.05, y:-8 },
       },
       read: {
         default:{ max:370, zoom:1.02 },
@@ -1313,11 +1306,11 @@
       return (
         <div className="page-inner page-route fade-up">
           <h1 className="route-title">Recent scans</h1>
-          <p className="route-sub">Every scan read on this computer is kept in MIKA’s own storage — it survives a refresh, a restart, even clearing your browser.</p>
+          <p className="route-sub">Reports saved on this PC. Open a previous read or start a new one.</p>
           {items.length === 0 ? (
             <div className="empty-banner">
               <div className="eb-t">No scans yet.</div>
-              <div className="eb-b">Once you read a scan it will appear here. <button className="clin-link" style={{padding:0}} onClick={onNew}>Read a new scan →</button></div>
+              <div className="eb-b">Once you read a scan it will appear here. <button className="clin-link" style={{padding:0}} onClick={onNew}>Read a new scan</button></div>
             </div>
           ) : (
             <div className="recent-list">
@@ -1358,7 +1351,7 @@
               {connected ? (
                 <span className="conn-pill"><span className="conn-dot" />Connected to Claude{plan && plan!=='api' ? ` · ${String(plan).toUpperCase()}` : ''}</span>
               ) : (
-                <button className="btn btn-primary btn-sm" onClick={onConnect}>{I.mark({ width:14, height:14 })} {checking ? 'Connecting…' : 'Connect with Claude'}</button>
+                <button className="btn btn-primary btn-sm" onClick={onConnect}>{I.mark({ width:14, height:14 })} {checking ? 'Checking sign-in…' : 'Sign in with Claude'}</button>
               )}
             </div>
           </div>
@@ -1392,7 +1385,7 @@
     }
 
     function AboutModal({ onClose }) {
-      const note = "MIKA started from something deeply personal.\n\nAfter a cauda equina emergency, two spinal surgeries, failed back surgery syndrome, and an S1 nerve injury, I spent nearly a year unable to walk — mostly between my bed and a wheelchair.\n\nBut the most frightening part was not only the pain. It was looking at scan after scan of my own body and not understanding what they meant.\n\nI built MIKA because I needed clarity. It helped reveal things that had been missed, and those details changed the direction of my treatment.\n\nMIKA is free because no one should feel that scared, confused, and alone.";
+      const note = "MIKA started from a personal need for clearer imaging answers after a severe spine injury and a long recovery.\n\nThe goal is simple: help patients and clinicians review imaging evidence with less confusion, while keeping the official radiology report and clinician review at the center.\n\nMIKA is free because clear medical information should be easier to reach.";
       return (
         <div className="overlay" onClick={onClose}>
           <div className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="About MIKA">
@@ -1414,32 +1407,31 @@
       const plan = connection && connection.subscription_type;
       return (
         <div className="overlay" onClick={onClose}>
-          <div className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Connect with Claude">
+          <div className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Sign in with Claude">
             <div className="modal-head">
-              <h2>{connected ? 'Connected to Claude' : 'Connect with Claude'}</h2>
+              <h2>{connected ? 'Signed in with Claude' : 'Sign in with your Claude subscription'}</h2>
               <button className="modal-x" onClick={onClose} aria-label="Close">×</button>
             </div>
             <div className="modal-body">
               {connected ? (
                 <>
                   <p className="founder-note" style={{marginBottom:'18px'}}>
-                    ✓ This app is connected to Claude{plan && plan!=='api' ? ` (${String(plan).toUpperCase()} plan)` : ''}.
-                    You can upload your scan and get your read — nothing else to set up.
+                    Claude is connected{plan && plan!=='api' ? ` (${String(plan).toUpperCase()} plan)` : ''}. You can upload a scan and start a read.
                   </p>
                   <button className="btn btn-primary" style={{width:'100%'}} onClick={onClose}>Continue</button>
                 </>
               ) : (
                 <>
                   <p className="founder-note" style={{marginBottom:'10px'}}>
-                    MIKA reads your scan through Claude. You don’t need to install anything or type any codes.
+                    MIKA reads through the Claude account signed in on this PC. No API key is needed.
                   </p>
                   <ul style={{fontSize:'13px', lineHeight:1.7, color:'var(--slate)', paddingLeft:'18px', margin:'0 0 16px'}}>
-                    <li>Press the button below — a browser window opens and you sign in to your Claude account.</li>
-                    <li>You’ll need a Claude account (claude.ai). That’s it.</li>
+                    <li>A browser window opens for Claude sign-in.</li>
+                    <li>Use the Claude subscription you already pay for.</li>
                   </ul>
                   <div style={{display:'flex', gap:'10px'}}>
                     <button className="btn btn-primary" style={{flex:1}} disabled={checking} onClick={onConnect}>
-                      {checking ? 'Waiting for sign-in…' : 'Connect with Claude'}
+                      {checking ? 'Waiting for sign-in…' : 'Sign in with Claude'}
                     </button>
                     <button className="btn btn-ghost" onClick={onClose}>Close</button>
                   </div>
@@ -1449,7 +1441,7 @@
                 </>
               )}
               <p style={{fontSize:'11.5px', color:'var(--slate-300)', marginTop:'18px', borderTop:'1px solid var(--line)', paddingTop:'12px', lineHeight:1.6}}>
-                MIKA needs an active connection to Claude to read your images. It is an AI assistant and does not replace a doctor; all findings should be reviewed by a qualified clinician.
+                MIKA needs Claude sign-in to read your images. It is an AI assistant and does not replace a doctor; all findings should be reviewed by a qualified clinician.
               </p>
             </div>
           </div>
@@ -1768,20 +1760,42 @@
 
     const WORD2LETTER = { Confirmed:'A', Likely:'B', Possible:'C' };
 
-    function ClinicianDetail({ vm, jobId, onZoom }) {
+    function ClinicianDetail({ vm, jobId, onZoom, active }) {
       const v = vm.verification || {};
       const tech = vm.clinicianFindings || [];
+      const techFigure = tech.find(f => f.figure);
+      const evidenceUrl = (active && active.proofImageUrl) || (techFigure && proofUrl(jobId, techFigure.figure));
+      const evidenceTitle = (active && active.plainSentence) || (techFigure && stripTier(techFigure.text)) || 'No annotated evidence image available';
       return (
         <div className="clin">
-          <div className="clin-card">
-            <div className="clin-h">Verification</div>
-            <div className="clin-verline">
-              <span className={`clin-vstatus ${v.status==='passed'?'ok':v.status==='issues_flagged'?'warn':'muted'}`}>
-                {v.status ? v.status.replace('_',' ') : 'not run'}
-              </span>
-              {typeof v.quality_score === 'number' && <span className="clin-score">Quality {v.quality_score}/100</span>}
+          <div className="clin-strip">
+            <div>
+              <div className="clin-h">Verification</div>
+              <div className="clin-verline">
+                <span className={`clin-vstatus ${v.status==='passed'?'ok':v.status==='issues_flagged'?'warn':'muted'}`}>
+                  {v.status ? v.status.replace('_',' ') : 'not run'}
+                </span>
+                {typeof v.quality_score === 'number' && <span className="clin-score">Quality {v.quality_score}/100</span>}
+              </div>
+              {v.quality_notes && <div className="clin-notes">{v.quality_notes}</div>}
             </div>
-            {v.quality_notes && <div className="clin-notes">{v.quality_notes}</div>}
+            <button className="btn btn-ghost btn-sm" disabled={!vm.pdfAvailable}
+              onClick={()=>jobId && jobId!=='demo' && window.open(`${API_BASE}/api/report/${jobId}/pdf`,'_blank')}>
+              {I.download({width:14,height:14})} PDF
+            </button>
+          </div>
+          <div className="clin-proof">
+            <div className="clin-proof-head">
+              <div className="clin-proof-title">{evidenceTitle}</div>
+              {evidenceUrl && <button className="clin-figlink" onClick={()=>onZoom(evidenceUrl)}>{I.scan({width:13,height:13})} Enlarge</button>}
+            </div>
+            {evidenceUrl ? (
+              <div className="clin-proof-img" onClick={()=>onZoom(evidenceUrl)}>
+                <img src={evidenceUrl} alt="" loading="lazy" />
+              </div>
+            ) : (
+              <div className="clin-proof-empty">This run did not include a pinned proof image for the selected finding.</div>
+            )}
           </div>
           <div className="clin-card">
             <div className="clin-h">Technical findings</div>
@@ -1803,10 +1817,57 @@
             <div className="clin-card"><div className="clin-h">Audit corrections</div>
               <ul className="sec-block" style={{marginTop:0}}>{v.corrections.map((c,i)=><li key={i}>{typeof c==='string'?c:(c.finding||JSON.stringify(c))}</li>)}</ul></div>
           )}
-          <button className="btn btn-ghost" style={{width:'100%'}} disabled={!vm.pdfAvailable}
-            onClick={()=>jobId && jobId!=='demo' && window.open(`${API_BASE}/api/report/${jobId}/pdf`,'_blank')}>
-            {I.download({width:15,height:15})} {vm.pdfAvailable ? 'Download full clinician report (PDF)' : 'Clinician PDF not available for this run'}
-          </button>
+        </div>
+      );
+    }
+
+    function EmptyResultMain({ vm, clinician, onClinician }) {
+      const points = (vm.keyPoints && vm.keyPoints.length) ? vm.keyPoints : [
+        'No finding met the threshold for a pinned abnormality in this automated read.',
+        'This does not replace the official radiology report or your clinician review.'
+      ];
+      return (
+        <div className="empty-read-main">
+          <div className="empty-result-card">
+            <div className="empty-status">
+              <span className="empty-status-icon">{I.check({width:22,height:22})}</span>
+              <div>
+                <div className="empty-status-title">No flagged findings</div>
+                <div className="empty-status-sub">MIKA did not identify a significant abnormality to pin in this read. Treat this as an AI-assisted screen, not a diagnosis.</div>
+              </div>
+            </div>
+            <div className="empty-checklist">
+              <div className="empty-checkitem">
+                <div className="empty-checkitem-t">What MIKA found</div>
+                <div className="empty-checkitem-b">{points[0]}</div>
+              </div>
+              <div className="empty-checkitem">
+                <div className="empty-checkitem-t">What still matters</div>
+                <div className="empty-checkitem-b">{points[1] || 'Review the official report and symptoms with a qualified clinician.'}</div>
+              </div>
+            </div>
+            <div className="empty-actions">
+              {!clinician && <button className="btn btn-ghost" onClick={onClinician}>{I.info({width:15,height:15})} View technical detail</button>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function EmptyResultSide({ vm }) {
+      const s = vm.study || {};
+      return (
+        <div className="empty-side">
+          <div className="empty-side-card">
+            <div className="empty-side-title">Study context</div>
+            <BodyFigure state="read" anatomy={vm.anatomy} ariaLabel="Body map for this study." />
+          </div>
+          <div className="empty-side-card">
+            <div className="empty-side-title">Read summary</div>
+            <div className="empty-side-row"><span>Confidence</span><span>{vm.overall.label || 'Moderate'}{typeof vm.overall.score === 'number' ? ` · ${vm.overall.score}%` : ''}</span></div>
+            <div className="empty-side-row"><span>Region</span><span>{s.body_part || vm.anatomy || 'Study'}</span></div>
+            <div className="empty-side-row"><span>Modality</span><span>{s.modality || 'Imaging'}</span></div>
+          </div>
         </div>
       );
     }
@@ -1849,77 +1910,87 @@
             </div>
           </div>
 
-          <div className="read-grid">
-            <div className="read-left">
-              <div className="read-figwrap">
-                <div className="read-figcol">
-                  {hasBack && (
-                    <div className="viewtoggle" role="group" aria-label="Body view">
-                      <button className={bodyView==='front'?'on':''} aria-pressed={bodyView==='front'} onClick={()=>setBodyView('front')}>Front</button>
-                      <button className={bodyView==='back'?'on':''} aria-pressed={bodyView==='back'} onClick={()=>setBodyView('back')}>Back</button>
+          <div className={`read-grid ${empty ? 'empty-read-grid' : ''}`}>
+            {empty ? (
+              <>
+                <EmptyResultMain vm={vm} clinician={CLIN} onClinician={onClinician} />
+                <div className={`read-right ${CLIN ? 'clinician-right' : ''}`}>
+                  {CLIN ? <ClinicianDetail vm={vm} jobId={jobId} onZoom={onZoom} active={active} /> : <EmptyResultSide vm={vm} />}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="read-left">
+                  <div className="read-figwrap">
+                    <div className="read-figcol">
+                      {hasBack && (
+                        <div className="viewtoggle" role="group" aria-label="Body view">
+                          <button className={bodyView==='front'?'on':''} aria-pressed={bodyView==='front'} onClick={()=>setBodyView('front')}>Front</button>
+                          <button className={bodyView==='back'?'on':''} aria-pressed={bodyView==='back'} onClick={()=>setBodyView('back')}>Back</button>
+                        </div>
+                      )}
+                      <BodyFigure state="read" anatomy={vm.anatomy} view={bodyView} findings={findings} activeId={active && active.id}
+                        onMarkerClick={selectFinding} ariaLabel={`${bodyView==='back'?'Back':'Front'} body map with ${findings.length} finding${findings.length===1?'':'s'} marked by certainty.`} />
                     </div>
-                  )}
-                  <BodyFigure state="read" anatomy={vm.anatomy} view={bodyView} findings={findings} activeId={active && active.id}
-                    onMarkerClick={selectFinding} ariaLabel={`${bodyView==='back'?'Back':'Front'} body map with ${findings.length} finding${findings.length===1?'':'s'} marked by certainty.`} />
-                </div>
-                <div className="thread">
-                  <div className="thread-title">{CLIN ? 'Findings by tier' : 'Findings'}</div>
-                  {findings.map((f, i) => (
-                    <button key={f.id} id={f.id} className={`frow ${active && active.id===f.id ? 'active':''}`}
-                      aria-expanded={active && active.id===f.id} onClick={()=>selectFinding(f.id)}>
-                      <div className="frow-top"><span className="frow-num">{i+1}</span>
-                        {CLIN ? <span className={`tier-badge t${WORD2LETTER[f.certainty]}`}>Tier {WORD2LETTER[f.certainty]}</span> : <CertaintyChip certainty={f.certainty} />}
+                    <div className="thread">
+                      <div className="thread-title">{CLIN ? 'Findings by tier' : 'Findings'}</div>
+                      {findings.map((f, i) => (
+                        <button key={f.id} id={f.id} className={`frow ${active && active.id===f.id ? 'active':''}`}
+                          aria-expanded={active && active.id===f.id} onClick={()=>selectFinding(f.id)}>
+                          <div className="frow-top"><span className="frow-num">{i+1}</span>
+                            {CLIN ? <span className={`tier-badge t${WORD2LETTER[f.certainty]}`}>Tier {WORD2LETTER[f.certainty]}</span> : <CertaintyChip certainty={f.certainty} />}
+                          </div>
+                          <div className="frow-plain">{f.plainSentence}</div>
+                          {f.caption && <div className="frow-cap">{f.caption}</div>}
+                          {!CLIN && active && active.id===f.id && vm.whatItMeans && vm.whatItMeans.length>0 && (
+                            <div className="frow-extra">
+                              <h4>What this could mean</h4>
+                              <ul className="sec-block" style={{marginTop:0}}>{vm.whatItMeans.map((w,idx)=><li key={idx}>{w}</li>)}</ul>
+                            </div>
+                          )}
+                        </button>
+                      ))}
+                      <div className="legend-row">
+                        {CLIN ? (
+                          <>
+                            <span><span className="tier-badge tA" style={{marginRight:0}}>A</span> Confirmed</span>
+                            <span><span className="tier-badge tB" style={{marginRight:0}}>B</span> Likely</span>
+                            <span><span className="tier-badge tC" style={{marginRight:0}}>C</span> Possible</span>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{color:'var(--accent)'}}><CertaintyGlyph certainty="Confirmed" /> Confirmed</span>
+                            <span style={{color:'var(--accent)'}}><CertaintyGlyph certainty="Likely" /> Likely</span>
+                            <span style={{color:'var(--slate)'}}><CertaintyGlyph certainty="Possible" /> Possible</span>
+                          </>
+                        )}
                       </div>
-                      <div className="frow-plain">{f.plainSentence}</div>
-                      {f.caption && <div className="frow-cap">{f.caption}</div>}
-                    </button>
-                  ))}
-                  {empty && <div className="frow" style={{cursor:'default'}}><div className="frow-plain" style={{color:'var(--slate)'}}>No specific findings to pin. See the summary above.</div></div>}
-                  <div className="legend-row">
-                    {CLIN ? (
-                      <>
-                        <span><span className="tier-badge tA" style={{marginRight:0}}>A</span> Confirmed</span>
-                        <span><span className="tier-badge tB" style={{marginRight:0}}>B</span> Likely</span>
-                        <span><span className="tier-badge tC" style={{marginRight:0}}>C</span> Possible</span>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{color:'var(--accent)'}}><CertaintyGlyph certainty="Confirmed" /> Confirmed</span>
-                        <span style={{color:'var(--accent)'}}><CertaintyGlyph certainty="Likely" /> Likely</span>
-                        <span style={{color:'var(--slate)'}}><CertaintyGlyph certainty="Possible" /> Possible</span>
-                      </>
-                    )}
+                      {!CLIN && (
+                        <>
+                          {(vm.worthFlagging && vm.worthFlagging.length>0) && (
+                            <div className="sec-block"><h3>Ask your doctor about</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
+                          )}
+                          {vm.changeOverTime && (
+                            <div className="sec-block"><h3>Change over time</h3>
+                              {vm.changeOverTime.points ? <ul>{vm.changeOverTime.points.map((p,i)=><li key={i}>{p}</li>)}</ul> : <p style={{fontSize:'13.5px', color:'var(--slate)', lineHeight:1.6}}>{vm.changeOverTime.plain}</p>}
+                            </div>
+                          )}
+                          <button className="clin-link" onClick={onClinician}>{I.info({width:15,height:15})} View technical detail</button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  {!CLIN && (
-                    <>
-                      {(vm.whatItMeans && vm.whatItMeans.length>0) && (
-                        <div className="read-wtm">
-                          <h4>What this could mean</h4>
-                          <ul className="sec-block" style={{marginTop:0}}>{vm.whatItMeans.map((w,i)=><li key={i}>{w}</li>)}</ul>
-                        </div>
-                      )}
-                      {(vm.worthFlagging && vm.worthFlagging.length>0) && (
-                        <div className="sec-block"><h3>Ask your doctor about</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
-                      )}
-                      {vm.changeOverTime && (
-                        <div className="sec-block"><h3>Change over time</h3>
-                          {vm.changeOverTime.points ? <ul>{vm.changeOverTime.points.map((p,i)=><li key={i}>{p}</li>)}</ul> : <p style={{fontSize:'13.5px', color:'var(--slate)', lineHeight:1.6}}>{vm.changeOverTime.plain}</p>}
-                        </div>
-                      )}
-                      <button className="clin-link" onClick={onClinician}>{I.info({width:15,height:15})} View technical detail</button>
-                    </>
+                </div>
+
+                <div className={`read-right ${CLIN ? 'clinician-right' : 'proof-right'}`}>
+                  {CLIN ? (
+                    <ClinicianDetail vm={vm} jobId={jobId} onZoom={onZoom} active={active} />
+                  ) : (
+                    <ProofPanel finding={active} onZoom={onZoom} />
                   )}
                 </div>
-              </div>
-            </div>
-
-            <div className={`read-right ${CLIN ? 'clinician-right' : 'proof-right'}`}>
-              {CLIN ? (
-                <ClinicianDetail vm={vm} jobId={jobId} onZoom={onZoom} />
-              ) : (
-                <ProofPanel finding={active} onZoom={onZoom} />
-              )}
-            </div>
+              </>
+            )}
           </div>
 
           <div className="read-disclaimer"><strong>Important:</strong> {vm.disclaimer}</div>
