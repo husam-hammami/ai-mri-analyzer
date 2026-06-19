@@ -62,7 +62,7 @@
       --rail:300px;   /* unified side-rail width across Home/Wait */
 
       /* ── Radius ── */
-      --r-sm:8px; --r-md:12px; --r-lg:16px; --r-xl:22px; --r-full:9999px;
+      --r-sm:6px; --r-md:10px; --r-lg:12px; --r-xl:16px; --r-full:9999px;
 
       /* ── Shadow (soft, light-mode) ── */
       --shadow-sm: 0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06);
@@ -79,16 +79,19 @@
     }
 
     *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
-    html { scroll-behavior:smooth; }
+    html { height:100%; scroll-behavior:smooth; overflow:hidden; }
     body {
       font-family:'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
       background: var(--canvas);
       color: var(--ink);
+      height:100%;
       min-height: 100vh;
+      overflow:hidden;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
       text-rendering: optimizeLegibility;
     }
+    #root { height:100%; min-height:0; overflow:hidden; }
     ::selection { background: var(--accent); color:#fff; }
     button { font-family:inherit; }
     a { color: inherit; }
@@ -102,7 +105,7 @@
     }
 
     /* ════════════════════ Shell ════════════════════ */
-    .shell { display:flex; min-height:100vh; }
+    .shell { display:flex; height:100dvh; min-height:0; overflow:hidden; }
 
     /* ── Sidebar (dark navy rail) ── */
     .sidebar {
@@ -110,7 +113,7 @@
       background: linear-gradient(180deg, var(--navy-900), var(--navy-800) 60%, var(--navy-900));
       color: var(--on-navy);
       display:flex; flex-direction:column;
-      position: sticky; top:0; height:100vh;
+      position: sticky; top:0; height:100dvh;
       border-right: 1px solid var(--line-navy);
     }
     .sb-logo {
@@ -164,30 +167,32 @@
     .sb-conn.ok .sb-conn-txt { color: var(--on-navy); }
 
     /* ── Canvas ── */
-    .canvas { flex:1; min-width:0; display:flex; flex-direction:column; background: var(--canvas); }
+    .canvas { flex:1; min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; background: var(--canvas); }
     .topbar {
       height:60px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between;
       padding: 0 var(--s-8); background: var(--surface); border-bottom:1px solid var(--line);
       position:sticky; top:0; z-index:30;
     }
     .topbar-l { display:flex; align-items:center; gap: var(--s-4); min-width:0; }
+    .topbar-l.stacked { flex-direction:column; align-items:flex-start; justify-content:center; gap:2px; }
     .topbar-title { font-size:14.5px; font-weight:600; color: var(--ink); white-space:nowrap; }
     .topbar-meta { font-size:13px; color: var(--slate-300); display:flex; align-items:center; gap:8px; }
     .topbar-r { display:flex; align-items:center; gap: var(--s-3); }
     .conn-pill { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:500; color: var(--slate); padding:6px 12px; border-radius: var(--r-full); border:1px solid var(--line); background: var(--surface-2); }
     .conn-dot { width:7px; height:7px; border-radius:50%; background:#10b981; box-shadow:0 0 0 3px rgba(16,185,129,.15); }
     .conn-dot.off { background: var(--slate-300); box-shadow:none; }
-    .page { flex:1; overflow-y:auto; }
+    .page { flex:1; min-height:0; overflow:hidden; overscroll-behavior:contain; }
     /* Fluid: fill the full content width at ANY browser zoom (no max-width cap → no empty side rails
        when zoomed out). Top-aligned; pages scroll naturally when content is tall. */
-    .page-inner { width:100%; margin:0; padding: var(--s-8) var(--s-10); }
+    .page-inner { width:100%; height:100%; min-height:0; margin:0; padding: var(--s-8) var(--s-10); overflow:hidden; }
+    .page-route { overflow:auto; }
 
     /* ── Buttons ── */
     .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; font-size:13.5px; font-weight:600;
       padding:10px 18px; border-radius: var(--r-md); cursor:pointer; border:1px solid transparent;
       transition: transform var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
     .btn:active { transform: translateY(1px); }
-    .btn-primary { background: var(--accent); color:#fff; box-shadow: 0 1px 2px rgba(37,99,235,.25), 0 6px 16px rgba(37,99,235,.18); }
+    .btn-primary { background: var(--accent); color:#fff; box-shadow: 0 1px 2px rgba(37,99,235,.22), 0 4px 10px rgba(37,99,235,.14); }
     .btn-primary:hover { background: var(--accent-strong); }
     .btn-ghost { background: var(--surface); color: var(--slate); border-color: var(--line); }
     .btn-ghost:hover { border-color: var(--accent-line); color: var(--accent); }
@@ -212,8 +217,15 @@
     .opill.low .dot { background: var(--slate-300); }
 
     /* ════════════════════ Body figure (one instance, 3 states) ════════════════════ */
-    .bodyfig { position:relative; width:100%; max-width:520px; margin:0 auto; }
-    .bodyfig-stage { position:relative; width:100%; aspect-ratio: 880 / 1375; }
+    .bodyfig {
+      position:relative; width:100%; max-width:var(--bodyfig-max, 520px); margin:0 auto;
+      --bodyfig-zoom:1; --bodyfig-y:0px; --bodyfig-origin-y:50%;
+    }
+    .bodyfig-stage {
+      position:relative; width:100%; aspect-ratio: 880 / 1375;
+      transform: translateY(var(--bodyfig-y)) scale(var(--bodyfig-zoom));
+      transform-origin:center var(--bodyfig-origin-y);
+    }
     .bodyfig-stage > picture, .bodyfig-stage img.bf-img { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
     .bodyfig-stage img.bf-img { display:block; }
     .bf-empty { display:flex; align-items:center; justify-content:center; height:100%; color: var(--slate-300); font-size:13px; text-align:center; padding:24px; }
@@ -268,11 +280,13 @@
 
     /* ════════════════════ HOME ════════════════════ */
     .home-grid { position:relative; display:grid; grid-template-columns: minmax(0,1fr) minmax(0,0.9fr) var(--rail); gap: var(--s-10); align-items:stretch; flex:1; }
+    .page-home { display:flex; flex-direction:column; }
+    .page-home .home-grid { min-height:0; }
     /* each column centers its content vertically in the now-equal-height row → slack becomes balanced
        top/bottom breathing room instead of one big void under the shortest column */
     .home-hero { display:flex; flex-direction:column; justify-content:center; gap: var(--s-5); max-width:520px; }
     .home-body { display:flex; flex-direction:column; justify-content:center; }
-    .home-body .bodyfig { max-width:360px; }
+    .home-body .bodyfig { --bodyfig-max:360px; }
     .coverage { display:flex; flex-direction:column; justify-content:center; }
     .home-leaders { position:absolute; inset:0; pointer-events:none; z-index:5; overflow:visible; }
     .leader-path { fill:none; stroke: var(--accent-line); stroke-width:1; }
@@ -283,8 +297,8 @@
     .home-title .accent { color: var(--accent); }
     .home-sub { font-size:15.5px; line-height:1.6; color: var(--slate); max-width:420px; margin-bottom: var(--s-8); }
 
-    .dropzone { background: var(--surface); border:1.5px dashed var(--line); border-radius: var(--r-xl);
-      padding: var(--s-10) var(--s-8); text-align:center; min-height:300px; display:flex; flex-direction:column; justify-content:center;
+    .dropzone { background: var(--surface); border:1.5px dashed var(--line); border-radius: var(--r-lg);
+      padding: var(--s-8); text-align:center; min-height:280px; display:flex; flex-direction:column; justify-content:center;
       transition: border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out); }
     .dropzone.over { border-color: var(--accent); border-style:solid; background: var(--accent-softer); box-shadow: 0 0 0 4px var(--accent-glow); }
     .dropzone.ready { border-style:solid; border-color: var(--accent-line); }
@@ -309,8 +323,7 @@
     .coverage { }
     .cov-title { font-size:11px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color: var(--slate-300); margin-bottom: var(--s-4); }
     .cov-list { display:flex; flex-direction:column; gap: var(--s-1); }
-    .cov-row { display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius: var(--r-sm); transition: background var(--duration-fast) var(--ease-out); }
-    .cov-row:hover { background: var(--surface-2); }
+    .cov-row { display:flex; align-items:center; gap:10px; padding:10px 10px; border-radius: var(--r-sm); }
     .cov-row .cov-ico { width:18px; height:18px; color: var(--slate); flex-shrink:0; display:flex; }
     .cov-row .cov-name { font-size:13px; color: var(--ink); font-weight:500; }
     .cov-row .cov-dot { margin-left:auto; width:8px; height:8px; border-radius:50%; }
@@ -332,13 +345,20 @@
     /* ════════════════════ WAIT ════════════════════ */
     /* status+slice viewer | body figure (tallest hero) | sequences + latest view — columns share one height */
     .wait-grid { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,0.82fr) 300px; gap: var(--s-8); align-items:stretch; }
+    .page-wait { display:flex; flex-direction:column; }
+    .page-wait .wait-grid { min-height:0; flex:1; }
+    .page-wait .wait-left, .page-wait .wait-right { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+    .page-wait .wait-body { min-height:0; overflow:hidden; }
     .wait-left { display:flex; flex-direction:column; }
     .wait-left .safe-leave { margin-top:auto; }   /* docks the reassurance to the bottom — fills the column, no gap */
     .wait-body { display:flex; align-items:center; justify-content:center; }
-    .wait-body .bodyfig { max-width:366px; }
+    .wait-body .bodyfig { --bodyfig-max:390px; }
     .wait-right { display:flex; flex-direction:column; }
     .wait-heading { font-size:26px; line-height:1.3; font-weight:700; letter-spacing:-0.5px; color: var(--ink); max-width:440px; margin-bottom: var(--s-3); }
-    .wait-facts { font-size:13px; font-weight:500; color: var(--slate); margin-bottom: var(--s-8); letter-spacing:.2px; }
+    .wait-facts { display:grid; grid-template-columns: repeat(4, minmax(92px, max-content)); gap: var(--s-3); margin-bottom: var(--s-8); }
+    .wait-fact { display:flex; flex-direction:column; gap:2px; padding:8px 10px; background: var(--surface); border:1px solid var(--line); border-radius: var(--r-sm); }
+    .wait-fact-label { font-size:10px; line-height:1.2; font-weight:700; letter-spacing:.55px; text-transform:uppercase; color: var(--slate-300); }
+    .wait-fact-value { font-size:13px; line-height:1.25; font-weight:650; color: var(--ink); white-space:nowrap; }
     .phase-list { display:flex; flex-direction:column; gap: var(--s-2); }
     .phase { display:flex; gap: var(--s-3); padding:10px 0; }
     .phase-dot { width:22px; height:22px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; border:2px solid var(--line); background: var(--surface); margin-top:1px; }
@@ -356,7 +376,7 @@
     .stepper-track { position:absolute; top:24px; left:24px; right:24px; height:3px; border-radius:2px; background: var(--line); overflow:hidden; }
     .stepper-fill { height:100%; border-radius:2px; background: linear-gradient(90deg, var(--accent), var(--accent-strong)); transition: width var(--dur-progress) var(--ease-out); }
     .step { position:relative; z-index:1; display:flex; flex-direction:column; align-items:center; gap:9px; flex:1; }
-    .step-node { width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: var(--surface); border:2px solid var(--line); color: var(--slate-300); transition: all var(--duration-normal) var(--ease-out); }
+    .step-node { width:50px; height:50px; border-radius:50%; display:flex; align-items:center; justify-content:center; background: var(--surface); border:2px solid var(--line); color: var(--slate-300); transition: color var(--duration-normal) var(--ease-out), border-color var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out); }
     .step.done .step-node { background: var(--accent); border-color: var(--accent); color:#fff; }
     .step.active .step-node { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 5px var(--accent-glow); animation: stepPulse 2s var(--ease-calm) infinite; }
     @keyframes stepPulse { 0%,100%{ box-shadow:0 0 0 4px var(--accent-glow);} 50%{ box-shadow:0 0 0 9px var(--accent-softer);} }
@@ -429,8 +449,28 @@
     /* Natural top-aligned columns; the page scrolls if content is tall. Figure sits at a comfortable
        fixed size (no height-fill gymnastics). */
     .read-grid { display:grid; grid-template-columns: minmax(0,1.12fr) minmax(0,0.88fr); gap: var(--s-10); align-items:start; }
+    .page-read { display:grid; grid-template-rows:auto minmax(0,1fr) auto; row-gap: var(--s-4); }
+    .page-read .read-head { margin-bottom:0; }
+    .page-read .read-grid { min-height:0; overflow:hidden; align-items:stretch; }
+    .page-read .read-left { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding-right: var(--s-2); }
+    .page-read .read-right { min-height:0; overscroll-behavior:contain; }
+    .page-read .read-right.proof-right { overflow:hidden; }
+    .page-read .read-right.clinician-right { overflow:auto; scrollbar-gutter:stable; padding-right: var(--s-2); }
+    .page-read .read-right > * { min-width:0; }
+    .page-read .read-right.proof-right .proof { height:100%; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
+    .page-read .read-right.proof-right .proof-head,
+    .page-read .read-right.proof-right .proof-cap { flex-shrink:0; }
+    .page-read .read-right.proof-right .proof-img-wrap { flex:1 1 auto; min-height:0; overflow:hidden; }
+    .page-read .read-right.proof-right .proof-img-wrap img { width:100%; height:100%; max-height:none; object-fit:contain; }
+    .page-read .thread .read-wtm,
+    .page-read .thread > .sec-block,
+    .page-read .thread .clin-link { margin-top: var(--s-3); }
+    .page-read .thread .read-wtm { padding: var(--s-3) var(--s-4); }
+    .page-read .thread .read-wtm h4 { margin-bottom: var(--s-2); }
+    .page-read .thread .read-wtm li { font-size:12.5px; line-height:1.45; }
+    .page-read .read-disclaimer { margin-top:0; }
     .read-figwrap { display:grid; grid-template-columns: minmax(0,0.82fr) minmax(0,1fr); gap: var(--s-6); align-items:start; }
-    .read-left .bodyfig { max-width:320px; margin:0 auto; }
+    .read-left .bodyfig { --bodyfig-max:340px; margin:0 auto; }
     .thread { display:flex; flex-direction:column; gap: var(--s-2); }
     .thread-title { font-size:11px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color: var(--slate-300); margin-bottom: var(--s-2); }
     .frow { width:100%; text-align:left; background: var(--surface); border:1px solid var(--line); border-radius: var(--r-md); padding: var(--s-3) var(--s-4); cursor:pointer;
@@ -460,13 +500,14 @@
     .proof-note { display:flex; gap:10px; align-items:flex-start; margin-top: var(--s-4); padding: var(--s-3) var(--s-4); background: var(--accent-soft); border-radius: var(--r-md); font-size:12.5px; line-height:1.55; color: var(--accent-strong); }
     .proof-note svg { width:16px; height:16px; flex-shrink:0; margin-top:1px; }
     .clin-link { display:inline-flex; align-items:center; gap:6px; margin-top: var(--s-4); font-size:13px; font-weight:600; color: var(--accent); background:none; border:none; cursor:pointer; padding:0; }
+    .clin-link:disabled { opacity:.55; cursor:default; }
 
     .toggle { display:inline-flex; padding:3px; background: var(--surface-2); border-radius: var(--r-full); border:1px solid var(--line); }
-    .toggle button { font-size:12.5px; font-weight:600; padding:6px 14px; border-radius: var(--r-full); border:none; background:transparent; color: var(--slate); cursor:pointer; transition: all var(--duration-fast) var(--ease-out); }
+    .toggle button { font-size:12.5px; font-weight:600; padding:6px 14px; border-radius: var(--r-full); border:none; background:transparent; color: var(--slate); cursor:pointer; transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
     .toggle button.on { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
     .read-figcol { display:flex; flex-direction:column; gap: var(--s-3); }
     .viewtoggle { display:inline-flex; align-self:center; padding:3px; background: var(--surface-2); border:1px solid var(--line); border-radius: var(--r-full); }
-    .viewtoggle button { font-size:12px; font-weight:600; padding:5px 16px; border:none; background:transparent; color: var(--slate); cursor:pointer; border-radius: var(--r-full); transition: all var(--duration-fast) var(--ease-out); }
+    .viewtoggle button { font-size:12px; font-weight:600; padding:5px 16px; border:none; background:transparent; color: var(--slate); cursor:pointer; border-radius: var(--r-full); transition: color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
     .viewtoggle button.on { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
 
     /* Recent / Shared route screens */
@@ -490,10 +531,10 @@
     .read-wtm { margin-top: var(--s-4); padding: var(--s-4) var(--s-5); background: var(--accent-soft); border:1px solid var(--accent-line); border-radius: var(--r-md); }
     .read-wtm h4 { font-size:13px; font-weight:600; color: var(--accent-strong); margin-bottom: var(--s-3); }
     .read-meaning { display:grid; grid-template-columns: repeat(auto-fit, minmax(240px,1fr)); gap: var(--s-6); margin-top: var(--s-6); align-content:start; }
-    .sec-block { margin-top: var(--s-6); }
+    .sec-block { margin-top: var(--s-6); list-style:none; }
     .sec-block h3 { font-size:13px; font-weight:600; color: var(--ink); margin-bottom: var(--s-3); }
-    .sec-block ul { list-style:none; display:flex; flex-direction:column; gap:8px; }
-    .sec-block li { font-size:13.5px; line-height:1.55; color: var(--slate); padding-left: var(--s-5); position:relative; }
+    .sec-block ul, ul.sec-block { list-style:none; display:flex; flex-direction:column; gap:8px; }
+    .sec-block li { list-style:none; font-size:13.5px; line-height:1.55; color: var(--slate); padding-left: var(--s-5); position:relative; }
     .sec-block li::before { content:''; position:absolute; left:4px; top:8px; width:6px; height:6px; border-radius:50%; background: var(--accent); }
 
     /* clinician view */
@@ -626,21 +667,21 @@
       home: {
         pretitle: 'Clinical imaging intelligence',
         title1: 'From scan to clear', titleAccent: 'answers', title2: '.',
-        sub: 'Upload a scan and I’ll turn it into clear, structured evidence — focused on the areas that matter.',
-        dropTitle: 'Drop your scan here', dropSub: 'or browse to begin',
+        sub: 'Upload a scan and MIKA will organize the images, measurements, and proof views into a clear read.',
+        dropTitle: 'Upload an imaging study', dropSub: 'DICOM folders, ZIP files, or standard image formats',
         choose: 'Choose files', folder: 'Select DICOM folder',
         ready: 'scan ready', coverageTitle: 'Analysis coverage',
-        legendCan: 'I can read this', legendSoon: 'coming soon',
-        history: 'Anything I should know? (symptoms, reason for the scan — optional)',
+        legendCan: 'Supported', legendSoon: 'coming soon',
+        history: 'Symptoms or reason for the scan (optional)',
         cta: 'Read my scan',
       },
       wait: {
-        topbar: 'Reading your scan',
-        heading: 'Reading your scan, slice by slice.',
-        leaveBtn: 'Leave — you’ll be notified',
-        safe: 'This page can be safely left open or closed — you’ll be notified the moment it’s ready.',
-        seqTitle: 'Scan sequences', seqPlaceholder: 'I’ll line up the sequences as I open the scan.',
-        progress: 'Reading progress', overall: 'Overall progress',
+        topbar: 'Reading in progress',
+        heading: 'Reading the study now.',
+        leaveBtn: 'Notify me when ready',
+        safe: 'You can keep MIKA open while the read runs. Desktop notifications work only after you enable them.',
+        seqTitle: 'Study sequences', seqPlaceholder: 'Sequences will appear here after the scan is organized.',
+        progress: 'Study progress', overall: 'Study progress',
       },
       privacy: { t:'Private by design', b:'Your scan is processed securely and is never shared.' },
       help: 'Need help?',
@@ -648,10 +689,10 @@
 
     // Phase tracker (§7.3) — threshold-driven within agent's `interpreting`
     const PHASES = [
-      { key:'align',  short:'Aligning',  icon:'stack',  done:'Sequences aligned' },
-      { key:'map',    short:'Mapping',   icon:'target', done:'Anatomy mapped' },
-      { key:'read',   short:'Reading',   icon:'scan',   done:'Read complete' },
-      { key:'verify', short:'Verifying', icon:'shield', done:'Verified' },
+      { key:'align',  short:'Prepare', icon:'stack',  done:'Prepared' },
+      { key:'map',    short:'Map',     icon:'target', done:'Mapped' },
+      { key:'read',   short:'Read',    icon:'scan',   done:'Read complete' },
+      { key:'verify', short:'Review',  icon:'shield', done:'Reviewed' },
     ];
     function phaseStates(progress, status) {
       let idx; // index of the currently-active phase
@@ -697,6 +738,46 @@
       'head-neck':880/1099, hip:880/1375, knee:880/1375, shoulder:880/1099,
       vascular:880/1375, breast:880/1320, prostate:880/1322,
     };
+    // Shared desktop fit presets for every anatomy asset. These are used by real studies and demos
+    // because they key off the resolved diagram asset, not the demo mode flag.
+    // max: pane width in px; zoom/y: visual fit inside the stable artboard, preserving marker geometry.
+    const FIGURE_FIT_BY_STATE = {
+      home: { default:{ max:360 }, body:{ max:360 } },
+      wait: {
+        default:{ max:420, zoom:1.02 },
+        body:{ max:390 },
+        spine:{ max:430 },
+        brain:{ max:500, zoom:1.04 },
+        'head-neck':{ max:500, zoom:1.04 },
+        chest:{ max:500, zoom:1.02 },
+        abdomen:{ max:445, zoom:1.02 },
+        vascular:{ max:445, zoom:1.02 },
+        hip:{ max:430, zoom:1.04, y:-6 },
+        knee:{ max:430, zoom:1.06, y:-8 },
+        shoulder:{ max:500, zoom:1.04 },
+        breast:{ max:430, zoom:1.04, y:-4 },
+        prostate:{ max:430, zoom:1.05, y:-8 },
+      },
+      read: {
+        default:{ max:370, zoom:1.02 },
+        body:{ max:330 },
+        spine:{ max:350 },
+        brain:{ max:430, zoom:1.05 },
+        'head-neck':{ max:430, zoom:1.05 },
+        chest:{ max:420, zoom:1.02 },
+        abdomen:{ max:390, zoom:1.02 },
+        vascular:{ max:390, zoom:1.02 },
+        hip:{ max:385, zoom:1.04, y:-6 },
+        knee:{ max:380, zoom:1.06, y:-8 },
+        shoulder:{ max:420, zoom:1.04 },
+        breast:{ max:385, zoom:1.04, y:-4 },
+        prostate:{ max:390, zoom:1.05, y:-8 },
+      },
+    };
+    function figureFit(state, base) {
+      const byState = FIGURE_FIT_BY_STATE[state] || {};
+      return byState[base] || byState.default || { max:520 };
+    }
 
     // M6 clinician gate: a region shows certainty PINS only once its landmark map is clinician-approved.
     // Un-approved regions still show their close-up + thread + proof (the M5 fallback). Flip a region
@@ -1056,7 +1137,7 @@
     }
     function ConfidencePill({ label, score }) {
       const cls = label === 'High' ? 'high' : label === 'Low' ? 'low' : 'moderate';
-      return <span className={`opill ${cls}`}><span className="dot" />Overall confidence: {label}{typeof score === 'number' ? ` · ${Math.round(score)}%` : ''}</span>;
+      return <span className={`opill ${cls}`}><span className="dot" />Read confidence: {label}{typeof score === 'number' ? ` · ${Math.round(score)}%` : ''}</span>;
     }
     function ProgressBar({ value, reduced }) {
       const w = Math.max(0, Math.min(100, value || 0));
@@ -1079,12 +1160,21 @@
       const { base, hasBodyMap } = src;
       const knownRegion = !!ANATOMY_DIAGRAM[anatomy];
       const aspect = ASSET_ASPECT[base] || (880/1375);
+      const fit = figureFit(state, base);
       // Pins are authored in the REGIONAL crop's coordinate space. If the regional asset failed to
       // load and we fell back to the full body, the coords no longer correspond — suppress pins
       // rather than drop them on the wrong body parts (§5.4 mispositioned-organ risk).
       const expectedReadBase = resolveDiagram(anatomy, 'read', view).base;
       return (
-        <div className={`bodyfig state-${state}`}>
+        <div
+          className={`bodyfig state-${state}`}
+          style={{
+            '--bodyfig-max': `${fit.max || 520}px`,
+            '--bodyfig-zoom': String(fit.zoom || 1),
+            '--bodyfig-y': `${fit.y || 0}px`,
+            '--bodyfig-origin-y': fit.originY || '50%',
+          }}
+        >
           <div className="bodyfig-stage" style={{ aspectRatio: String(aspect) }} role="img" aria-label={ariaLabel || 'Anatomical figure'}>
             {base ? (
               <picture>
@@ -1172,8 +1262,8 @@
           <div className="sb-foot">
             {screen === 'wait' && (
               <div className="sb-reassure">
-                <div className="sb-reassure-t">Being thorough takes time.</div>
-                <div className="sb-reassure-b">Your scan is being read carefully, so the result can be trusted.</div>
+                <div className="sb-reassure-t">Careful reads take time.</div>
+                <div className="sb-reassure-b">MIKA is checking the study step by step and keeping proof images with the result.</div>
               </div>
             )}
             {/* Connection to the user's own Claude subscription — the only sign-in MIKA needs. */}
@@ -1221,7 +1311,7 @@
         return () => { alive = false; };
       }, []);
       return (
-        <div className="page-inner fade-up">
+        <div className="page-inner page-route fade-up">
           <h1 className="route-title">Recent scans</h1>
           <p className="route-sub">Every scan read on this computer is kept in MIKA’s own storage — it survives a refresh, a restart, even clearing your browser.</p>
           {items.length === 0 ? (
@@ -1247,7 +1337,7 @@
       );
     }
 
-    function TopBar({ screen, connection, vm, progress, uiPrefs, setUiPrefs, onDownload, onShare, onConnect, checking }) {
+    function TopBar({ screen, connection, vm, progress, uiPrefs, setUiPrefs, onDownload, onConnect, onNotify, checking }) {
       if (screen === 'recent') {
         return (
           <div className="topbar">
@@ -1278,9 +1368,9 @@
         const eta = progress && progress.eta_seconds != null ? Math.max(1, Math.ceil(progress.eta_seconds/60)) : null;
         return (
           <div className="topbar">
-            <div className="topbar-l"><span className="topbar-title">{COPY.wait.topbar}</span>
-              {eta && <span className="topbar-meta">· about {eta} min left</span>}</div>
-            <div className="topbar-r"><button className="btn btn-ghost btn-sm">{I.bell({width:15,height:15})} {COPY.wait.leaveBtn}</button></div>
+            <div className="topbar-l stacked"><span className="topbar-title">{COPY.wait.topbar}</span>
+              {eta && <span className="topbar-meta">about {eta} min left</span>}</div>
+            <div className="topbar-r"><button className="btn btn-ghost btn-sm" onClick={onNotify}>{I.bell({width:15,height:15})} {COPY.wait.leaveBtn}</button></div>
           </div>
         );
       }
@@ -1289,14 +1379,13 @@
       const line = [s.body_part, s.modality, s.date].filter(Boolean).join(' · ') || 'Your Read';
       return (
         <div className="topbar">
-          <div className="topbar-l"><span className="topbar-title">{line}</span><span className="topbar-meta">· Read complete</span></div>
+          <div className="topbar-l stacked"><span className="topbar-title">{line}</span><span className="topbar-meta">Read complete</span></div>
           <div className="topbar-r">
             <div className="toggle">
               <button className={uiPrefs.view==='plain'?'on':''} onClick={()=>setUiPrefs({view:'plain'})}>Plain language</button>
               <button className={uiPrefs.view==='clinician'?'on':''} onClick={()=>setUiPrefs({view:'clinician'})}>Clinician</button>
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={onDownload} disabled={vm && !vm.pdfAvailable}>{I.download({width:15,height:15})} Download</button>
-            <button className="btn btn-primary btn-sm" onClick={onShare}>{I.share({width:15,height:15})} Share with your doctor</button>
+            <button className="btn btn-primary btn-sm" onClick={onDownload} disabled={vm && !vm.pdfAvailable}>{I.download({width:15,height:15})} Download report</button>
           </div>
         </div>
       );
@@ -1342,7 +1431,7 @@
               ) : (
                 <>
                   <p className="founder-note" style={{marginBottom:'10px'}}>
-                    I read your scan through Claude. You don’t need to install anything or type any codes.
+                    MIKA reads your scan through Claude. You don’t need to install anything or type any codes.
                   </p>
                   <ul style={{fontSize:'13px', lineHeight:1.7, color:'var(--slate)', paddingLeft:'18px', margin:'0 0 16px'}}>
                     <li>Press the button below — a browser window opens and you sign in to your Claude account.</li>
@@ -1474,7 +1563,7 @@
     function HomeScreen({ onFiles, ready, onStart, history, setHistory }) {
       const gridRef = useRef(null);
       return (
-        <div className="page-inner fade-up">
+        <div className="page-inner page-home fade-up">
           <div className="home-grid" ref={gridRef}>
             <HomeLeaders gridRef={gridRef} />
             <div className="home-hero">
@@ -1551,18 +1640,25 @@
       const totalImages = seqs.reduce((n,s)=> n + (Number(s.num_slices)||0), 0);
       const MOD = { MR:'MRI', CT:'CT', CR:'X-ray', DX:'X-ray', US:'Ultrasound', MG:'Mammography', XA:'Angiography', PT:'PET', NM:'Nuclear medicine' };
       const facts = [
-        REGION_LABEL[anatomy] || (anatomy && anatomy !== 'unknown' ? anatomy[0].toUpperCase()+anatomy.slice(1) : null),
-        MOD[(sequences && sequences.modality)] || (sequences && sequences.modality) || 'MRI',
-        seqs.length ? `${seqs.length} sequence${seqs.length===1?'':'s'}` : null,
-        totalImages ? `${totalImages} images` : null,
-      ].filter(Boolean).join('  ·  ');
+        { label:'Region', value: REGION_LABEL[anatomy] || (anatomy && anatomy !== 'unknown' ? anatomy[0].toUpperCase()+anatomy.slice(1) : null) },
+        { label:'Modality', value: MOD[(sequences && sequences.modality)] || (sequences && sequences.modality) || 'MRI' },
+        { label:'Sequences', value: seqs.length ? String(seqs.length) : null },
+        { label:'Images', value: totalImages ? String(totalImages) : null },
+      ].filter(f => f.value);
       const PHASE_ICON = { stack:I.stack, target:I.target, scan:I.scan, shield:I.shield };
       const activeIdx = phases.findIndex(p => p.state==='active');
       const fillIdx = activeIdx >= 0 ? activeIdx : (phases.every(p => p.state==='done') ? phases.length-1 : 0);
       const fillPct = (fillIdx / (phases.length - 1)) * 100;
       const activeName = progress.active_sequence || null;  // real "now reading X" when emitted
       const activeRegion = (progress.active_region || '').trim() || null;  // real "now inspecting <region>"
-      const liveLabel = (progress.message || '').trim() || (activeRegion ? `Inspecting ${activeRegion}` : '');
+      const rawStatus = (progress.message || '').trim();
+      const liveLabel = activeName && activeRegion
+        ? `${activeName}: checking ${activeRegion}`
+        : activeName
+          ? `Reading ${activeName}`
+          : activeRegion
+            ? `Checking ${activeRegion}`
+            : rawStatus || 'Organizing images and measurements';
       const view = DEFAULT_VIEW(anatomy);   // spine → posterior (matches wait.png), others → their close-up
       // map the inspected region to a position on the figure (per-view, via clinician-reviewed landmarks)
       const inspect = activeRegion ? landmarkXY(anatomy, view, activeRegion) : null;
@@ -1576,11 +1672,20 @@
       // representative slice currently being read. Fills the rail and shows real, honest progress.
       const latestImage = (sequences && sequences.level_map) || (sliceImgs.length ? sliceImgs[Math.floor(sliceImgs.length/2)] : null);
       return (
-        <div className="page-inner fade-up">
+        <div className="page-inner page-wait fade-up">
           <div className="wait-grid">
             <div className="wait-left">
               <h1 className="wait-heading">{COPY.wait.heading}</h1>
-              {facts && <div className="wait-facts">{facts}</div>}
+              {facts.length > 0 && (
+                <div className="wait-facts" aria-label="Study summary">
+                  {facts.map(f => (
+                    <div className="wait-fact" key={f.label}>
+                      <span className="wait-fact-label">{f.label}</span>
+                      <span className="wait-fact-value">{f.value}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="stepper" role="list" aria-label="Reading progress">
                 <div className="stepper-track" aria-hidden="true"><div className="stepper-fill" style={{ width:`${fillPct}%` }} /></div>
                 {phases.map(p => (
@@ -1596,7 +1701,7 @@
             </div>
 
             <div className="wait-body">
-              <BodyFigure state="wait" anatomy={anatomy} view={view} inspect={inspect} ariaLabel={activeRegion ? `Inspecting ${activeRegion}` : 'The scan is being read — a calm sweep moves over the area being read.'} />
+              <BodyFigure state="wait" anatomy={anatomy} view={view} inspect={inspect} ariaLabel={activeRegion ? `Checking ${activeRegion}` : 'MIKA is reading the study.'} />
             </div>
 
             <div className="wait-right">
@@ -1635,7 +1740,7 @@
                 <ProgressBar value={pct} />
                 <div className="progress-eta">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                  {eta ? <span>Estimated time remaining: <strong>about {eta} min</strong></span> : <span>Almost done — finishing up</span>}
+                  {eta ? <span>Time left: <strong>about {eta} min</strong></span> : <span>Finishing the final checks</span>}
                 </div>
               </div>
             </div>
@@ -1716,7 +1821,7 @@
       // marker ↔ thread: selecting either side highlights both and scrolls the thread row into view
       const selectFinding = (fid) => { setActiveId(fid); const el = document.getElementById(fid); if (el) el.scrollIntoView({ behavior:'smooth', block:'nearest' }); };
       return (
-        <div className="page-inner fade-up">
+        <div className="page-inner page-read fade-up">
           <div className="read-head">
             {/* Honest self-audit banner (§4.3 State E / §7.5): if MIKA's verification flagged issues or
                 could not finish, say so on the Read — never present findings as fully checked. (CERT-2) */}
@@ -1732,8 +1837,8 @@
             )}
             {empty ? (
               <div className="empty-banner">
-                <div className="eb-t">This automated read did not flag a significant abnormality.</div>
-                <div className="eb-b">That is reassuring, but it is not a substitute for your radiologist’s report. Please review this with your doctor.</div>
+                <div className="eb-t">No significant abnormality was flagged in this automated read.</div>
+                <div className="eb-b">Please still review the official radiology report and discuss the result with your doctor.</div>
               </div>
             ) : (
               <h1 className="read-bottom-line">{vm.bottomLine}</h1>
@@ -1758,7 +1863,7 @@
                     onMarkerClick={selectFinding} ariaLabel={`${bodyView==='back'?'Back':'Front'} body map with ${findings.length} finding${findings.length===1?'':'s'} marked by certainty.`} />
                 </div>
                 <div className="thread">
-                  <div className="thread-title">{CLIN ? 'Findings by tier' : 'What I found, ranked by certainty'}</div>
+                  <div className="thread-title">{CLIN ? 'Findings by tier' : 'Findings'}</div>
                   {findings.map((f, i) => (
                     <button key={f.id} id={f.id} className={`frow ${active && active.id===f.id ? 'active':''}`}
                       aria-expanded={active && active.id===f.id} onClick={()=>selectFinding(f.id)}>
@@ -1785,32 +1890,34 @@
                       </>
                     )}
                   </div>
+                  {!CLIN && (
+                    <>
+                      {(vm.whatItMeans && vm.whatItMeans.length>0) && (
+                        <div className="read-wtm">
+                          <h4>What this could mean</h4>
+                          <ul className="sec-block" style={{marginTop:0}}>{vm.whatItMeans.map((w,i)=><li key={i}>{w}</li>)}</ul>
+                        </div>
+                      )}
+                      {(vm.worthFlagging && vm.worthFlagging.length>0) && (
+                        <div className="sec-block"><h3>Ask your doctor about</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
+                      )}
+                      {vm.changeOverTime && (
+                        <div className="sec-block"><h3>Change over time</h3>
+                          {vm.changeOverTime.points ? <ul>{vm.changeOverTime.points.map((p,i)=><li key={i}>{p}</li>)}</ul> : <p style={{fontSize:'13.5px', color:'var(--slate)', lineHeight:1.6}}>{vm.changeOverTime.plain}</p>}
+                        </div>
+                      )}
+                      <button className="clin-link" onClick={onClinician}>{I.info({width:15,height:15})} View technical detail</button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
 
-            <div className="read-right">
+            <div className={`read-right ${CLIN ? 'clinician-right' : 'proof-right'}`}>
               {CLIN ? (
                 <ClinicianDetail vm={vm} jobId={jobId} onZoom={onZoom} />
               ) : (
-                <>
-                  <ProofPanel finding={active} onZoom={onZoom} />
-                  {(vm.whatItMeans && vm.whatItMeans.length>0) && (
-                    <div className="read-wtm">
-                      <h4>What this means</h4>
-                      <ul className="sec-block" style={{marginTop:0}}>{vm.whatItMeans.map((w,i)=><li key={i}>{w}</li>)}</ul>
-                    </div>
-                  )}
-                  {(vm.worthFlagging && vm.worthFlagging.length>0) && (
-                    <div className="sec-block"><h3>Worth flagging</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
-                  )}
-                  {vm.changeOverTime && (
-                    <div className="sec-block"><h3>Change over time</h3>
-                      {vm.changeOverTime.points ? <ul>{vm.changeOverTime.points.map((p,i)=><li key={i}>{p}</li>)}</ul> : <p style={{fontSize:'13.5px', color:'var(--slate)', lineHeight:1.6}}>{vm.changeOverTime.plain}</p>}
-                    </div>
-                  )}
-                  <button className="clin-link" onClick={onClinician}>{I.info({width:15,height:15})} View clinician detail</button>
-                </>
+                <ProofPanel finding={active} onZoom={onZoom} />
               )}
             </div>
           </div>
@@ -1880,7 +1987,7 @@
       // (the email opt-in is the mechanism that survives a *closed* tab — §7.7).
       useEffect(() => {
         if (job.status === 'complete' && document.visibilityState === 'hidden' && 'Notification' in window && Notification.permission === 'granted') {
-          try { new Notification('Your MIKA read is ready', { body: 'Your imaging analysis is complete.' }); } catch(_){}
+          try { new Notification('Your MIKA read is ready', { body: 'The imaging read is complete.' }); } catch(_){}
         }
       }, [job.status]);
 
@@ -1888,7 +1995,7 @@
       const SUP = ['.dcm','.nii','.nii.gz','.nrrd','.nhdr','.png','.jpg','.jpeg','.tif','.tiff','.bmp','.zip','.ima','.dicom'];
       const onFiles = useCallback(async (files) => {
         const list = Array.from(files).filter(f => { const n=f.name.toLowerCase(); return SUP.some(e=>n.endsWith(e)) || !n.includes('.'); });
-        if (!list.length) { addToast('I couldn’t find a supported scan there. Upload DICOM, NIfTI, NRRD, images, or a ZIP.', 'error'); return; }
+        if (!list.length) { addToast('MIKA could not find a supported scan. Upload DICOM, NIfTI, NRRD, images, or a ZIP.', 'error'); return; }
         const fd = new FormData(); list.forEach(f => fd.append('files', f));
         try {
           const data = await api.upload(fd);
@@ -2068,14 +2175,29 @@
       }, [job.id, fetchReport, stopStream]);
 
       const onDownload = useCallback(() => { if (job.id) window.open(`${API_BASE}/api/report/${job.id}/pdf`, '_blank'); }, [job.id]);
-      const onShare = useCallback(() => { addToast('Sharing with your doctor is coming soon — for now, download the report.', 'warning'); }, [addToast]);
+      const onNotify = useCallback(async () => {
+        if (!('Notification' in window)) {
+          addToast('Desktop notifications are not available in this browser.', 'warning');
+          return;
+        }
+        if (Notification.permission === 'granted') {
+          addToast('Notifications are already on. MIKA will alert you when the read is ready.', 'success');
+          return;
+        }
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          addToast('Notifications are on. MIKA will alert you when the read is ready.', 'success');
+        } else {
+          addToast('Notifications were not enabled. Keep MIKA open to watch progress.', 'warning');
+        }
+      }, [addToast]);
       const onClinician = useCallback(() => setUiPrefs({ view:'clinician' }), []);
 
       const _anatomyOverride = QS.get('anatomy');   // dev: ?anatomy=brain|msk to test precise pointing per region
       const _demoBase = dm==='read-empty' ? DEMO_REPORT_EMPTY
         : (DEMO_BY_ANATOMY[_anatomyOverride] || (_anatomyOverride ? { ...DEMO_REPORT, detected_anatomy:_anatomyOverride } : DEMO_REPORT));
       const demoVm = dm ? buildViewModel(_demoBase) : null;
-      const demoProgress = dm==='wait' ? { status:'interpreting', progress:60, eta_seconds:660, est_total_seconds:1300, active_sequence:'STIR', active_region:'L4-L5', message:'STIR is being read — the L4–L5 level is being checked' } : null;
+      const demoProgress = dm==='wait' ? { status:'interpreting', progress:60, eta_seconds:660, est_total_seconds:1300, active_sequence:'STIR', active_region:'L4-L5', message:'Reading STIR images' } : null;
       const effVm = dm ? demoVm : vm;
 
       const view = dm ? screen : (route || screen);   // route ('recent') overrides the job-derived screen
@@ -2087,8 +2209,8 @@
             onHelp={()=>addToast('Need a hand? In the full app this opens help — for now, email the team.', 'success')} />
           <div className="canvas">
             <TopBar screen={view} connection={connection} vm={effVm} progress={dm?demoProgress:job}
-              uiPrefs={uiPrefs} setUiPrefs={setUiPrefs} onDownload={onDownload} onShare={onShare}
-              onConnect={()=>{ setShowConnect(true); checkConnection(); }} checking={checkingConn} />
+              uiPrefs={uiPrefs} setUiPrefs={setUiPrefs} onDownload={onDownload}
+              onConnect={()=>{ setShowConnect(true); checkConnection(); }} onNotify={onNotify} checking={checkingConn} />
             <div className="page">
               {view === 'home' && <HomeScreen onFiles={onFiles} ready={ready} onStart={onStart} history={history} setHistory={setHistory} />}
               {view === 'wait' && (() => { const sq = dm?DEMO_SEQUENCES:sequences; return <WaitScreen progress={dm?demoProgress:job} sequences={sq} anatomy={figureAnatomy(sq.anatomy || (effVm&&effVm.anatomy) || 'unknown', sq.anatomy_subregion || '')} jobId={dm?'demo':job.id} />; })()}
@@ -2108,23 +2230,23 @@
     /* ═══════════════ Dev fixtures (visual gate without a 20-min run) ═══════════════ */
     const DEMO_REPORT = {
       job_id:'demo', mode:'agent', detected_anatomy:'spine', pdf_available:true,
-      disclaimer:'MIKA is an AI assistant and does not replace a doctor. All findings should be reviewed by a qualified clinician.',
+      disclaimer:'MIKA is an AI assistant and does not replace a doctor. Review all findings with a qualified clinician.',
       verification:{ status:'passed', quality_score:88 },
       agent:{ summary:{ patient:{
         patient:{ name:'', age:'', sex:'' },
         study:{ body_part:'Lower-back (lumbar) spine', modality:'MRI with contrast', date:'', comparison:'' },
-        bottom_line:'The main finding is a disc at L5–S1 pressing on a nerve root, which can explain pain or numbness down the leg.',
+        bottom_line:'At L5-S1, disc material contacts the S1 nerve root. This can match pain, tingling, or numbness down the leg.',
         confidence:{ label:'High', score:88, note:'Confirmed across more than one view.' },
-        key_points:['A disc at L5–S1 is pressing on a nearby nerve root.','The spinal canal is mildly narrowed at the same level.','Nothing urgent or dangerous was seen.'],
+        key_points:['L5-S1 disc material contacts the nearby S1 nerve root.','The spinal canal is mildly narrowed at L4-L5.','No emergency pattern was flagged in this read.'],
         findings:[
-          { plain:'Disc at L5–S1 presses on a nerve root', certainty:'Confirmed', figure:'/assets/_demo/proof-l5s1.png', caption:'The disc between L5 and S1 contacts and displaces the descending S1 nerve root.' },
-          { plain:'Mild narrowing of the spinal canal at L4–L5', certainty:'Confirmed', figure:'/assets/_demo/proof-l4l5-canal.png', caption:'Mild central canal narrowing; no cord or cauda compression.' },
-          { plain:'Small annular tear at L4–L5', certainty:'Possible', figure:'/assets/_demo/proof-l4l5-tear.png', caption:'A small high-signal zone in the disc rim may represent an annular tear.' },
+          { plain:'L5-S1 disc material contacts the S1 nerve root', certainty:'Confirmed', figure:'/assets/_demo/proof-l5s1.png', caption:'The disc between L5 and S1 contacts and displaces the descending S1 nerve root.' },
+          { plain:'Mild spinal canal narrowing at L4-L5', certainty:'Confirmed', figure:'/assets/_demo/proof-l4l5-canal.png', caption:'Mild central canal narrowing; no cord or cauda compression.' },
+          { plain:'Small annular tear at L4-L5', certainty:'Possible', figure:'/assets/_demo/proof-l4l5-tear.png', caption:'A small high-signal zone in the disc rim may represent an annular tear.' },
         ],
-        what_it_means:['The disc between L5 and S1 is pushing on the nerve that exits the spine at this level. This can cause pain, tingling, or numbness that travels down the leg.','This is a common finding and is often managed without surgery.'],
+        what_it_means:['The L5-S1 disc is touching the S1 nerve root. That pattern can line up with pain, tingling, or numbness traveling down the leg.','This finding is common. Treatment depends on your symptoms, exam, and your clinician\'s review.'],
         worth_flagging:[],
-        disclaimer:'MIKA is an AI assistant and does not replace a doctor. All findings should be reviewed by a qualified clinician.',
-      }, findings:[{text:'L5–S1 disc–nerve contact [Tier A]', tier:'A', figure:'fig1.png'}] } },
+        disclaimer:'MIKA is an AI assistant and does not replace a doctor. Review all findings with a qualified clinician.',
+      }, findings:[{text:'L5-S1 disc-nerve contact [Tier A]', tier:'A', figure:'fig1.png'}] } },
     };
     const DEMO_REPORT_EMPTY = { ...DEMO_REPORT, agent:{ summary:{ patient:{ ...DEMO_REPORT.agent.summary.patient, bottom_line:'', findings:[], what_it_means:[], worth_flagging:[], key_points:['No significant abnormality was flagged on this automated read.'], confidence:{label:'Moderate', note:'Limited by image quality in places.'} } } } };
     const DEMO_SEQUENCES = { anatomy:'spine', modality:'MR', level_map:'/assets/_demo/proof-levelref.png', sequences:[
