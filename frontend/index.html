@@ -775,16 +775,30 @@
     // M6 clinician gate: a region shows certainty PINS only once its landmark map is clinician-approved.
     // Un-approved regions still show their close-up + thread + proof (the M5 fallback). Flip a region
     // to true here after its landmarks are calibrated and signed off — pins then appear, no other change.
-    const REGION_PINS_APPROVED = { spine:true, brain:true, msk:true, chest:true, abdomen:true, head_neck:true, breast:true, prostate:true, vascular:true };
+    const REGION_PINS_APPROVED = {
+      spine:true, brain:true, msk:true, hip:true, shoulder:true, cardiac:true,
+      chest:true, abdomen:true, head_neck:true, breast:true, prostate:true, vascular:true
+    };
 
-    // Hand-authored, clinician-reviewable spine landmark fractions on the FOCUSED spine crop (§5.5).
-    // x≈ spine center; y spreads the lumbar levels across the lower-mid of the close-up.
+    // Hand-authored, clinician-reviewable spine landmark fractions on the actual spine asset.
+    // The asset is an anterior full-body view, so the y values span cervical → thoracic → lumbar → sacral.
     const LANDMARKS = {
       spine: {
-        'T12':{x:0.49,y:0.520}, 'L1':{x:0.49,y:0.545}, 'L2':{x:0.49,y:0.570}, 'L3':{x:0.49,y:0.595},
-        'L4':{x:0.49,y:0.620}, 'L5':{x:0.49,y:0.645}, 'S1':{x:0.49,y:0.665},
-        'T12-L1':{x:0.49,y:0.532}, 'L1-L2':{x:0.49,y:0.557}, 'L2-L3':{x:0.49,y:0.582},
-        'L3-L4':{x:0.49,y:0.607}, 'L4-L5':{x:0.49,y:0.632}, 'L5-S1':{x:0.49,y:0.655},
+        'C1':{x:0.50,y:0.105}, 'C2':{x:0.50,y:0.125}, 'C3':{x:0.50,y:0.148}, 'C4':{x:0.50,y:0.171},
+        'C5':{x:0.50,y:0.194}, 'C6':{x:0.50,y:0.216}, 'C7':{x:0.50,y:0.238},
+        'C1-C2':{x:0.50,y:0.115}, 'C2-C3':{x:0.50,y:0.137}, 'C3-C4':{x:0.50,y:0.160},
+        'C4-C5':{x:0.50,y:0.183}, 'C5-C6':{x:0.50,y:0.205}, 'C6-C7':{x:0.50,y:0.227}, 'C7-T1':{x:0.50,y:0.249},
+        'T1':{x:0.50,y:0.260}, 'T2':{x:0.50,y:0.282}, 'T3':{x:0.50,y:0.304}, 'T4':{x:0.50,y:0.326},
+        'T5':{x:0.50,y:0.348}, 'T6':{x:0.50,y:0.370}, 'T7':{x:0.50,y:0.392}, 'T8':{x:0.50,y:0.414},
+        'T9':{x:0.50,y:0.436}, 'T10':{x:0.50,y:0.458}, 'T11':{x:0.50,y:0.480}, 'T12':{x:0.50,y:0.502},
+        'T1-T2':{x:0.50,y:0.271}, 'T2-T3':{x:0.50,y:0.293}, 'T3-T4':{x:0.50,y:0.315},
+        'T4-T5':{x:0.50,y:0.337}, 'T5-T6':{x:0.50,y:0.359}, 'T6-T7':{x:0.50,y:0.381},
+        'T7-T8':{x:0.50,y:0.403}, 'T8-T9':{x:0.50,y:0.425}, 'T9-T10':{x:0.50,y:0.447},
+        'T10-T11':{x:0.50,y:0.469}, 'T11-T12':{x:0.50,y:0.491}, 'T12-L1':{x:0.50,y:0.514},
+        'L1':{x:0.50,y:0.526}, 'L2':{x:0.50,y:0.550}, 'L3':{x:0.50,y:0.574},
+        'L4':{x:0.50,y:0.598}, 'L5':{x:0.50,y:0.622}, 'S1':{x:0.50,y:0.646},
+        'L1-L2':{x:0.50,y:0.538}, 'L2-L3':{x:0.50,y:0.562},
+        'L3-L4':{x:0.50,y:0.586}, 'L4-L5':{x:0.50,y:0.610}, 'L5-S1':{x:0.50,y:0.634},
       },
       // Left-facing sagittal head (frontal = left, occipital = right, cerebellum lower-back).
       brain: {
@@ -805,6 +819,29 @@
         'joint space':{x:0.49,y:0.49}, 'joint':{x:0.49,y:0.49}, 'cartilage':{x:0.49,y:0.47},
         'tibial plateau':{x:0.49,y:0.57}, 'tibia':{x:0.49,y:0.64}, 'femur':{x:0.47,y:0.22},
         'fibula':{x:0.66,y:0.64}, 'patella':{x:0.31,y:0.35},
+      },
+      hip: {
+        'hip':{x:0.50,y:0.43}, 'joint':{x:0.50,y:0.43}, 'hip joint':{x:0.50,y:0.43},
+        'femoral head':{x:0.47,y:0.47}, 'femoral neck':{x:0.39,y:0.53}, 'acetabulum':{x:0.55,y:0.38},
+        'labrum':{x:0.54,y:0.37}, 'cartilage':{x:0.52,y:0.42}, 'greater trochanter':{x:0.28,y:0.54},
+        'lesser trochanter':{x:0.43,y:0.63}, 'iliopsoas':{x:0.63,y:0.38}, 'gluteus':{x:0.31,y:0.33},
+        'adductor':{x:0.55,y:0.67}, 'pubic':{x:0.70,y:0.55}, 'ischium':{x:0.63,y:0.62},
+      },
+      shoulder: {
+        'shoulder':{x:0.34,y:0.40}, 'joint':{x:0.36,y:0.40}, 'glenohumeral joint':{x:0.36,y:0.40},
+        'humeral head':{x:0.29,y:0.41}, 'glenoid':{x:0.42,y:0.38}, 'labrum':{x:0.41,y:0.39},
+        'rotator cuff':{x:0.32,y:0.31}, 'supraspinatus':{x:0.35,y:0.28}, 'infraspinatus':{x:0.31,y:0.46},
+        'subscapularis':{x:0.49,y:0.48}, 'biceps tendon':{x:0.35,y:0.50}, 'acromion':{x:0.34,y:0.23},
+        'acromioclavicular':{x:0.49,y:0.23}, 'ac joint':{x:0.49,y:0.23}, 'clavicle':{x:0.62,y:0.22},
+        'deltoid':{x:0.20,y:0.43},
+      },
+      // Cardiac findings use the full-body fallback asset; points are authored on body.png.
+      cardiac: {
+        'heart':{x:0.54,y:0.286}, 'cardiac':{x:0.54,y:0.286},
+        'left ventricle':{x:0.55,y:0.300}, 'lv':{x:0.55,y:0.300}, 'right ventricle':{x:0.50,y:0.294}, 'rv':{x:0.50,y:0.294},
+        'left atrium':{x:0.55,y:0.268}, 'right atrium':{x:0.50,y:0.272}, 'atrium':{x:0.52,y:0.270},
+        'aortic valve':{x:0.53,y:0.264}, 'mitral valve':{x:0.55,y:0.285}, 'tricuspid valve':{x:0.51,y:0.285},
+        'pulmonary valve':{x:0.51,y:0.264}, 'pericardium':{x:0.54,y:0.286}, 'myocardium':{x:0.54,y:0.294},
       },
       // Anterior thorax (heart centre, lungs flank; patient-left = viewer-right).
       chest: {
@@ -1196,21 +1233,30 @@
               // tiny nudge so two findings at the exact same level each get a visible dot
               const seen = {};
               items.forEach(m => { const k = `${m.x.toFixed(3)},${m.y.toFixed(3)}`; const c = seen[k]||0; if (c) m.dotShift = (c%2 ? 1 : -1) * 0.03 * Math.ceil(c/2); seen[k] = c+1; });
-              // distribute numbered labels down the right margin so they never overlap
-              const labelXf = 0.84, gap = 0.052;
+              // Keep numbered chips local to the anatomical pin. A global side rail looks like the
+              // marker is on the arm/hand on full-body assets, which is visually misleading.
               const sorted = [...items].sort((a,b) => a.y - b.y);
-              let prev = -1;
-              sorted.forEach(m => { m.lyf = Math.max(m.y, prev + gap); prev = m.lyf; m.lxf = labelXf; });
-              // dense clusters can push the stack past the bottom edge — shift it back up uniformly so all chips stay on-figure
-              const overflow = prev - 0.98;
-              if (overflow > 0) sorted.forEach(m => { m.lyf = Math.max(0.02, m.lyf - overflow); });
+              sorted.forEach(m => {
+                m.side = m.x > 0.58 ? -1 : 1;
+                m.lxf = Math.max(0.08, Math.min(0.92, m.x + m.side * 0.12));
+                m.lyf = m.y;
+              });
+              const gap = 0.050;
+              [-1, 1].forEach(side => {
+                const group = sorted.filter(m => m.side === side).sort((a,b) => a.y - b.y);
+                let prev = -1;
+                group.forEach(m => { m.lyf = Math.max(m.y, prev + gap); prev = m.lyf; });
+                const overflow = prev - 0.98;
+                if (overflow > 0) group.forEach(m => { m.lyf = Math.max(0.02, m.lyf - overflow); });
+              });
               return (
                 <svg className="bf-markers" viewBox={`0 0 100 ${VH.toFixed(1)}`} aria-hidden="true">
                   {sorted.map(m => {
                     const dx = (m.x + (m.dotShift||0)) * 100, dy = m.y * VH, lx = m.lxf * 100, ly = m.lyf * VH;
+                    const endX = lx - (m.side * 4.6);
                     return (
                       <g key={m.id} className={`mk ${m.certainty.toLowerCase()} ${activeId===m.id ? 'active':''}`} onClick={()=>onMarkerClick && onMarkerClick(m.id)}>
-                        <path className="mk-leader" d={`M ${dx.toFixed(1)} ${dy.toFixed(1)} C ${((dx+lx)/2).toFixed(1)} ${dy.toFixed(1)}, ${((dx+lx)/2).toFixed(1)} ${ly.toFixed(1)}, ${(lx-4.6).toFixed(1)} ${ly.toFixed(1)}`} />
+                        <path className="mk-leader" d={`M ${dx.toFixed(1)} ${dy.toFixed(1)} C ${((dx+endX)/2).toFixed(1)} ${dy.toFixed(1)}, ${((dx+endX)/2).toFixed(1)} ${ly.toFixed(1)}, ${endX.toFixed(1)} ${ly.toFixed(1)}`} />
                         <circle className="mk-halo" cx={dx} cy={dy} r="3.6" />
                         <circle className="mk-dot" cx={dx} cy={dy} r="1.7" />
                         <circle className="mk-chip" cx={lx} cy={ly} r="4.1" />
