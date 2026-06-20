@@ -49,6 +49,11 @@ from services.batch_sender import BatchSender
 from services.verification import VerificationPass
 from services.evidence_pack import EvidencePackBuilder, manifest_text_summary
 from services.artifacts import ArtifactQaGate, ArtifactRegistry
+from services.reconciliation import (
+    ReferenceInputError,
+    build_clinical_reconciliation_report,
+    build_reference_reconciliation,
+)
 from services.agent_runner import (
     AgentRunner,
     AUTH_MANAGER,
@@ -234,6 +239,7 @@ class AnalysisJob:
         self.evidence_manifest: dict = {}
         self.artifact_registry: dict = {}
         self.artifact_qa: dict = {}
+        self.reconciliation: dict = {}
         self.mode: str = "lite"               # "agent" | "lite"
         self.active_sequence: Optional[str] = None  # live "now reading X", when the agent reports it
         self.active_region: Optional[str] = None     # live "now inspecting <level/region>", when reported
@@ -492,6 +498,11 @@ def _normalized_report_sections(
     technical_findings = _coerce_list(summary.get("findings"))
     patient_findings = _coerce_list(patient_block.get("findings"))
     findings = _normalized_findings_from_summary(summary)
+    reconciliation = (
+        _coerce_dict(summary.get("reconciliation"))
+        or _coerce_dict(getattr(job, "reconciliation", {}))
+        or _coerce_dict((job.agent or {}).get("reconciliation") if getattr(job, "agent", None) else {})
+    )
 
     confidence = _coerce_dict(patient_block.get("confidence"))
     if not confidence:
@@ -524,6 +535,10 @@ def _normalized_report_sections(
             "change_over_time": _coerce_dict(patient_block.get("change_over_time")),
             "what_it_means": _coerce_list(patient_block.get("what_it_means")),
             "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
+            "reference_reconciliation": (
+                _coerce_dict(patient_block.get("reference_reconciliation"))
+                or _coerce_dict(reconciliation.get("patient"))
+            ),
             "disclaimer": patient_block.get("disclaimer") or REPORT_DISCLAIMER,
         },
         "clinician": {
@@ -533,6 +548,7 @@ def _normalized_report_sections(
             "discrepancies": _coerce_list(summary.get("discrepancies")) or _coerce_list(interpretation_dict.get("discrepancies")),
             "confidence_summary": summary.get("confidence_summary") or interpretation_dict.get("confidence_summary", ""),
             "calibration_status": calibration_status,
+            "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")),
         },
         "findings": findings,
         "confidence": confidence,
@@ -546,7 +562,9 @@ def _normalized_report_sections(
             "evidence": job.evidence_manifest or {},
             "artifacts": job.artifact_registry or {},
             "artifact_qa": job.artifact_qa or {},
+            "reconciliation": reconciliation,
         },
+        "reconciliation": reconciliation,
         "status": job.status,
         "error_code": getattr(job, "error_code", None),
         "error_message": getattr(job, "error", None),
@@ -575,6 +593,18 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
     evidence = _read_job_json(job_id, "work/evidence/evidence_manifest.json")
     artifact_registry = _read_job_json(job_id, "work/artifacts/artifact_registry.json")
     artifact_qa = _read_job_json(job_id, "work/artifacts/artifact_qa.json")
+    reconciliation = (
+        _coerce_dict(out.get("reconciliation"))
+        or _coerce_dict(summary.get("reconciliation"))
+        or _read_job_json(job_id, "work/reconciliation/reconciliation.json")
+    )
+    if reconciliation:
+        summary["reconciliation"] = reconciliation
+        patient_block["reference_reconciliation"] = (
+            _coerce_dict(patient_block.get("reference_reconciliation"))
+            or _coerce_dict(reconciliation.get("patient"))
+        )
+        out["reconciliation"] = reconciliation
     out["pdf_available"] = bool(out.get("pdf_available") or patient_pdf)
     out["clinical_pdf_available"] = bool(out.get("clinical_pdf_available") or clinical_pdf)
     out.setdefault("error_code", None)
@@ -603,6 +633,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             "change_over_time": _coerce_dict(patient_block.get("change_over_time")),
             "what_it_means": _coerce_list(patient_block.get("what_it_means")),
             "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
+            "reference_reconciliation": _coerce_dict(patient_block.get("reference_reconciliation")),
             "disclaimer": patient_block.get("disclaimer") or out.get("disclaimer") or REPORT_DISCLAIMER,
         })
         out["clinician"] = _fill_missing_dict_values(out.get("clinician"), {
@@ -612,6 +643,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             "discrepancies": _coerce_list(summary.get("discrepancies")),
             "confidence_summary": summary.get("confidence_summary") or (out.get("interpretation") or {}).get("confidence_summary", ""),
             "calibration_status": out.get("calibration_status") or m.get("calibration_status", "unknown"),
+            "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")) if reconciliation else {},
         })
         if not out.get("findings") and normalized_findings:
             out["findings"] = normalized_findings
@@ -625,6 +657,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         assets.setdefault("evidence", evidence)
         assets.setdefault("artifacts", artifact_registry)
         assets.setdefault("artifact_qa", artifact_qa)
+        assets.setdefault("reconciliation", reconciliation)
         out["assets"] = assets
         return out
 
@@ -647,6 +680,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         "change_over_time": _coerce_dict(patient_block.get("change_over_time")),
         "what_it_means": _coerce_list(patient_block.get("what_it_means")),
         "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
+        "reference_reconciliation": _coerce_dict(patient_block.get("reference_reconciliation")),
         "disclaimer": patient_block.get("disclaimer") or out.get("disclaimer") or REPORT_DISCLAIMER,
     })
     out["clinician"] = _fill_missing_dict_values(out.get("clinician"), {
@@ -656,6 +690,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         "discrepancies": _coerce_list(summary.get("discrepancies")),
         "confidence_summary": summary.get("confidence_summary") or (out.get("interpretation") or {}).get("confidence_summary", ""),
         "calibration_status": out.get("calibration_status", "unknown"),
+        "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")) if reconciliation else {},
     })
     if not out.get("findings"):
         out["findings"] = normalized_findings
@@ -670,10 +705,12 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         "evidence": evidence,
         "artifacts": artifact_registry,
         "artifact_qa": artifact_qa,
+        "reconciliation": reconciliation,
     })
     out["assets"].setdefault("evidence", evidence)
     out["assets"].setdefault("artifacts", artifact_registry)
     out["assets"].setdefault("artifact_qa", artifact_qa)
+    out["assets"].setdefault("reconciliation", reconciliation)
     return out
 
 
@@ -843,6 +880,58 @@ def _rewrite_agent_summary_and_patient_pdf(job: "AnalysisJob", summary: dict) ->
         logger.warning(f"Could not rebuild patient PDF after artifact QA: {e}")
 
 
+def _apply_reference_reconciliation(
+    job: "AnalysisJob",
+    *,
+    reference_report_path: Optional[str] = None,
+    reference_report_text: Optional[str] = None,
+) -> dict:
+    """Attach reference-assisted reconciliation without modifying the blind read findings."""
+    if not (reference_report_path or reference_report_text):
+        return {}
+    summary = _summary_for_job(job)
+    reconciliation = build_reference_reconciliation(
+        blind_summary=summary,
+        reference_text=reference_report_text,
+        reference_path=reference_report_path,
+        evidence_manifest=job.evidence_manifest or {},
+    )
+    if not reconciliation.get("used"):
+        return {}
+
+    summary = dict(summary or {})
+    patient = dict(summary.get("patient") or {})
+    patient["reference_reconciliation"] = reconciliation.get("patient") or {}
+    summary["patient"] = patient
+    summary["reconciliation"] = reconciliation
+
+    job.reconciliation = reconciliation
+    if job.agent is not None:
+        job.agent["summary"] = summary
+        job.agent["reconciliation"] = reconciliation
+        job.agent["pdf_available"] = bool(job.agent.get("pdf_available") or job.pdf_path)
+    if job.measurements is not None:
+        job.measurements["agent_summary"] = summary
+
+    rec_dir = Path(job.work_dir) / "reconciliation"
+    report_dir = Path(job.work_dir) / "report"
+    try:
+        rec_dir.mkdir(parents=True, exist_ok=True)
+        (rec_dir / "reconciliation.json").write_text(json.dumps(reconciliation, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"Could not persist reconciliation manifest for {job.job_id}: {e}")
+
+    _rewrite_agent_summary_and_patient_pdf(job, summary)
+    if job.agent is not None:
+        job.agent["pdf_available"] = bool(job.agent.get("pdf_available") or job.pdf_path)
+    try:
+        report_dir.mkdir(parents=True, exist_ok=True)
+        build_clinical_reconciliation_report(summary, reconciliation, report_dir / "report_clinical.pdf")
+    except Exception as e:
+        logger.warning(f"Could not rebuild clinical PDF with reconciliation for {job.job_id}: {e}")
+    return reconciliation
+
+
 def _persist_report(job: "AnalysisJob") -> None:
     """Write report.json + meta.json for a completed job so it survives a restart. Non-fatal."""
     try:
@@ -883,6 +972,7 @@ def _persist_report(job: "AnalysisJob") -> None:
             "evidence_manifest": (job.evidence_manifest or {}).get("manifest_path"),
             "artifact_registry": (job.artifact_qa or {}).get("registry_path"),
             "artifact_qa_status": (job.artifact_qa or {}).get("status"),
+            "reference_reconciliation_available": bool((payload.get("reconciliation") or {}).get("used")),
             "error_code": getattr(job, "error_code", None),
             "error_message": getattr(job, "error", None),
             "auth_state": getattr(job, "auth_state", None),
@@ -940,6 +1030,10 @@ def _list_reports() -> list[dict]:
                 "thumb": meta.get("thumb"),
                 "pdf_available": bool(meta.get("pdf_available") or _find_patient_pdf(d.name)),
                 "clinical_pdf_available": bool(meta.get("clinical_pdf_available") or _find_clinical_pdf(d.name)),
+                "reference_reconciliation_available": bool(
+                    meta.get("reference_reconciliation_available")
+                    or (report.get("reconciliation") or {}).get("used")
+                ),
                 "error_code": meta.get("error_code"),
                 "error_message": meta.get("error_message"),
                 "auth_state": meta.get("auth_state"),
@@ -956,6 +1050,35 @@ def _list_reports() -> list[dict]:
 # ABI-critical pins — these MUST match requirements.txt / requirements.lock. numpy<2 is HARD:
 # scipy 1.12.0 is built against the numpy 1.26 ABI, so numpy 2.x crashes every read (the real F2
 # incident, where a stray `pip install` pulled numpy 2.x and broke every read until it was pinned back).
+def _rehydrate_completed_job(job_id: str) -> Optional["AnalysisJob"]:
+    raw = _load_report(job_id)
+    if not raw:
+        return None
+    report = _normalize_loaded_report(job_id, raw)
+    job = AnalysisJob(job_id=job_id, dicom_dir=str(_job_dir(job_id) / "dicom"))
+    job.status = report.get("status", "complete")
+    job.progress_phase = _normalized_progress_phase(job.status, report.get("progress_phase"))
+    job.progress = 100 if job.status == "complete" else 0
+    job.mode = report.get("mode", "agent")
+    job.measurements = report.get("measurements") or {}
+    job.agent = report.get("agent") or {}
+    job.verification = report.get("verification") or {}
+    job.reconciliation = report.get("reconciliation") or {}
+    assets = report.get("assets") or {}
+    job.evidence_manifest = assets.get("evidence") or _read_job_json(job_id, "work/evidence/evidence_manifest.json")
+    job.artifact_registry = assets.get("artifacts") or _read_job_json(job_id, "work/artifacts/artifact_registry.json")
+    job.artifact_qa = assets.get("artifact_qa") or _read_job_json(job_id, "work/artifacts/artifact_qa.json")
+    patient_pdf = _find_patient_pdf(job_id)
+    if patient_pdf:
+        job.pdf_path = str(patient_pdf)
+    meta = _load_meta(job_id) or {}
+    for name, rel in (meta.get("images") or {}).items():
+        p = _safe_join(job_id, rel)
+        if p:
+            job.annotated_images[name] = str(p)
+    return job
+
+
 EXPECTED_VERSIONS = {"numpy": "1.26.4", "scipy": "1.12.0", "pydicom": "2.4.4", "Pillow": "10.2.0"}
 
 
@@ -1199,7 +1322,14 @@ class AnalyzeRequest(BaseModel):
     clinical_history: Optional[str] = None
     surgical_notes: Optional[str] = None
     prior_reports: Optional[str] = None
+    reference_report_path: Optional[str] = None
+    reference_report_text: Optional[str] = None
     notify_email: Optional[str] = None   # §7.7: opt-in "we'll email you when it's ready" (survives tab close)
+
+class ReconcileRequest(BaseModel):
+    job_id: str
+    reference_report_path: Optional[str] = None
+    reference_report_text: Optional[str] = None
 
 
 class AuthStartRequest(BaseModel):
@@ -1461,6 +1591,8 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
             clinical_history=request.clinical_history,
             surgical_notes=request.surgical_notes,
             prior_reports=request.prior_reports,
+            reference_report_path=request.reference_report_path,
+            reference_report_text=request.reference_report_text,
             notify_email=request.notify_email,
         )
         return {"job_id": job.job_id, "status": "started", "mode": "agent"}
@@ -1705,6 +1837,11 @@ def _build_report_payload(job: "AnalysisJob") -> dict:
                         "description": FIGURE_DESCRIPTIONS.get(name, name)})
     patient_pdf = _find_patient_pdf(job.job_id, job)
     clinical_pdf = _find_clinical_pdf(job.job_id, job)
+    reconciliation = (
+        _coerce_dict(getattr(job, "reconciliation", {}))
+        or _coerce_dict(summary.get("reconciliation"))
+        or _coerce_dict((job.agent or {}).get("reconciliation") if getattr(job, "agent", None) else {})
+    )
 
     payload = {
         "job_id": job.job_id,
@@ -1724,6 +1861,7 @@ def _build_report_payload(job: "AnalysisJob") -> dict:
         "disclaimer": REPORT_DISCLAIMER,
         "mode": job.mode,
         "agent": job.agent,
+        "reconciliation": reconciliation,
         "pdf_available": bool(patient_pdf),
         "clinical_pdf_available": bool(clinical_pdf),
         "truncated": bool(getattr(job, "truncated", False)),   # Fix 4: read may be incomplete — re-run recommended
@@ -1763,6 +1901,29 @@ async def list_reports():
     """Durable index of all completed studies on this machine (backs the 'Recent studies' screen).
     Reads DATA_DIR manifests — survives restarts and browser-storage clears."""
     return {"reports": _list_reports()}
+
+
+@app.post("/api/reconcile")
+async def reconcile_completed_report(request: ReconcileRequest):
+    """Add a separate reference-assisted review to an already completed blind read."""
+    _validate_job_id(request.job_id)
+    if not (request.reference_report_path or request.reference_report_text):
+        raise HTTPException(400, "Provide a reference report path or reference report text.")
+    job = JOBS.get(request.job_id) or _rehydrate_completed_job(request.job_id)
+    if not job:
+        raise HTTPException(404, "Report not found")
+    if job.status != "complete":
+        raise HTTPException(400, f"Analysis not complete (status: {job.status})")
+    try:
+        _apply_reference_reconciliation(
+            job,
+            reference_report_path=request.reference_report_path,
+            reference_report_text=request.reference_report_text,
+        )
+    except ReferenceInputError as e:
+        raise HTTPException(400, str(e))
+    _persist_report(job)
+    return _build_report_payload(job)
 
 
 @app.get("/api/report/{job_id}/pdf")
@@ -2012,6 +2173,8 @@ async def _run_agent_pipeline(
     clinical_history: Optional[str] = None,
     surgical_notes: Optional[str] = None,
     prior_reports: Optional[str] = None,
+    reference_report_path: Optional[str] = None,
+    reference_report_text: Optional[str] = None,
     notify_email: Optional[str] = None,
 ):
     """
@@ -2162,6 +2325,22 @@ async def _run_agent_pipeline(
             },
         }
         _run_artifact_qa(job)
+        if result.success and (reference_report_path or reference_report_text):
+            try:
+                _apply_reference_reconciliation(
+                    job,
+                    reference_report_path=reference_report_path,
+                    reference_report_text=reference_report_text,
+                )
+            except ReferenceInputError as e:
+                job.status = "error"
+                job.error = str(e)
+                job.error_code = "REFERENCE_REPORT_ERROR"
+                job.progress_phase = "error"
+                job.progress_message = str(e)
+                _write_status_heartbeat(job)
+                _notify_email(notify_email, job.job_id, "error")
+                return
 
         if result.success:
             job.status = "complete"

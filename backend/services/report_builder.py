@@ -32,6 +32,7 @@ patient dict schema (all plain language; produced by the analysis step):
 
 from pathlib import Path
 from typing import Optional
+from xml.sax.saxutils import escape
 
 # Single-accent brand palette (§7.9) — matches the on-screen Read (#2563EB), no teal/amber/grey.
 INK = (0.059, 0.090, 0.165)        # slate-ink #0F172A
@@ -193,6 +194,33 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
                 if f.get("caption"):
                     block.append(Paragraph(f["caption"], CAP))
             block.append(Spacer(1, 8))
+            flow.append(KeepTogether(block))
+
+    # 3b. REFERENCE-ASSISTED REVIEW
+    ref_review = patient.get("reference_reconciliation") or patient.get("reconciliation")
+    if isinstance(ref_review, dict) and (ref_review.get("summary") or ref_review.get("items")):
+        flow.append(Paragraph("Reference-assisted review", SECTION))
+        if ref_review.get("summary"):
+            flow.append(Paragraph(escape(str(ref_review["summary"])), BODY))
+        items = ref_review.get("items") or []
+        if isinstance(items, dict):
+            items = [items]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            label = escape(str(item.get("label") or item.get("status") or "Needs review"))
+            explanation = escape(str(item.get("explanation") or ""))
+            reference = escape(str(item.get("reference") or ""))
+            mika = escape(str(item.get("mika") or ""))
+            block = [
+                Paragraph(f"<b>{label}</b>", BODY),
+                Paragraph(explanation, BODY),
+            ]
+            if reference:
+                block.append(Paragraph(f"<b>Reference report:</b> {reference}", SMALL))
+            if mika:
+                block.append(Paragraph(f"<b>MIKA blind read:</b> {mika}", SMALL))
+            block.append(Spacer(1, 6))
             flow.append(KeepTogether(block))
 
     # 4. WHAT CHANGED OVER TIME

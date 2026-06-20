@@ -566,6 +566,24 @@
     .clin-proof-img { height:220px; background:var(--navy-900); display:flex; align-items:center; justify-content:center; cursor:zoom-in; }
     .clin-proof-img img { width:100%; height:100%; object-fit:contain; display:block; }
     .clin-proof-empty { padding:var(--s-5); font-size:12.5px; line-height:1.5; color:var(--slate); background:var(--surface-2); }
+    .ref-review { margin-top:var(--s-4); padding:var(--s-4); border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:var(--r-md); background:var(--surface); }
+    .ref-review.warn { border-left-color:#ea580c; background:#fff7ed; border-color:#fed7aa; }
+    .ref-head { display:flex; align-items:center; justify-content:space-between; gap:var(--s-3); margin-bottom:8px; }
+    .ref-kicker { font-size:12px; font-weight:800; letter-spacing:.5px; text-transform:uppercase; color:var(--ink); }
+    .ref-status { font-size:11px; font-weight:800; padding:3px 8px; border-radius:var(--r-sm); color:var(--accent-strong); background:var(--accent-soft); }
+    .ref-status.warn { color:#9a3412; background:#ffedd5; }
+    .ref-summary, .ref-copy, .ref-line { font-size:12.5px; line-height:1.55; color:var(--slate); }
+    .ref-summary { margin-bottom:var(--s-3); }
+    .ref-item { padding:10px 0; border-top:1px solid var(--line-soft); }
+    .ref-item:first-of-type { border-top:none; }
+    .ref-chip { display:inline-flex; align-items:center; width:max-content; max-width:100%; font-size:11px; font-weight:800; padding:3px 8px; border-radius:var(--r-sm); margin-bottom:6px; background:var(--surface-2); color:var(--slate); box-shadow:inset 0 0 0 1px var(--line); }
+    .ref-chip.s-confirmed { color:var(--accent-strong); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line); }
+    .ref-chip.s-partially_supported { color:#854d0e; background:#fef3c7; box-shadow:inset 0 0 0 1px #fde68a; }
+    .ref-chip.s-not_independently_seen,
+    .ref-chip.s-conflicts_with_reference { color:#9a3412; background:#ffedd5; box-shadow:inset 0 0 0 1px #fed7aa; }
+    .ref-tech-row { display:flex; gap:10px; padding:10px 0; border-top:1px solid var(--line-soft); }
+    .ref-tech-row:first-of-type { border-top:none; }
+    .ref-tech-body { flex:1; min-width:0; }
     .tier-badge { display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; padding:2px 8px; border-radius: var(--r-sm); margin-right:6px; flex-shrink:0; }
     .tier-badge.tA { color:#fff; background: var(--accent); }
     .tier-badge.tB { color: var(--accent-strong); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
@@ -1045,12 +1063,44 @@
       return (f && f.figure && trustAllowsProof(f)) ? proofUrl(jobId, f.figure) : null;
     }
 
+    function normalizeReferenceReview(report) {
+      if (!report) return null;
+      const agentSummary = (report.agent && report.agent.summary) || {};
+      const rec = report.reconciliation || agentSummary.reconciliation || {};
+      const patientRec = (report.patient && report.patient.reference_reconciliation) || rec.patient || {};
+      const clinicianRec = (report.clinician && report.clinician.reference_reconciliation) || rec.clinician || {};
+      const used = !!(rec.used || (patientRec.items && patientRec.items.length) || (clinicianRec.items && clinicianRec.items.length));
+      if (!used) return null;
+      const items = Array.isArray(rec.items) ? rec.items : [];
+      const patientItems = Array.isArray(patientRec.items) ? patientRec.items : [];
+      const clinicianItems = Array.isArray(clinicianRec.items) ? clinicianRec.items : [];
+      return {
+        used,
+        hasDiscrepancy: !!(rec.summary && rec.summary.has_discrepancy),
+        patientSummary: patientRec.summary || '',
+        patientItems,
+        clinicianSummary: clinicianRec.summary || '',
+        clinicianItems: clinicianItems.length ? clinicianItems : items,
+      };
+    }
+
+    function referenceStatusLabel(status) {
+      return ({
+        confirmed: 'Confirmed by blind read',
+        partially_supported: 'Partly supported',
+        not_independently_seen: 'Not independently seen',
+        conflicts_with_reference: 'Disagrees with reference',
+        cannot_assess: 'Cannot assess',
+      })[status] || 'Needs review';
+    }
+
     /* ═══════════════ buildViewModel (adapter = default, patient block = enhancement) §5 ═══════════════ */
     function buildViewModel(report) {
       if (!report) return null;
       const mode = report.mode || 'lite';
       const anatomy = figureAnatomy(report.detected_anatomy || 'unknown', report.anatomy_subregion || '');
       const patient = (report.agent && report.agent.summary && report.agent.summary.patient) || null;
+      const referenceReview = normalizeReferenceReview(report);
       const disclaimer = (patient && patient.disclaimer) || report.disclaimer || 'MIKA is an AI assistant and does not replace a doctor. All findings should be reviewed by a qualified clinician.';
 
       // Tier letters (A/B/C/D) must NEVER reach the patient view (locked non-negotiable #1). The agent
@@ -1086,6 +1136,7 @@
           verification: report.verification || {},
           pdfAvailable: !!report.pdf_available,
           clinicalPdfAvailable: !!report.clinical_pdf_available,
+          referenceReview,
           disclaimer,
         };
       }
@@ -1141,6 +1192,7 @@
         figures: report.figures || [],
         pdfAvailable: !!report.pdf_available,
         clinicalPdfAvailable: !!report.clinical_pdf_available,
+        referenceReview,
         disclaimer,
       };
     }
@@ -1454,7 +1506,10 @@
       const downloadLabel = clinicianView ? 'Download clinical report' : 'Download report';
       return (
         <div className="topbar">
-          <div className="topbar-l stacked"><span className="topbar-title">{line}</span><span className="topbar-meta">Read complete</span></div>
+          <div className="topbar-l stacked">
+            <span className="topbar-title">{line}</span>
+            <span className="topbar-meta">Read complete{vm && vm.referenceReview && vm.referenceReview.used ? ' - Reference-assisted review' : ''}</span>
+          </div>
           <div className="topbar-r">
             <div className="toggle">
               <button className={uiPrefs.view==='plain'?'on':''} onClick={()=>setUiPrefs({view:'plain'})}>Plain language</button>
@@ -1858,6 +1913,54 @@
 
     const WORD2LETTER = { Confirmed:'A', Likely:'B', Possible:'C' };
 
+    function ReferenceReviewPanel({ review }) {
+      if (!review || !review.used) return null;
+      const items = review.patientItems || [];
+      return (
+        <div className={`ref-review ${review.hasDiscrepancy ? 'warn' : ''}`}>
+          <div className="ref-head">
+            <span className="ref-kicker">Reference-assisted review</span>
+            <span className={`ref-status ${review.hasDiscrepancy ? 'warn' : 'ok'}`}>
+              {review.hasDiscrepancy ? 'Discrepancy flagged' : 'Compared'}
+            </span>
+          </div>
+          {review.patientSummary && <p className="ref-summary">{review.patientSummary}</p>}
+          {items.map((item, i) => (
+            <div className="ref-item" key={i}>
+              <div className={`ref-chip s-${item.status || 'unknown'}`}>{item.label || referenceStatusLabel(item.status)}</div>
+              <div className="ref-copy">{item.explanation}</div>
+              {item.reference && <div className="ref-line"><b>Reference report:</b> {item.reference}</div>}
+              {item.mika && <div className="ref-line"><b>MIKA blind read:</b> {stripTier(item.mika)}</div>}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function ClinicianReferenceReview({ review }) {
+      if (!review || !review.used) return null;
+      const items = review.clinicianItems || [];
+      return (
+        <div className="clin-card ref-clin">
+          <div className="clin-h">Reference-assisted reconciliation</div>
+          {review.clinicianSummary && <div className="clin-notes">{review.clinicianSummary}</div>}
+          {items.length ? items.map((item, i) => (
+            <div className="ref-tech-row" key={i}>
+              <span className={`ref-chip s-${item.status || item.agreement_status || 'unknown'}`}>{referenceStatusLabel(item.status || item.agreement_status)}</span>
+              <div className="ref-tech-body">
+                <div className="ref-line"><b>Reference:</b> {item.reference || item.reference_finding}</div>
+                <div className="ref-line"><b>MIKA blind read:</b> {stripTier(item.mika || item.mika_blind_finding || '')}</div>
+                {(item.level || item.side) && <div className="ref-line"><b>Location:</b> {[item.side, item.level].filter(Boolean).join(' ')}</div>}
+                {item.modality_sequence_needed && <div className="ref-line"><b>Needed sequences:</b> {item.modality_sequence_needed}</div>}
+                {item.evidence_refs && item.evidence_refs.length > 0 && <div className="ref-line"><b>Evidence refs:</b> {item.evidence_refs.join(', ')}</div>}
+                {item.explanation && <div className="ref-line"><b>Assessment:</b> {item.explanation}</div>}
+              </div>
+            </div>
+          )) : <div className="clin-notes">No structured reconciliation rows were available.</div>}
+        </div>
+      );
+    }
+
     function ClinicianDetail({ vm, jobId, onZoom, active }) {
       const v = vm.verification || {};
       const tech = vm.clinicianFindings || [];
@@ -1912,6 +2015,7 @@
               );
             }) : <div className="clin-notes">Limited clinician detail for this run.</div>}
           </div>
+          <ClinicianReferenceReview review={vm.referenceReview} />
           {(v.corrections && v.corrections.length>0) && (
             <div className="clin-card"><div className="clin-h">Audit corrections</div>
               <ul className="sec-block" style={{marginTop:0}}>{v.corrections.map((c,i)=><li key={i}>{typeof c==='string'?c:(c.finding||JSON.stringify(c))}</li>)}</ul></div>
@@ -1949,6 +2053,7 @@
               {!clinician && <button className="btn btn-ghost" onClick={onClinician}>{I.info({width:15,height:15})} View technical detail</button>}
             </div>
           </div>
+          {!clinician && <ReferenceReviewPanel review={vm.referenceReview} />}
         </div>
       );
     }
@@ -2069,6 +2174,7 @@
                       </div>
                       {!CLIN && (
                         <>
+                          <ReferenceReviewPanel review={vm.referenceReview} />
                           {(vm.worthFlagging && vm.worthFlagging.length>0) && (
                             <div className="sec-block"><h3>Ask your doctor about</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
                           )}
