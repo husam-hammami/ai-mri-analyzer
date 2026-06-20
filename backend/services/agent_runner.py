@@ -788,7 +788,15 @@ Rules for this evidence pack:
                 "  - On post-contrast, EXPLICITLY evaluate the symptomatic nerve root for intrinsic "
                 "enhancement vs the normal contralateral root; report neuritis ONLY if the root itself "
                 "enhances above the contralateral baseline. EXPLICITLY check facet joints for enhancing "
-                "synovitis. Grade canal/foraminal stenosis with explicit severity.\n")
+                "synovitis. Grade canal/foraminal stenosis with explicit severity.\n"
+                "  - In every lumbar study, actively inspect for prior hemilaminectomy/laminotomy/"
+                "discectomy anatomy even if no surgical history is supplied. On contrast studies, "
+                "distinguish enhancing epidural fibrosis/scar from non-enhancing residual or recurrent "
+                "disc material in the lateral recess. Specifically assess whether enhancing or "
+                "non-enhancing tissue encases, displaces, or impinges the descending S1/L5 nerve root, "
+                "and cite the exact side, level, series/image evidence, and confidence tier. Do not "
+                "state 'no abnormal enhancement' until the operative bed, lateral recesses, foramina, "
+                "and nerve roots have been compared on pre/post fat-saturated images.\n")
         else:
             ref_fig = "Figure 0 = a labelled overview/reference figure that orients the rest of the figures"
             location_rule = ("Confirm the anatomical location of every mark against the labelled reference "

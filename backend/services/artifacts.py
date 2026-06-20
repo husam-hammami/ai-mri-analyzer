@@ -215,8 +215,12 @@ class ArtifactQaGate:
             finding.get("evidence_refs") or finding.get("evidence_ids") or finding.get("evidence_ref")
         )
         trust = finding.setdefault("trust", {})
-        trust["valid_evidence"] = bool(evidence_refs) and all(e in self.evidence_ids for e in evidence_refs)
         artifact = by_stem.get(Path(str(figure or "")).stem) or by_stem.get(str(figure or ""))
+        artifact_refs = list(artifact.evidence_ids) if artifact else []
+        effective_refs = evidence_refs or artifact_refs
+        trust["valid_evidence"] = bool(effective_refs) and all(e in self.evidence_ids for e in effective_refs)
+        if effective_refs and not evidence_refs:
+            finding["evidence_refs"] = effective_refs
         trust["proof_image"] = bool(artifact and artifact.trusted_for_proof and trust["valid_evidence"])
         trust["body_map_marker"] = bool(trust["proof_image"] and _has_location(finding))
         if artifact and evidence_refs and not artifact.evidence_ids:

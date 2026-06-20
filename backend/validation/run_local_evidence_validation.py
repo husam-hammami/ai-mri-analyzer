@@ -101,13 +101,13 @@ def discover_cases(data_root: Optional[Path] = None) -> list[ValidationCase]:
         ),
         ValidationCase(
             case_id="xray_folder",
-            label="X-ray folder",
+            label="DICOM lumbar X-ray folder",
             source_path=_env_path("MIKA_VAL_XRAY_DIR") or _first_existing(root, ["XRAY", "*XRAY*"]),
             reference_path=None,
-            expected_input_type="image_export",
-            expected_modality="OT",
-            expected_calibrated=False,
-            expected_concepts=["xray_modality", "uncalibrated_if_export"],
+            expected_input_type="dicom",
+            expected_modality="DX",
+            expected_calibrated=True,
+            expected_concepts=["xray_modality", "radiograph_dicom_calibration"],
         ),
     ]
 

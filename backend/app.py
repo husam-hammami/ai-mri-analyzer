@@ -691,11 +691,6 @@ def _prepare_evidence_pack(job: "AnalysisJob", study_root: Optional[str] = None)
     """Build and persist the Run 2 PHI-safe evidence manifest for this job."""
     root = Path(study_root) if study_root else Path(job.dicom_dir)
     try:
-        builder = EvidencePackBuilder(root, job.work_dir)
-        pack = builder.build()
-        manifest = pack.to_manifest()
-        manifest["manifest_path"] = _rel_to_job(job.job_id, pack.manifest_path)
-
         # If the upload started as image exports, keep the calibration cap explicit even
         # if the converter wrapped them as DICOM for downstream compatibility.
         upload_dir = _job_dir(job.job_id) / "upload"
@@ -703,6 +698,11 @@ def _prepare_evidence_pack(job: "AnalysisJob", study_root: Optional[str] = None)
             p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
             for p in upload_dir.rglob("*")
         ) if upload_dir.exists() else False
+        evidence_root = upload_dir if has_image_exports else root
+        builder = EvidencePackBuilder(evidence_root, job.work_dir)
+        pack = builder.build()
+        manifest = pack.to_manifest()
+        manifest["manifest_path"] = _rel_to_job(job.job_id, pack.manifest_path)
         if has_image_exports:
             manifest["study"]["input_type"] = "image_export"
             manifest["study"]["calibrated"] = False
