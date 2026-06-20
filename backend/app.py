@@ -51,8 +51,10 @@ from services.evidence_pack import EvidencePackBuilder, manifest_text_summary
 from services.artifacts import ArtifactQaGate, ArtifactRegistry
 from services.reconciliation import (
     ReferenceInputError,
+    MAX_REFERENCE_REPORT_BYTES,
     build_clinical_reconciliation_report,
     build_reference_reconciliation,
+    read_reference_report_bytes,
 )
 from services.agent_runner import (
     AgentRunner,
@@ -1920,6 +1922,39 @@ async def reconcile_completed_report(request: ReconcileRequest):
             reference_report_path=request.reference_report_path,
             reference_report_text=request.reference_report_text,
         )
+    except ReferenceInputError as e:
+        raise HTTPException(400, str(e))
+    _persist_report(job)
+    return _build_report_payload(job)
+
+
+@app.post("/api/reconcile/upload")
+async def reconcile_completed_report_upload(
+    job_id: str = Form(...),
+    reference_report_text: Optional[str] = Form(None),
+    reference_report: Optional[UploadFile] = File(None),
+):
+    """Browser-friendly reference upload/paste path for completed blind reads."""
+    _validate_job_id(job_id)
+    text_parts: list[str] = []
+    if reference_report_text and reference_report_text.strip():
+        text_parts.append(reference_report_text.strip())
+    if reference_report and reference_report.filename:
+        data = await reference_report.read(MAX_REFERENCE_REPORT_BYTES + 1)
+        try:
+            text_parts.append(read_reference_report_bytes(reference_report.filename, data))
+        except ReferenceInputError as e:
+            raise HTTPException(400, str(e))
+    if not text_parts:
+        raise HTTPException(400, "Upload a reference report PDF/text file or paste report text.")
+
+    job = JOBS.get(job_id) or _rehydrate_completed_job(job_id)
+    if not job:
+        raise HTTPException(404, "Report not found")
+    if job.status != "complete":
+        raise HTTPException(400, f"Analysis not complete (status: {job.status})")
+    try:
+        _apply_reference_reconciliation(job, reference_report_text="\n\n".join(text_parts))
     except ReferenceInputError as e:
         raise HTTPException(400, str(e))
     _persist_report(job)

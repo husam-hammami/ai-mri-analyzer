@@ -12,6 +12,7 @@ import re
 import zlib
 from collections import Counter
 from dataclasses import asdict, dataclass, field
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Iterable, Optional
 from xml.sax.saxutils import escape
@@ -159,14 +160,39 @@ def read_reference_report_text(reference_path: str | Path) -> str:
         raise ReferenceInputError(f"Could not read reference report: {exc}") from exc
 
 
+def read_reference_report_bytes(filename: str, data: bytes) -> str:
+    """Extract reference text from an uploaded file without writing it to disk."""
+    suffix = Path(filename or "").suffix.lower()
+    if suffix not in REFERENCE_SUFFIXES:
+        raise ReferenceInputError("Reference report must be a PDF or text file.")
+    if len(data) > MAX_REFERENCE_REPORT_BYTES:
+        raise ReferenceInputError("Reference report is too large to process safely.")
+    if suffix == ".pdf":
+        return _read_pdf_text_from_bytes(data)
+    return data.decode("utf-8-sig", errors="replace")
+
+
 def _read_pdf_text(path: Path) -> str:
+    data = path.read_bytes()
+    return _extract_pdf_text(data=data, source_path=path)
+
+
+def _read_pdf_text_from_bytes(data: bytes) -> str:
+    return _extract_pdf_text(data=data, source_path=None)
+
+
+def _extract_pdf_text(*, data: bytes, source_path: Optional[Path]) -> str:
     try:
         import fitz  # type: ignore
     except Exception as exc:  # pragma: no cover - depends on optional install
         fitz_error = exc
     else:
         try:
-            with fitz.open(str(path)) as doc:
+            if source_path:
+                doc = fitz.open(str(source_path))
+            else:
+                doc = fitz.open(stream=data, filetype="pdf")
+            with doc:
                 return "\n".join(doc.load_page(i).get_text("text") for i in range(min(25, doc.page_count)))
         except Exception as exc:
             raise ReferenceInputError(f"Could not extract text from reference PDF: {exc}") from exc
@@ -177,22 +203,21 @@ def _read_pdf_text(path: Path) -> str:
         pass
     else:  # pragma: no cover - depends on optional install
         try:
-            reader = PdfReader(str(path))
+            reader = PdfReader(str(source_path) if source_path else BytesIO(data))
             return "\n".join((page.extract_text() or "") for page in reader.pages[:25])
         except Exception as exc:
             raise ReferenceInputError(f"Could not extract text from reference PDF: {exc}") from exc
 
     try:
-        return _read_pdf_text_basic(path)
+        return _read_pdf_text_basic(data)
     except Exception as exc:
         raise ReferenceInputError(
             "Could not extract text from reference PDF. Try pasting the report text instead."
         ) from fitz_error or exc
 
 
-def _read_pdf_text_basic(path: Path) -> str:
+def _read_pdf_text_basic(data: bytes) -> str:
     """Best-effort text extraction for simple text-layer PDFs when no PDF library is installed."""
-    data = path.read_bytes()
     parts: list[str] = []
     for match in re.finditer(rb"(<<.*?>>)?\s*stream\r?\n(.*?)\r?\nendstream", data, re.S):
         dictionary = match.group(1) or b""
@@ -541,8 +566,8 @@ def _patient_status_label(status: str) -> str:
     return {
         "confirmed": "MIKA also saw this",
         "partially_supported": "MIKA saw part of this",
-        "not_independently_seen": "MIKA did not independently see this",
-        "conflicts_with_reference": "MIKA's blind read disagreed",
+        "not_independently_seen": "MIKA did not independently see this report finding",
+        "conflicts_with_reference": "MIKA's independent read differs from the uploaded report",
         "cannot_assess": "MIKA could not assess this",
     }.get(status, "Needs review")
 
@@ -552,28 +577,28 @@ def _patient_reconciliation_summary(items: list[dict[str, Any]]) -> str:
         return "A reference report was provided, but MIKA could not extract a structured target from it."
     if any(item["agreement_status"] in {"conflicts_with_reference", "not_independently_seen"} for item in items):
         return (
-            "MIKA compared the reference report with the blind image read. At least one important "
-            "reference finding was not independently confirmed by MIKA and should be reviewed with "
-            "a radiologist or spine clinician."
+            "MIKA compared the uploaded report with its independent image read. At least one item "
+            "differs: the uploaded report may contain clinically important findings that MIKA did "
+            "not independently confirm. Please review both with a radiologist or spine clinician."
         )
-    return "MIKA compared the reference report with the blind image read and lists the agreement below."
+    return "MIKA compared the uploaded report with its independent image read and lists the agreement below."
 
 
 def _patient_reference_phrase(item: dict[str, Any]) -> str:
     side = f"{item.get('side')} " if item.get("side") else ""
     level = item.get("level") or "the reported area"
-    return f"The reference report describes a {side}{level} post-surgery area that may affect a nerve."
+    return f"The uploaded report describes a {side}{level} post-surgery area that may affect a nerve."
 
 
 def _patient_mika_phrase(item: dict[str, Any]) -> str:
     status = item.get("agreement_status")
     if status == "confirmed":
-        return "MIKA's blind image read also supported this reference finding."
+        return "MIKA's independent image read also supported this report finding."
     if status == "partially_supported":
-        return "MIKA's blind image read supported part of this reference finding, but not every detail."
+        return "MIKA's independent image read supported part of this report finding, but not every detail."
     if status in {"not_independently_seen", "conflicts_with_reference"}:
-        return "MIKA's blind image read did not independently confirm this reference finding."
-    return "MIKA could not reliably compare this reference finding with the blind read."
+        return "MIKA's independent image read did not independently confirm this report finding."
+    return "MIKA could not reliably compare this report finding with the independent read."
 
 
 def _clinician_reconciliation_summary(items: list[dict[str, Any]]) -> str:
@@ -594,15 +619,17 @@ def _patient_explanation(status: str, target: dict[str, Any]) -> str:
         )
     if status == "conflicts_with_reference":
         return (
-            f"The reference report describes a {side}{level} post-surgery area that may affect a nerve. "
-            "MIKA's blind image read did not independently confirm this. This is a clinically important "
-            "difference and should be reviewed by a radiologist or spine clinician."
+            f"The uploaded report describes a {side}{level} post-surgery area that may affect a nerve. "
+            "MIKA's independent read differs from the uploaded report and did not independently confirm "
+            "this item. The uploaded report may contain clinically important findings, so please review "
+            "both reports with a radiologist or spine clinician."
         )
     if status == "not_independently_seen":
         return (
-            f"The reference report describes a {side}{level} post-surgery area that may affect a nerve. "
-            "MIKA's blind image read did not independently confirm this. This is a clinically important "
-            "difference and should be reviewed by a radiologist or spine clinician."
+            f"The uploaded report describes a {side}{level} post-surgery area that may affect a nerve. "
+            "MIKA's independent read did not independently confirm this item. The uploaded report may "
+            "contain clinically important findings, so please review both reports with a radiologist or "
+            "spine clinician."
         )
     return "MIKA could not reliably compare this reference finding with the available blind read."
 
@@ -690,7 +717,7 @@ def build_clinical_reconciliation_report(summary: dict[str, Any], reconciliation
     ])
     rec_rows = [[
         Paragraph("<b>Status</b>", small),
-        Paragraph("<b>Reference target</b>", small),
+        Paragraph("<b>Reference target (report-derived)</b>", small),
         Paragraph("<b>MIKA blind finding</b>", small),
         Paragraph("<b>Evidence refs</b>", small),
     ]]

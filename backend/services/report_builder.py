@@ -217,9 +217,9 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
                 Paragraph(explanation, BODY),
             ]
             if reference:
-                block.append(Paragraph(f"<b>Reference report:</b> {reference}", SMALL))
+                block.append(Paragraph(f"<b>Uploaded report (report-derived):</b> {reference}", SMALL))
             if mika:
-                block.append(Paragraph(f"<b>MIKA blind read:</b> {mika}", SMALL))
+                block.append(Paragraph(f"<b>MIKA independent read:</b> {mika}", SMALL))
             block.append(Spacer(1, 6))
             flow.append(KeepTogether(block))
 

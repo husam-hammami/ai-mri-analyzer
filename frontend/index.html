@@ -527,6 +527,7 @@
     .recent-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
     .recent-name { font-size:14px; font-weight:600; color: var(--ink); }
     .recent-meta { font-size:12px; font-weight:500; color: var(--slate-300); }
+    .recent-ref { display:block; width:max-content; max-width:100%; margin-top:4px; padding:2px 7px; border-radius:var(--r-sm); background:var(--accent-soft); color:var(--accent-strong); font-size:11px; font-weight:800; box-shadow:inset 0 0 0 1px var(--accent-line); }
     .recent-date { margin-left:auto; font-size:12.5px; color: var(--slate-300); }
     .topbar-back { background:none; border:none; cursor:pointer; color: var(--slate); font-size:20px; line-height:1; padding:2px 6px;
                    border-radius: var(--r-sm); display:inline-flex; align-items:center; }
@@ -566,6 +567,19 @@
     .clin-proof-img { height:220px; background:var(--navy-900); display:flex; align-items:center; justify-content:center; cursor:zoom-in; }
     .clin-proof-img img { width:100%; height:100%; object-fit:contain; display:block; }
     .clin-proof-empty { padding:var(--s-5); font-size:12.5px; line-height:1.5; color:var(--slate); background:var(--surface-2); }
+    .compare-panel { margin-top:var(--s-4); padding:var(--s-4); border:1px solid var(--line); border-radius:var(--r-md); background:var(--surface); }
+    .compare-head { display:flex; justify-content:space-between; gap:var(--s-4); align-items:flex-start; margin-bottom:var(--s-3); }
+    .compare-title { font-size:13px; font-weight:800; color:var(--ink); margin-bottom:4px; }
+    .compare-sub { font-size:12.5px; line-height:1.5; color:var(--slate); max-width:620px; }
+    .compare-done { flex-shrink:0; font-size:11px; font-weight:800; color:var(--accent-strong); background:var(--accent-soft); padding:3px 8px; border-radius:var(--r-sm); box-shadow:inset 0 0 0 1px var(--accent-line); }
+    .compare-controls { display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap; margin-bottom:var(--s-3); }
+    .compare-file { max-width:360px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--slate); background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm); padding:5px 8px; }
+    .compare-text { width:100%; min-height:96px; resize:vertical; border:1px solid var(--line); border-radius:var(--r-sm); padding:10px 12px; font:inherit; font-size:12.5px; line-height:1.45; color:var(--ink); background:var(--surface-2); }
+    .compare-text:focus { outline:2px solid var(--accent); outline-offset:1px; background:var(--surface); }
+    .compare-actions { display:flex; align-items:center; gap:var(--s-2); margin-top:var(--s-3); flex-wrap:wrap; }
+    .compare-status { margin-top:var(--s-2); font-size:12.5px; line-height:1.5; color:var(--slate); }
+    .compare-status.ok { color:var(--accent-strong); }
+    .compare-status.err { color:#9f1239; }
     .ref-review { margin-top:var(--s-4); padding:var(--s-4); border:1px solid var(--line); border-left:3px solid var(--accent); border-radius:var(--r-md); background:var(--surface); }
     .ref-review.warn { border-left-color:#ea580c; background:#fff7ed; border-color:#fed7aa; }
     .ref-head { display:flex; align-items:center; justify-content:space-between; gap:var(--s-3); margin-bottom:8px; }
@@ -983,6 +997,12 @@
       authCode: (id, code) => fetch(`${API_BASE}/api/connect/${id}/code`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ code }) }).then(r => r.json()),
       upload: (fd) => fetch(`${API_BASE}/api/upload`, { method:'POST', body:fd }).then(r => r.json()),
       analyze: (body) => fetch(`${API_BASE}/api/analyze`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r => r.json()),
+      reconcileUpload: async (fd, signal) => {
+        const r = await fetch(`${API_BASE}/api/reconcile/upload`, { method:'POST', body:fd, signal });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(detailText(data.detail || data.error_message || data.error, 'Could not compare the report.'));
+        return data;
+      },
       status: (id) => fetch(`${API_BASE}/api/status/${id}`, { cache:'no-store' }),
       report: (id) => fetch(`${API_BASE}/api/report/${id}`, { cache:'no-store' }),
       reports: () => fetch(`${API_BASE}/api/reports`, { cache:'no-store' }).then(r => r.ok ? r.json() : { reports:[] }).catch(() => ({ reports:[] })),
@@ -1091,6 +1111,16 @@
         not_independently_seen: 'Not independently seen',
         conflicts_with_reference: 'Disagrees with reference',
         cannot_assess: 'Cannot assess',
+      })[status] || 'Needs review';
+    }
+
+    function patientReferenceStatusLabel(status) {
+      return ({
+        confirmed: 'MIKA also saw this',
+        partially_supported: 'MIKA saw part of this',
+        not_independently_seen: 'MIKA did not independently see this report finding',
+        conflicts_with_reference: "MIKA's independent read differs from the uploaded report",
+        cannot_assess: 'MIKA could not compare this item',
       })[status] || 'Needs review';
     }
 
@@ -1427,6 +1457,7 @@
             label: r.title || ANATOMY_TITLE[r.detected_anatomy] || 'Scan',
             anatomy: r.detected_anatomy, modality: r.modality,
             date: r.completed_at || r.created_at, thumb: r.thumb,
+            referenceReview: !!r.reference_reconciliation_available,
           }));
           const seen = new Set(server.map(s => s.jobId));
           setItems(server.concat(loadRecents().filter(x => x.jobId && !seen.has(x.jobId))));
@@ -1450,7 +1481,10 @@
                     {it.thumb ? <img src={proofUrl(it.jobId, it.thumb)} alt="" onError={e=>{ e.target.style.display='none'; }} />
                               : I.reading({ width:18, height:18 })}
                   </span>
-                  <span className="recent-name">{it.label || 'Scan'}{it.modality ? <span className="recent-meta"> · {it.modality}</span> : null}</span>
+                  <span className="recent-name">
+                    {it.label || 'Scan'}{it.modality ? <span className="recent-meta"> - {it.modality}</span> : null}
+                    {it.referenceReview ? <span className="recent-ref">Reference-assisted review</span> : null}
+                  </span>
                   <span className="recent-date">{it.date ? new Date(it.date).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
                 </button>
               ))}
@@ -1913,6 +1947,56 @@
 
     const WORD2LETTER = { Confirmed:'A', Likely:'B', Possible:'C' };
 
+    function CompareReportPanel({ jobId, review, state, setState, onCompare, onCancel }) {
+      const fileRef = useRef(null);
+      if (!jobId || jobId === 'demo') return null;
+      const status = (state && state.status) || 'idle';
+      const busy = status === 'running';
+      const file = state && state.file;
+      const text = (state && state.text) || '';
+      const hasInput = !!file || !!text.trim();
+      const compared = !!(review && review.used);
+      const chooseLabel = file ? 'Change report file' : 'Upload report PDF';
+      const compareLabel = status === 'error' ? 'Retry comparison' : 'Compare with my report';
+      const clear = () => {
+        if (busy) return;
+        if (fileRef.current) fileRef.current.value = '';
+        setState({ status:'idle', file:null, text:'', error:null });
+      };
+      return (
+        <div className="compare-panel">
+          <div className="compare-head">
+            <div>
+              <div className="compare-title">Compare with my report</div>
+              <div className="compare-sub">Upload your radiology report or paste its text. MIKA will compare it with the independent image read without changing the read.</div>
+            </div>
+            {compared && <span className="compare-done">Reference-assisted review added</span>}
+          </div>
+          <div className="compare-controls">
+            <input ref={fileRef} type="file" accept=".pdf,.txt,.md,.rtf,application/pdf,text/plain" style={{display:'none'}}
+              onChange={e=>setState(s=>({ ...(s||{}), file:(e.target.files && e.target.files[0]) || null, status:'idle', error:null }))} />
+            <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={()=>fileRef.current && fileRef.current.click()}>
+              {I.upload({width:14,height:14})} {chooseLabel}
+            </button>
+            {file && <span className="compare-file" title={file.name}>{file.name}</span>}
+          </div>
+          <textarea className="compare-text" value={text} disabled={busy}
+            placeholder="Or paste the report text here."
+            onChange={e=>setState(s=>({ ...(s||{}), text:e.target.value, status:'idle', error:null }))} />
+          <div className="compare-actions">
+            <button className="btn btn-primary btn-sm" type="button" disabled={busy || !hasInput}
+              onClick={()=>onCompare({ file, text })}>{busy ? 'Comparing...' : compareLabel}</button>
+            {busy && <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>Cancel</button>}
+            {!busy && hasInput && <button className="btn btn-ghost btn-sm" type="button" onClick={clear}>Clear</button>}
+          </div>
+          {busy && <div className="compare-status">Extracting the report and comparing it with MIKA's independent read...</div>}
+          {status === 'success' && <div className="compare-status ok">Comparison complete. The reference-assisted review is shown below.</div>}
+          {status === 'cancelled' && <div className="compare-status">Comparison cancelled. Your blind read was not changed.</div>}
+          {status === 'error' && <div className="compare-status err">{state.error || 'MIKA could not compare that report.'}</div>}
+        </div>
+      );
+    }
+
     function ReferenceReviewPanel({ review }) {
       if (!review || !review.used) return null;
       const items = review.patientItems || [];
@@ -1927,10 +2011,10 @@
           {review.patientSummary && <p className="ref-summary">{review.patientSummary}</p>}
           {items.map((item, i) => (
             <div className="ref-item" key={i}>
-              <div className={`ref-chip s-${item.status || 'unknown'}`}>{item.label || referenceStatusLabel(item.status)}</div>
+              <div className={`ref-chip s-${item.status || 'unknown'}`}>{patientReferenceStatusLabel(item.status)}</div>
               <div className="ref-copy">{item.explanation}</div>
-              {item.reference && <div className="ref-line"><b>Reference report:</b> {item.reference}</div>}
-              {item.mika && <div className="ref-line"><b>MIKA blind read:</b> {stripTier(item.mika)}</div>}
+              {item.reference && <div className="ref-line"><b>Uploaded report:</b> {item.reference}</div>}
+              {item.mika && <div className="ref-line"><b>MIKA independent read:</b> {stripTier(item.mika)}</div>}
             </div>
           ))}
         </div>
@@ -1951,9 +2035,10 @@
                 <div className="ref-line"><b>Reference:</b> {item.reference || item.reference_finding}</div>
                 <div className="ref-line"><b>MIKA blind read:</b> {stripTier(item.mika || item.mika_blind_finding || '')}</div>
                 {(item.level || item.side) && <div className="ref-line"><b>Location:</b> {[item.side, item.level].filter(Boolean).join(' ')}</div>}
+                <div className="ref-line"><b>Agreement status:</b> {item.status || item.agreement_status || 'unknown'}</div>
                 {item.modality_sequence_needed && <div className="ref-line"><b>Needed sequences:</b> {item.modality_sequence_needed}</div>}
                 {item.evidence_refs && item.evidence_refs.length > 0 && <div className="ref-line"><b>Evidence refs:</b> {item.evidence_refs.join(', ')}</div>}
-                {item.explanation && <div className="ref-line"><b>Assessment:</b> {item.explanation}</div>}
+                {item.explanation && <div className="ref-line"><b>Discrepancy note:</b> {item.explanation}</div>}
               </div>
             </div>
           )) : <div className="clin-notes">No structured reconciliation rows were available.</div>}
@@ -2024,7 +2109,7 @@
       );
     }
 
-    function EmptyResultMain({ vm, clinician, onClinician }) {
+    function EmptyResultMain({ vm, clinician, onClinician, jobId, compareState, setCompareState, onCompareReport, onCancelCompare }) {
       const points = (vm.keyPoints && vm.keyPoints.length) ? vm.keyPoints : [
         'No finding met the threshold for a pinned abnormality in this automated read.',
         'This does not replace the official radiology report or your clinician review.'
@@ -2053,6 +2138,8 @@
               {!clinician && <button className="btn btn-ghost" onClick={onClinician}>{I.info({width:15,height:15})} View technical detail</button>}
             </div>
           </div>
+          {!clinician && <CompareReportPanel jobId={jobId} review={vm.referenceReview} state={compareState}
+            setState={setCompareState} onCompare={onCompareReport} onCancel={onCancelCompare} />}
           {!clinician && <ReferenceReviewPanel review={vm.referenceReview} />}
         </div>
       );
@@ -2076,7 +2163,7 @@
       );
     }
 
-    function ReadScreen({ vm, jobId, view, activeId, setActiveId, onZoom, onClinician }) {
+    function ReadScreen({ vm, jobId, view, activeId, setActiveId, onZoom, onClinician, compareState, setCompareState, onCompareReport, onCancelCompare }) {
       const findings = vm.findings || [];
       const active = findings.find(f => f.id === activeId) || findings[0] || null;
       const empty = findings.length === 0;
@@ -2117,7 +2204,9 @@
           <div className={`read-grid ${empty ? 'empty-read-grid' : ''}`}>
             {empty ? (
               <>
-                <EmptyResultMain vm={vm} clinician={CLIN} onClinician={onClinician} />
+                <EmptyResultMain vm={vm} clinician={CLIN} onClinician={onClinician} jobId={jobId}
+                  compareState={compareState} setCompareState={setCompareState}
+                  onCompareReport={onCompareReport} onCancelCompare={onCancelCompare} />
                 <div className={`read-right ${CLIN ? 'clinician-right' : ''}`}>
                   {CLIN ? <ClinicianDetail vm={vm} jobId={jobId} onZoom={onZoom} active={active} /> : <EmptyResultSide vm={vm} />}
                 </div>
@@ -2174,6 +2263,8 @@
                       </div>
                       {!CLIN && (
                         <>
+                          <CompareReportPanel jobId={jobId} review={vm.referenceReview} state={compareState}
+                            setState={setCompareState} onCompare={onCompareReport} onCancel={onCancelCompare} />
                           <ReferenceReviewPanel review={vm.referenceReview} />
                           {(vm.worthFlagging && vm.worthFlagging.length>0) && (
                             <div className="sec-block"><h3>Ask your doctor about</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
@@ -2208,6 +2299,7 @@
 
     /* ═══════════════ App (state + screenFor switch) ═══════════════ */
     const EMPTY_JOB = { id:null, status:'pending', mode:null, progress:0, message:'', eta_seconds:null, est_total_seconds:null, error:null, active_sequence:null, active_region:null };
+    const EMPTY_COMPARE = { status:'idle', file:null, text:'', error:null };
     function initialJobFromUrl() {
       const params = new URLSearchParams(window.location.search);
       const jobId = params.get('job_id') || DEEP_LINK_JOB;
@@ -2232,7 +2324,9 @@
       const [showConnect, setShowConnect] = useState(false);
       const [checkingConn, setCheckingConn] = useState(false);
       const [authSession, setAuthSession] = useState(null);
+      const [compareState, setCompareState] = useState(EMPTY_COMPARE);
       const esRef = useRef(null), pollRef = useRef(null), authPollRef = useRef(null);
+      const compareAbortRef = useRef(null);
       const popping = useRef(false);   // true while applying a browser Back/Forward (suppresses re-push)
       const didMountUrl = useRef(false);   // skip the first URL-sync so a deep-link ?job_id isn't stripped on mount
       const [dm, setDm] = useState(DEMO);   // live demo override (dev visual gate; switchable without reload)
@@ -2243,6 +2337,10 @@
       const stopAuthPoll = useCallback(() => {
         if (authPollRef.current) { clearTimeout(authPollRef.current); authPollRef.current = null; }
       }, []);
+      useEffect(() => {
+        if (compareAbortRef.current) { compareAbortRef.current.abort(); compareAbortRef.current = null; }
+        setCompareState(EMPTY_COMPARE);
+      }, [job.id]);
 
       // connection check (Connect-with-Claude flow — uses the existing /api/agent/availability + /api/connect)
       const checkConnection = useCallback(async () => {
@@ -2508,6 +2606,8 @@
       // ── navigation (no dead-ends: every screen can reach New study / current Read / Recent / Shared) ──
       const goNew = useCallback(() => {
         stopStream(); setReport(null); setSequences({ sequences:[] }); setReady(null);
+        if (compareAbortRef.current) { compareAbortRef.current.abort(); compareAbortRef.current = null; }
+        setCompareState(EMPTY_COMPARE);
         setActiveId(null); setRoute(null); setUiPrefs(p => ({ ...p, view:'plain' }));
         setJob(EMPTY_JOB);
       }, [stopStream]);
@@ -2547,6 +2647,48 @@
         window.addEventListener('popstate', onPop);
         return () => window.removeEventListener('popstate', onPop);
       }, [job.id, fetchReport, stopStream]);
+
+      const onCompareReport = useCallback(async ({ file, text }) => {
+        if (!job.id) return;
+        const cleanText = (text || '').trim();
+        if (!file && !cleanText) {
+          setCompareState(s => ({ ...(s || EMPTY_COMPARE), status:'error', error:'Upload a report PDF/text file or paste report text first.' }));
+          return;
+        }
+        if (compareAbortRef.current) compareAbortRef.current.abort();
+        const controller = new AbortController();
+        compareAbortRef.current = controller;
+        const fd = new FormData();
+        fd.append('job_id', job.id);
+        if (file) fd.append('reference_report', file);
+        if (cleanText) fd.append('reference_report_text', cleanText);
+        setCompareState(s => ({ ...(s || EMPTY_COMPARE), status:'running', error:null }));
+        try {
+          const data = await api.reconcileUpload(fd, controller.signal);
+          setReport(data);
+          setCompareState(s => ({ ...(s || EMPTY_COMPARE), status:'success', error:null }));
+          try {
+            const tmp = buildViewModel(data);
+            const label = (tmp && tmp.study && tmp.study.body_part) || data.detected_anatomy || 'Scan';
+            pushRecent({ jobId: job.id, label, anatomy: data.detected_anatomy || '', date: new Date().toISOString(), referenceReview:true });
+          } catch (_) {}
+          addToast('MIKA compared your report with the independent read.', 'success');
+        } catch (e) {
+          if (controller.signal.aborted) {
+            setCompareState(s => ({ ...(s || EMPTY_COMPARE), status:'cancelled', error:null }));
+          } else {
+            setCompareState(s => ({ ...(s || EMPTY_COMPARE), status:'error', error:e.message || 'Could not compare the report.' }));
+            addToast(e.message || 'Could not compare the report.', 'error');
+          }
+        } finally {
+          if (compareAbortRef.current === controller) compareAbortRef.current = null;
+        }
+      }, [job.id, addToast]);
+
+      const onCancelCompare = useCallback(() => {
+        if (compareAbortRef.current) compareAbortRef.current.abort();
+        setCompareState(s => ({ ...(s || EMPTY_COMPARE), status:'cancelled', error:null }));
+      }, []);
 
       const onDownload = useCallback((kind='patient') => {
         if (!job.id) return;
@@ -2592,7 +2734,9 @@
             <div className="page">
               {view === 'home' && <HomeScreen onFiles={onFiles} ready={ready} onStart={onStart} history={history} setHistory={setHistory} />}
               {view === 'wait' && (() => { const sq = dm?DEMO_SEQUENCES:sequences; return <WaitScreen progress={dm?demoProgress:job} sequences={sq} anatomy={figureAnatomy(sq.anatomy || (effVm&&effVm.anatomy) || 'unknown', sq.anatomy_subregion || '')} jobId={dm?'demo':job.id} />; })()}
-              {view === 'read' && effVm && <ReadScreen vm={effVm} jobId={dm?'demo':job.id} view={uiPrefs.view} activeId={activeId} setActiveId={setActiveId} onZoom={setLightbox} onClinician={onClinician} />}
+              {view === 'read' && effVm && <ReadScreen vm={effVm} jobId={dm?'demo':job.id} view={uiPrefs.view} activeId={activeId} setActiveId={setActiveId}
+                onZoom={setLightbox} onClinician={onClinician} compareState={compareState} setCompareState={setCompareState}
+                onCompareReport={onCompareReport} onCancelCompare={onCancelCompare} />}
               {view === 'recent' && <RecentScreen onOpen={openRecent} onNew={goNew} />}
             </div>
           </div>
