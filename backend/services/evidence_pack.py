@@ -27,6 +27,23 @@ try:
 except Exception:  # pragma: no cover - exercised when dependency is absent
     pydicom = None
 
+try:
+    from core.anatomy_modules.base import (
+        candidate_allows_body_marker,
+        candidate_allows_pinpoint_marker,
+        candidate_allows_proof_overlay,
+        candidate_verifier_contract,
+    )
+    from core.anatomy_modules.lumbar_spine import LumbarSpineEvidenceModule
+    from core.study_graph import StudyGraphBuilder
+except Exception:  # pragma: no cover - keeps EvidencePack usable without optional CV deps
+    candidate_allows_body_marker = None
+    candidate_allows_pinpoint_marker = None
+    candidate_allows_proof_overlay = None
+    candidate_verifier_contract = None
+    LumbarSpineEvidenceModule = None
+    StudyGraphBuilder = None
+
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 LOCALIZER_TERMS = ("localizer", "locator", "scout", "survey", "topogram", "3-plane", "three plane")
@@ -72,6 +89,9 @@ class EvidencePack:
     selected_images: list[EvidenceImage]
     limitations: list[str]
     manifest_path: str
+    cv_candidates: list[dict] = field(default_factory=list)
+    cv_candidate_limitations: list[str] = field(default_factory=list)
+    cv_candidate_policy: dict = field(default_factory=dict)
 
     def to_manifest(self) -> dict:
         return {
@@ -80,6 +100,9 @@ class EvidencePack:
             "series": [asdict(s) for s in self.series],
             "selected_images": [asdict(i) for i in self.selected_images],
             "limitations": self.limitations,
+            "cv_candidates": self.cv_candidates,
+            "cv_candidate_limitations": self.cv_candidate_limitations,
+            "cv_candidate_policy": self.cv_candidate_policy or _default_cv_candidate_policy(),
         }
 
 
@@ -91,6 +114,37 @@ def safe_id(text: str, fallback: str) -> str:
 def is_localizer_name(name: str) -> bool:
     low = (name or "").lower()
     return any(term in low for term in LOCALIZER_TERMS)
+
+
+def _default_cv_candidate_policy() -> dict:
+    verifier = candidate_verifier_contract() if candidate_verifier_contract else {
+        "allowed_statuses": ["supported", "not_supported", "cannot_assess", "localization_wrong"]
+    }
+    return {
+        "source": "deterministic_cv_geometry",
+        "scope": "localization_measurement_roi_only",
+        "verifier_contract": verifier,
+        "rules": [
+            "CV candidates do not overwrite blind findings.",
+            "CV candidates do not create final visual claims without Claude/verifier support.",
+            "CV candidates must be reviewed with one status: supported, not_supported, cannot_assess, or localization_wrong.",
+            "Candidate-only evidence must not create body-map markers, pinpoint markers, or proof overlays unless trust gates pass.",
+            "Image exports stay uncalibrated and cannot receive precise geometry-derived claims.",
+        ],
+    }
+
+
+def _looks_like_lumbar_mr_pack(pack: EvidencePack) -> bool:
+    modality = str((pack.study or {}).get("modality") or "").upper()
+    if "MR" not in modality:
+        return False
+    text = " ".join(
+        str(x or "")
+        for s in pack.series
+        for x in (s.name, s.sequence_label, s.plane, (pack.study or {}).get("subregion"), (pack.study or {}).get("anatomy"))
+    ).lower()
+    lumbar_terms = ("lumbar", "l spine", "l-spine", "l_spine", "lspine", "lumbosacral", "ls spine")
+    return any(term in text for term in lumbar_terms)
 
 
 def _contrast_pair_key(name: str) -> Optional[str]:
@@ -186,6 +240,7 @@ class EvidencePackBuilder:
             pack = self._build_dicom_pack(dcm_files)
         else:
             pack = self._build_image_export_pack(image_files)
+        self._attach_cv_candidates(pack)
         manifest_path = self.out_dir / "evidence_manifest.json"
         manifest_path.write_text(json.dumps(pack.to_manifest(), indent=2), encoding="utf-8")
         pack.manifest_path = str(manifest_path)
@@ -197,6 +252,49 @@ class EvidencePackBuilder:
             manifest_path,
         )
         return pack
+
+    def _attach_cv_candidates(self, pack: EvidencePack) -> None:
+        """Attach deterministic CV localization candidates to the PHI-safe manifest.
+
+        Candidate rows are metadata/ROI review prompts only. They do not create findings,
+        proof overlays, or body-map markers.
+        """
+        pack.cv_candidate_policy = _default_cv_candidate_policy()
+        pack.cv_candidates = []
+        pack.cv_candidate_limitations = []
+        if pack.study.get("input_type") != "dicom":
+            pack.cv_candidate_limitations.append(
+                "CV geometry candidates disabled: source is an uncalibrated image export or non-DICOM input."
+            )
+            return
+        if not _looks_like_lumbar_mr_pack(pack):
+            pack.cv_candidate_limitations.append(
+                "No lumbar MR CV candidate module applied for this study."
+            )
+            return
+        if not (StudyGraphBuilder and LumbarSpineEvidenceModule):
+            pack.cv_candidate_limitations.append("CV candidate module unavailable in this runtime.")
+            return
+        try:
+            graph = StudyGraphBuilder(self.study_dir).build()
+            candidate_set = LumbarSpineEvidenceModule().analyze(graph)
+            candidate_payload = candidate_set.to_dict()
+            pack.cv_candidate_limitations.extend(candidate_payload.get("limitations") or [])
+            for candidate in candidate_set.candidates:
+                item = candidate.to_dict()
+                item["artifact_trust"] = {
+                    "body_marker": bool(candidate_allows_body_marker and candidate_allows_body_marker(candidate)),
+                    "proof_overlay": bool(candidate_allows_proof_overlay and candidate_allows_proof_overlay(candidate)),
+                    "pinpoint_marker": bool(candidate_allows_pinpoint_marker and candidate_allows_pinpoint_marker(candidate)),
+                    "reason": (
+                        "Candidate-only evidence is not marker/proof trusted unless calibrated geometry "
+                        "and registration confidence pass the high-confidence gates."
+                    ),
+                }
+                pack.cv_candidates.append(item)
+        except Exception as e:
+            logger.warning("CV candidate generation failed: %s", e)
+            pack.cv_candidate_limitations.append(f"CV candidate generation failed: {type(e).__name__}")
 
     def _dicom_files(self) -> list[Path]:
         if not pydicom:
@@ -613,4 +711,37 @@ def manifest_text_summary(manifest: dict) -> str:
     if manifest.get("limitations"):
         lines.append("Limitations:")
         lines.extend(f"- {x}" for x in manifest["limitations"])
+    return "\n".join(lines)
+
+
+def cv_candidate_text_summary(manifest: dict) -> str:
+    candidates = manifest.get("cv_candidates") or []
+    limitations = manifest.get("cv_candidate_limitations") or []
+    if not candidates and not limitations:
+        return ""
+    lines = [
+        "CV EVIDENCE CANDIDATES",
+        "- These rows are deterministic localization/measurement evidence only.",
+        "- They do not confirm pathology and do not overwrite the blind read.",
+    ]
+    if candidates:
+        for c in candidates:
+            trust = c.get("artifact_trust") or {}
+            roi = c.get("roi") or {}
+            lines.extend([
+                f"- candidate_id: {c.get('candidate_id')}",
+                f"  target: {c.get('side') or 'unknown side'} {c.get('level') or 'unknown level'} {c.get('candidate_type')}",
+                f"  series_ids: {', '.join(c.get('series_ids') or [])}",
+                f"  slice_ids: {', '.join((c.get('slice_ids') or [])[:12])}{' ...' if len(c.get('slice_ids') or []) > 12 else ''}",
+                f"  evidence_refs: {', '.join((c.get('evidence_refs') or [])[:12])}{' ...' if len(c.get('evidence_refs') or []) > 12 else ''}",
+                f"  ROI: unit={roi.get('unit')} x={roi.get('x')} y={roi.get('y')} width={roi.get('width')} height={roi.get('height')} target={roi.get('target')}",
+                f"  calibration_state: {c.get('calibration_state')}; geometry_confidence={c.get('geometry_confidence')}; registration_confidence={c.get('registration_confidence')}",
+                f"  artifact_trust: body_marker={trust.get('body_marker')} proof_overlay={trust.get('proof_overlay')} pinpoint_marker={trust.get('pinpoint_marker')}",
+            ])
+            if c.get("limitations"):
+                lines.append("  limitations:")
+                lines.extend(f"    - {note}" for note in c.get("limitations") or [])
+    if limitations:
+        lines.append("CV candidate limitations:")
+        lines.extend(f"- {note}" for note in limitations)
     return "\n".join(lines)

@@ -505,6 +505,8 @@ def _normalized_report_sections(
         or _coerce_dict(getattr(job, "reconciliation", {}))
         or _coerce_dict((job.agent or {}).get("reconciliation") if getattr(job, "agent", None) else {})
     )
+    cv_candidates = _cv_candidates_from_manifest(job.evidence_manifest)
+    cv_candidate_reviews = _cv_candidate_reviews_for_report(summary, job.verification or {}, cv_candidates)
 
     confidence = _coerce_dict(patient_block.get("confidence"))
     if not confidence:
@@ -541,6 +543,7 @@ def _normalized_report_sections(
                 _coerce_dict(patient_block.get("reference_reconciliation"))
                 or _coerce_dict(reconciliation.get("patient"))
             ),
+            "cv_candidate_review": _coerce_dict(patient_block.get("cv_candidate_review")),
             "disclaimer": patient_block.get("disclaimer") or REPORT_DISCLAIMER,
         },
         "clinician": {
@@ -551,8 +554,11 @@ def _normalized_report_sections(
             "confidence_summary": summary.get("confidence_summary") or interpretation_dict.get("confidence_summary", ""),
             "calibration_status": calibration_status,
             "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")),
+            "cv_candidate_reviews": cv_candidate_reviews,
         },
         "findings": findings,
+        "cv_candidates": cv_candidates,
+        "cv_candidate_reviews": cv_candidate_reviews,
         "confidence": confidence,
         "assets": {
             "figures": figures,
@@ -562,6 +568,7 @@ def _normalized_report_sections(
                 "clinical_available": bool(clinical_pdf),
             },
             "evidence": job.evidence_manifest or {},
+            "cv_candidates": cv_candidates,
             "artifacts": job.artifact_registry or {},
             "artifact_qa": job.artifact_qa or {},
             "reconciliation": reconciliation,
@@ -595,6 +602,14 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
     evidence = _read_job_json(job_id, "work/evidence/evidence_manifest.json")
     artifact_registry = _read_job_json(job_id, "work/artifacts/artifact_registry.json")
     artifact_qa = _read_job_json(job_id, "work/artifacts/artifact_qa.json")
+    cv_candidates = _cv_candidates_from_manifest(evidence or (out.get("assets") or {}).get("evidence") or {})
+    if not cv_candidates:
+        cv_candidates = [dict(c) for c in _coerce_list(out.get("cv_candidates")) if isinstance(c, dict)]
+    cv_candidate_reviews = _cv_candidate_reviews_for_report(
+        summary,
+        _coerce_dict(out.get("verification")),
+        cv_candidates,
+    ) or _normalize_cv_candidate_reviews(out.get("cv_candidate_reviews"), cv_candidates)
     reconciliation = (
         _coerce_dict(out.get("reconciliation"))
         or _coerce_dict(summary.get("reconciliation"))
@@ -636,6 +651,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             "what_it_means": _coerce_list(patient_block.get("what_it_means")),
             "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
             "reference_reconciliation": _coerce_dict(patient_block.get("reference_reconciliation")),
+            "cv_candidate_review": _coerce_dict(patient_block.get("cv_candidate_review")),
             "disclaimer": patient_block.get("disclaimer") or out.get("disclaimer") or REPORT_DISCLAIMER,
         })
         out["clinician"] = _fill_missing_dict_values(out.get("clinician"), {
@@ -646,6 +662,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             "confidence_summary": summary.get("confidence_summary") or (out.get("interpretation") or {}).get("confidence_summary", ""),
             "calibration_status": out.get("calibration_status") or m.get("calibration_status", "unknown"),
             "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")) if reconciliation else {},
+            "cv_candidate_reviews": cv_candidate_reviews,
         })
         if not out.get("findings") and normalized_findings:
             out["findings"] = normalized_findings
@@ -657,10 +674,13 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         pdf_assets["clinical_available"] = bool(pdf_assets.get("clinical_available") or out["clinical_pdf_available"])
         assets["pdf"] = pdf_assets
         assets.setdefault("evidence", evidence)
+        assets.setdefault("cv_candidates", cv_candidates)
         assets.setdefault("artifacts", artifact_registry)
         assets.setdefault("artifact_qa", artifact_qa)
         assets.setdefault("reconciliation", reconciliation)
         out["assets"] = assets
+        out["cv_candidates"] = cv_candidates
+        out["cv_candidate_reviews"] = cv_candidate_reviews
         return out
 
     out["study"] = _fill_missing_dict_values(out.get("study"), {
@@ -683,6 +703,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         "what_it_means": _coerce_list(patient_block.get("what_it_means")),
         "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
         "reference_reconciliation": _coerce_dict(patient_block.get("reference_reconciliation")),
+        "cv_candidate_review": _coerce_dict(patient_block.get("cv_candidate_review")),
         "disclaimer": patient_block.get("disclaimer") or out.get("disclaimer") or REPORT_DISCLAIMER,
     })
     out["clinician"] = _fill_missing_dict_values(out.get("clinician"), {
@@ -693,6 +714,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         "confidence_summary": summary.get("confidence_summary") or (out.get("interpretation") or {}).get("confidence_summary", ""),
         "calibration_status": out.get("calibration_status", "unknown"),
         "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")) if reconciliation else {},
+        "cv_candidate_reviews": cv_candidate_reviews,
     })
     if not out.get("findings"):
         out["findings"] = normalized_findings
@@ -705,14 +727,18 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             "clinical_available": out["clinical_pdf_available"],
         },
         "evidence": evidence,
+        "cv_candidates": cv_candidates,
         "artifacts": artifact_registry,
         "artifact_qa": artifact_qa,
         "reconciliation": reconciliation,
     })
     out["assets"].setdefault("evidence", evidence)
+    out["assets"].setdefault("cv_candidates", cv_candidates)
     out["assets"].setdefault("artifacts", artifact_registry)
     out["assets"].setdefault("artifact_qa", artifact_qa)
     out["assets"].setdefault("reconciliation", reconciliation)
+    out["cv_candidates"] = cv_candidates
+    out["cv_candidate_reviews"] = cv_candidate_reviews
     return out
 
 
@@ -746,6 +772,8 @@ def _prepare_evidence_pack(job: "AnalysisJob", study_root: Optional[str] = None)
             manifest["study"]["input_type"] = "image_export"
             manifest["study"]["calibrated"] = False
             manifest["study"]["calibration_reason"] = "Original upload was an image export without trustworthy scale metadata"
+            manifest["cv_candidates"] = []
+            manifest["cv_candidate_limitations"] = ["CV geometry candidates disabled for uncalibrated image-export uploads."]
             if "Image-export upload: precise measurements and pinpoint markers are disabled." not in manifest["limitations"]:
                 manifest["limitations"].append("Image-export upload: precise measurements and pinpoint markers are disabled.")
 
@@ -756,6 +784,9 @@ def _prepare_evidence_pack(job: "AnalysisJob", study_root: Optional[str] = None)
             manifest["study"]["subregion"] = m.get("anatomy_subregion", manifest["study"].get("subregion", ""))
             manifest["study"]["modality"] = m.get("modality", manifest["study"].get("modality", ""))
         Path(pack.manifest_path).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        if job.measurements is not None:
+            job.measurements["cv_candidates"] = manifest.get("cv_candidates", [])
+            job.measurements["cv_candidate_limitations"] = manifest.get("cv_candidate_limitations", [])
         job.evidence_manifest = manifest
         return manifest
     except Exception as e:
@@ -775,6 +806,8 @@ def _prepare_evidence_pack(job: "AnalysisJob", study_root: Optional[str] = None)
             },
             "series": [],
             "selected_images": [],
+            "cv_candidates": [],
+            "cv_candidate_limitations": [f"EvidencePack build failed: {type(e).__name__}"],
             "limitations": [f"EvidencePack build failed: {type(e).__name__}"],
         }
         return job.evidence_manifest
@@ -795,6 +828,64 @@ def _finding_evidence_refs(finding: dict) -> list[str]:
         return [str(v) for v in val if str(v).strip()]
     if isinstance(val, str) and val.strip():
         return [val.strip()]
+    return []
+
+
+CV_CANDIDATE_STATUSES = {"supported", "not_supported", "cannot_assess", "localization_wrong"}
+
+
+def _cv_candidates_from_manifest(manifest: Optional[dict]) -> list[dict]:
+    return [dict(c) for c in _coerce_list((manifest or {}).get("cv_candidates")) if isinstance(c, dict)]
+
+
+def _normalize_cv_candidate_reviews(value, candidates: Optional[list[dict]] = None) -> list[dict]:
+    candidate_map = {
+        str(c.get("candidate_id")): c
+        for c in (candidates or [])
+        if isinstance(c, dict) and c.get("candidate_id")
+    }
+    out = []
+    for row in _coerce_list(value):
+        if not isinstance(row, dict):
+            continue
+        candidate_id = str(row.get("candidate_id") or "").strip()
+        if not candidate_id:
+            continue
+        status = str(row.get("status") or "").strip().lower()
+        if status not in CV_CANDIDATE_STATUSES:
+            status = "cannot_assess"
+        refs = row.get("evidence_refs_used") or row.get("evidence_refs") or []
+        if isinstance(refs, str):
+            refs = [refs] if refs.strip() else []
+        elif not isinstance(refs, list):
+            refs = []
+        candidate = candidate_map.get(candidate_id, {})
+        out.append({
+            "candidate_id": candidate_id,
+            "status": status,
+            "evidence_refs_used": [str(ref) for ref in refs if str(ref).strip()],
+            "short_reason": str(row.get("short_reason") or row.get("reason") or "").strip(),
+            "patient_wording": str(row.get("patient_wording") or "").strip(),
+            "clinician_wording": str(row.get("clinician_wording") or "").strip(),
+            "level": row.get("level") or candidate.get("level", ""),
+            "side": row.get("side") or candidate.get("side", ""),
+            "candidate_type": row.get("candidate_type") or candidate.get("candidate_type", ""),
+            "geometry_confidence": candidate.get("geometry_confidence"),
+            "registration_confidence": candidate.get("registration_confidence"),
+            "artifact_trust": _coerce_dict(candidate.get("artifact_trust")),
+        })
+    return out
+
+
+def _cv_candidate_reviews_for_report(summary: dict, verification: dict, candidates: list[dict]) -> list[dict]:
+    sources = [
+        summary.get("cv_candidate_reviews") if isinstance(summary, dict) else None,
+        verification.get("cv_candidate_reviews") if isinstance(verification, dict) else None,
+    ]
+    for source in sources:
+        rows = _normalize_cv_candidate_reviews(source, candidates)
+        if rows:
+            return rows
     return []
 
 
@@ -2356,8 +2447,13 @@ async def _run_agent_pipeline(
             "evidence_pack": {
                 "study": (evidence_manifest or {}).get("study", {}),
                 "selected_image_count": len((evidence_manifest or {}).get("selected_images", [])),
+                "cv_candidate_count": len((evidence_manifest or {}).get("cv_candidates", [])),
+                "cv_candidates": (evidence_manifest or {}).get("cv_candidates", []),
+                "cv_candidate_limitations": (evidence_manifest or {}).get("cv_candidate_limitations", []),
                 "limitations": (evidence_manifest or {}).get("limitations", []),
             },
+            "cv_candidates": (evidence_manifest or {}).get("cv_candidates", []),
+            "cv_candidate_limitations": (evidence_manifest or {}).get("cv_candidate_limitations", []),
         }
         _run_artifact_qa(job)
         if result.success and (reference_report_path or reference_report_text):
@@ -2618,8 +2714,13 @@ async def _run_analysis_pipeline(
         job.measurements["evidence_pack"] = {
             "study": (evidence_manifest or {}).get("study", {}),
             "selected_image_count": len((evidence_manifest or {}).get("selected_images", [])),
+            "cv_candidate_count": len((evidence_manifest or {}).get("cv_candidates", [])),
+            "cv_candidates": (evidence_manifest or {}).get("cv_candidates", []),
+            "cv_candidate_limitations": (evidence_manifest or {}).get("cv_candidate_limitations", []),
             "limitations": (evidence_manifest or {}).get("limitations", []),
         }
+        job.measurements["cv_candidates"] = (evidence_manifest or {}).get("cv_candidates", [])
+        job.measurements["cv_candidate_limitations"] = (evidence_manifest or {}).get("cv_candidate_limitations", [])
 
         # Phase 4: Claude interpretation
         job.status = "interpreting"
@@ -2770,6 +2871,7 @@ async def _run_analysis_pipeline(
                 "audit": verified.audit,
                 "audit_failures": verified.audit_failures,
                 "annotation_review": verified.annotation_review,
+                "cv_candidate_reviews": verified.cv_candidate_reviews,
                 "corrections": verified.corrections,
                 "missed_findings": verified.missed_findings,
                 "annotation_3c_failed": engine_annotation_failed,

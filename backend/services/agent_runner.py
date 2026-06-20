@@ -28,9 +28,9 @@ from typing import Optional
 from dataclasses import dataclass, field
 
 try:
-    from services.evidence_pack import load_manifest, manifest_text_summary
+    from services.evidence_pack import cv_candidate_text_summary, load_manifest, manifest_text_summary
 except ImportError:
-    from backend.services.evidence_pack import load_manifest, manifest_text_summary
+    from backend.services.evidence_pack import cv_candidate_text_summary, load_manifest, manifest_text_summary
 
 logger = logging.getLogger("mika.agent")
 
@@ -495,6 +495,34 @@ def _as_dict(v) -> dict:
     return v if isinstance(v, dict) else {}
 
 
+CV_CANDIDATE_STATUSES = {"supported", "not_supported", "cannot_assess", "localization_wrong"}
+
+
+def _normalize_cv_candidate_reviews(value) -> list[dict]:
+    rows = []
+    for row in _as_list_dict(value):
+        candidate_id = str(row.get("candidate_id") or "").strip()
+        if not candidate_id:
+            continue
+        status = str(row.get("status") or "").strip().lower()
+        if status not in CV_CANDIDATE_STATUSES:
+            status = "cannot_assess"
+        refs = row.get("evidence_refs_used") or row.get("evidence_refs") or []
+        if isinstance(refs, str):
+            refs = [refs] if refs.strip() else []
+        elif not isinstance(refs, list):
+            refs = []
+        rows.append({
+            "candidate_id": candidate_id,
+            "status": status,
+            "evidence_refs_used": [str(ref) for ref in refs if str(ref).strip()],
+            "short_reason": str(row.get("short_reason") or row.get("reason") or "").strip(),
+            "patient_wording": _plain_patient_string(row.get("patient_wording") or ""),
+            "clinician_wording": str(row.get("clinician_wording") or "").strip(),
+        })
+    return rows
+
+
 def _plain_patient_string(text: str) -> str:
     """Keep image-export limitations honest without leaking clinician calibration jargon."""
     out = str(text or "")
@@ -542,6 +570,7 @@ def _normalize_summary(summary) -> dict:
     # Top-level technical fields (clinician PDF / SPA consumers).
     s["impression"] = _as_list_str(s.get("impression"))
     s["findings"] = _as_list_dict(s.get("findings"))
+    s["cv_candidate_reviews"] = _normalize_cv_candidate_reviews(s.get("cv_candidate_reviews"))
     if not isinstance(s.get("discrepancies"), list):
         s["discrepancies"] = _as_list_str(s.get("discrepancies"))
 
@@ -788,8 +817,10 @@ class AgentRunner:
             try:
                 evidence_manifest = load_manifest(evidence_manifest_path)
                 evidence_summary = manifest_text_summary(evidence_manifest)
+                cv_candidate_summary = cv_candidate_text_summary(evidence_manifest)
             except Exception as e:
                 evidence_summary = f"Evidence manifest could not be read before prompt assembly: {e}"
+                cv_candidate_summary = ""
             evidence_block = f"""
 EVIDENCE PACK - mandatory primary review set:
   Manifest path: {evidence_manifest_path}
@@ -807,6 +838,30 @@ Rules for this evidence pack:
     Tier D / cannot assess for that element. Do not guess and do not place a precise marker.
   - On uncalibrated image exports, do not report precise measurements and do not use pinpoint
     annotations. Use region boxes only when location evidence is adequate.
+"""
+            if cv_candidate_summary:
+                evidence_block += f"""
+
+CV EVIDENCE CANDIDATES - separate localization review, not findings:
+{cv_candidate_summary}
+
+Rules for CV candidates:
+  - Review each candidate separately from the blind findings and write a top-level
+    summary.json field named cv_candidate_reviews.
+  - For every candidate, output exactly one status from:
+    supported, not_supported, cannot_assess, localization_wrong.
+  - Required fields per row:
+    candidate_id, status, evidence_refs_used, short_reason, patient_wording, clinician_wording.
+  - supported means the candidate localization/ROI is visually supported by the images you reviewed.
+    It does NOT by itself confirm scar, recurrent disc, nerve-root encasement, or any diagnosis.
+  - not_supported means you reviewed the candidate region and did not see supporting visual evidence.
+  - cannot_assess means the sequence, registration, slices, image quality, or evidence set is insufficient.
+  - localization_wrong means the candidate level, side, slice, or ROI is wrong.
+  - If a candidate is rejected or cannot be assessed, explain why in short_reason.
+  - Do not upgrade a CV candidate into a confirmed finding unless the actual images independently
+    support that finding and you cite image evidence. Preserve the blind read separately.
+  - If artifact_trust says body_marker/proof_overlay/pinpoint_marker is false, do not create
+    a body-map marker, pinpoint annotation, or proof overlay from that candidate alone.
 """
 
         # Anatomy-specific vs general wording (so a non-spine study is NOT forced through spine logic).
@@ -906,6 +961,14 @@ Produce:
      figures [{{file, caption}}], self_audit) AND add a top-level "patient" block — this is
      what the user actually sees, so write it in PLAIN language with NO tier letters, NO pixel
      intensities, NO audit trail, NO calibration/DICOM jargon:
+     If CV evidence candidates were provided, summary.json MUST also include:
+     "cv_candidate_reviews": [
+       {{"candidate_id": "<candidate_id>", "status": "supported|not_supported|cannot_assess|localization_wrong",
+         "evidence_refs_used": ["<series/slice or evidence refs used>", ...],
+         "short_reason": "why the candidate was accepted, rejected, cannot be assessed, or judged wrong",
+         "patient_wording": "plain-language sentence if useful; no jargon",
+         "clinician_wording": "technical localization/pathology review note"}}
+     ]
      "patient": {{
        "patient": {{"name","age","sex"}},
        "study": {{"body_part" (plain, e.g. "Lower-back (lumbar) spine"), "modality" (e.g.

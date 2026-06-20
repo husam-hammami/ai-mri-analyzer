@@ -40,6 +40,7 @@ class VerifiedReport:
     missed_findings: list = field(default_factory=list)
     audit: dict = field(default_factory=dict)            # 12-item self-audit pass/fail
     annotation_review: list = field(default_factory=list)  # per-figure 3D re-read
+    cv_candidate_reviews: list = field(default_factory=list)
     quality_score: int = 0
     quality_notes: str = ""
     parsed_ok: bool = False                              # False if JSON parse failed
@@ -71,6 +72,8 @@ figure inventory. Run the 12-item audit and fix any item that fails.
 ```json
 {measurements}
 ```
+
+{cv_candidate_block}
 
 ## ANNOTATION AUDIT TRAIL (per arrow tip: structure, intensity, expected range, status)
 ```json
@@ -114,6 +117,11 @@ figure inventory. Run the 12-item audit and fix any item that fails.
 - When in doubt, the LESS severe interpretation wins.
 - Preserve the initial report's JSON structure in "verified_findings"; only change values
   where a correction is warranted.
+- CV evidence candidates are localization/measurement evidence only. Verify each candidate
+  separately in "cv_candidate_reviews" using exactly one of: supported, not_supported,
+  cannot_assess, localization_wrong. Reject wrong level, side, slice, or ROI with
+  localization_wrong. Do not convert a candidate into a final finding unless the images
+  independently support it.
 
 {spine_block}
 
@@ -128,6 +136,16 @@ figure inventory. Run the 12-item audit and fix any item that fails.
     }},
     "annotation_review": [
         {{"figure": "Figure 1", "arrow_on_target": true, "level_label_correct": true, "laterality_correct": true, "note": ""}}
+    ],
+    "cv_candidate_reviews": [
+        {{
+            "candidate_id": "candidate id",
+            "status": "supported | not_supported | cannot_assess | localization_wrong",
+            "evidence_refs_used": ["refs reviewed"],
+            "short_reason": "brief localization/pathology review reason",
+            "patient_wording": "plain-language wording if useful",
+            "clinician_wording": "technical review wording"
+        }}
     ],
     "corrections": [
         {{"finding": "L4-L5 disc herniation", "action": "downgraded", "reason": "Signal more consistent with Pfirrmann II on review"}}
@@ -217,6 +235,7 @@ class VerificationPass:
         verification_text = VERIFICATION_PROMPT.format(
             initial_report=json.dumps(initial_report, indent=2),
             measurements=json.dumps(measurements_json, indent=2),
+            cv_candidate_block=self._cv_candidate_block(measurements_json),
             annotation_audit=json.dumps(annotation_audit or [], indent=2),
             figure_inventory=figure_inventory_text,
             prior_context=prior_context,
@@ -271,6 +290,7 @@ class VerificationPass:
             result.missed_findings = parsed.get("missed_findings", [])
             result.audit = parsed.get("audit", {})
             result.annotation_review = parsed.get("annotation_review", [])
+            result.cv_candidate_reviews = self._normalize_cv_candidate_reviews(parsed.get("cv_candidate_reviews"))
             result.quality_score = parsed.get("quality_score", 0)
             result.quality_notes = parsed.get("quality_notes", "")
             result.parsed_ok = True
@@ -285,3 +305,50 @@ class VerificationPass:
             result.parsed_ok = False
 
         return result
+
+    @staticmethod
+    def _cv_candidate_block(measurements_json: dict) -> str:
+        candidates = []
+        if isinstance(measurements_json, dict):
+            candidates = (
+                measurements_json.get("cv_candidates")
+                or ((measurements_json.get("evidence_pack") or {}).get("cv_candidates") if isinstance(measurements_json.get("evidence_pack"), dict) else [])
+                or []
+            )
+        if not candidates:
+            return "## CV EVIDENCE CANDIDATES\n(no CV candidates provided)"
+        return (
+            "## CV EVIDENCE CANDIDATES - localization review only\n"
+            "These candidates do not confirm pathology and must not overwrite the blind read.\n"
+            "Review each candidate for level, side, slice/series, ROI, and visual support.\n"
+            "```json\n"
+            f"{json.dumps(candidates, indent=2)}\n"
+            "```"
+        )
+
+    @staticmethod
+    def _normalize_cv_candidate_reviews(value) -> list:
+        allowed = {"supported", "not_supported", "cannot_assess", "localization_wrong"}
+        if not isinstance(value, list):
+            return []
+        out = []
+        for row in value:
+            if not isinstance(row, dict) or not row.get("candidate_id"):
+                continue
+            status = str(row.get("status") or "").lower()
+            if status not in allowed:
+                status = "cannot_assess"
+            refs = row.get("evidence_refs_used") or []
+            if isinstance(refs, str):
+                refs = [refs] if refs.strip() else []
+            elif not isinstance(refs, list):
+                refs = []
+            out.append({
+                "candidate_id": str(row.get("candidate_id")),
+                "status": status,
+                "evidence_refs_used": [str(ref) for ref in refs if str(ref).strip()],
+                "short_reason": str(row.get("short_reason") or row.get("reason") or ""),
+                "patient_wording": str(row.get("patient_wording") or ""),
+                "clinician_wording": str(row.get("clinician_wording") or ""),
+            })
+        return out
