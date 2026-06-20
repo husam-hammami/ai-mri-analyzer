@@ -18,6 +18,7 @@ import os
 import json
 import shutil
 import logging
+import re
 import subprocess
 import threading
 import time
@@ -494,6 +495,38 @@ def _as_dict(v) -> dict:
     return v if isinstance(v, dict) else {}
 
 
+def _plain_patient_string(text: str) -> str:
+    """Keep image-export limitations honest without leaking clinician calibration jargon."""
+    out = str(text or "")
+    replacements = [
+        (r"\bMeasurements are not calibrated\.", "Exact measurements may not be reliable from these exported pictures."),
+        (r"\bmeasurements are not calibrated\b", "exact measurements may not be reliable from these exported pictures"),
+        (r"\buncalibrated picture exports?\b", "exported pictures without scale information"),
+        (r"\buncalibrated image exports?\b", "exported pictures without scale information"),
+        (r"\buncalibrated exported images?\b", "exported pictures without scale information"),
+        (r"\buncalibrated\b", "without scale information"),
+        (r"\bnot calibrated\b", "not based on a reliable scale"),
+        (r"\bcalibrated measurements?\b", "exact measurements"),
+        (r"\bcalibration\b", "scale information"),
+        (r"\bDICOM\b", "scan file"),
+        (r"\bPixelSpacing\b", "scale information"),
+        (r"\bimage-export MRI\b", "MRI made from exported pictures"),
+    ]
+    for pattern, replacement in replacements:
+        out = re.sub(pattern, replacement, out, flags=re.IGNORECASE)
+    return out
+
+
+def _plain_patient_copy(value):
+    if isinstance(value, dict):
+        return {k: _plain_patient_copy(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_plain_patient_copy(v) for v in value]
+    if isinstance(value, str):
+        return _plain_patient_string(value)
+    return value
+
+
 def _normalize_summary(summary) -> dict:
     """Fix 2 — shape-only normalization of the agent's summary.json so a string/null where the
     report builder expects a list/dict can't garble or crash the PDF (the char-by-char
@@ -528,7 +561,7 @@ def _normalize_summary(summary) -> dict:
         p["bottom_line"] = str(p.get("bottom_line") or "")
     if not isinstance(p.get("disclaimer"), str):
         p["disclaimer"] = str(p.get("disclaimer") or "")
-    s["patient"] = p
+    s["patient"] = _plain_patient_copy(p)
     return s
 
 
@@ -796,7 +829,13 @@ Rules for this evidence pack:
                 "non-enhancing tissue encases, displaces, or impinges the descending S1/L5 nerve root, "
                 "and cite the exact side, level, series/image evidence, and confidence tier. Do not "
                 "state 'no abnormal enhancement' until the operative bed, lateral recesses, foramina, "
-                "and nerve roots have been compared on pre/post fat-saturated images.\n")
+                "and nerve roots have been compared on pre/post fat-saturated images. Do not make a "
+                "negative 'no prior surgery', 'no epidural fibrosis/scar', 'no residual/recurrent disc', "
+                "or 'no root impingement' call from sagittal images or sparse representative samples "
+                "alone: for lower-lumbar/L5-S1 negatives, inspect the full axial T1/T2 and matched "
+                "pre/post contrast stacks, opening the raw DICOM files if the evidence pack does not "
+                "contain the exact slice. If that full axial comparison is not completed, report the "
+                "post-surgical/root assessment as limited rather than negative.\n")
         else:
             ref_fig = "Figure 0 = a labelled overview/reference figure that orients the rest of the figures"
             location_rule = ("Confirm the anatomical location of every mark against the labelled reference "

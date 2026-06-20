@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 import app as mika_app
-from services.agent_runner import AgentRunner
+from services.agent_runner import AgentRunner, _normalize_summary
 from services.artifacts import ArtifactQaGate, ArtifactRegistry
 from validation.run_local_evidence_validation import ValidationCase, _validate_manifest, discover_cases
 
@@ -203,3 +203,43 @@ def test_spine_agent_prompt_requires_post_surgical_contrast_checklist(tmp_path):
     assert "residual or recurrent disc" in prompt
     assert "descending S1/L5 nerve root" in prompt
     assert "pre/post fat-saturated images" in prompt
+    assert "sparse representative samples alone" in prompt
+    assert "full axial T1/T2 and matched pre/post contrast stacks" in prompt
+
+
+def test_patient_summary_uses_plain_export_limitations_without_changing_clinician_terms():
+    summary = {
+        "findings": [
+            {
+                "text": "Technical finding.",
+                "tier": "C",
+                "calibration_basis": "DICOM PixelSpacing absent; uncalibrated image export.",
+            }
+        ],
+        "patient": {
+            "bottom_line": "This was read from uncalibrated picture exports.",
+            "confidence": {
+                "label": "Moderate",
+                "note": "Measurements are not calibrated.",
+            },
+            "findings": [
+                {
+                    "plain": "The exported images show a likely disc bulge.",
+                    "certainty": "Likely",
+                    "caption": "Uncalibrated image export; no exact measurement.",
+                }
+            ],
+            "what_it_means": ["These were picture exports without calibration metadata."],
+            "disclaimer": "This is an AI-generated analysis of an image-export MRI. Measurements are not calibrated.",
+        },
+    }
+
+    normalized = _normalize_summary(summary)
+    patient_text = str(normalized["patient"]).lower()
+
+    assert "uncalibrated" not in patient_text
+    assert "calibration" not in patient_text
+    assert "dicom" not in patient_text
+    assert "pixelspacing" not in patient_text
+    assert "scale information" in patient_text
+    assert normalized["findings"][0]["calibration_basis"] == "DICOM PixelSpacing absent; uncalibrated image export."

@@ -197,6 +197,48 @@ def test_evidence_pack_selects_40_to_80_images_and_excludes_localizers(tmp_path)
     assert manifest["study"]["localizer_excluded_count"] == 12
 
 
+def test_evidence_pack_prioritizes_matched_axial_contrast_pairs_within_cap(tmp_path):
+    pydicom = pytest.importorskip("pydicom")
+    study = tmp_path / "contrast_lumbar"
+    specs = [
+        ("sag", "Sag T2", 60),
+        ("cor", "Cor STIR", 60),
+        ("ax_t2", "t2_tse_tra_msma_L SPINE", 31),
+        ("pre", "t1_vibe_fs_tra", 64),
+        ("post", "t1_vibe_fs_tra-CONT", 64),
+    ]
+    for folder, description, count in specs:
+        uid = pydicom.uid.generate_uid()
+        for i in range(1, count + 1):
+            _write_dicom(
+                study / folder / f"{i:03d}.dcm",
+                series_uid=uid,
+                series_description=description,
+                instance_number=i,
+            )
+
+    manifest = EvidencePackBuilder(study, tmp_path / "work").build().to_manifest()
+
+    assert len(manifest["selected_images"]) == 80
+    series_by_name = {series["name"]: series["series_id"] for series in manifest["series"]}
+
+    def selected_indices(name: str) -> list[int]:
+        sid = series_by_name[name]
+        return [
+            item["image_index"]
+            for item in manifest["selected_images"]
+            if item["series_id"] == sid
+        ]
+
+    pre_indices = selected_indices("t1_vibe_fs_tra")
+    post_indices = selected_indices("t1_vibe_fs_tra-CONT")
+    sag_indices = selected_indices("Sag T2")
+
+    assert pre_indices == post_indices
+    assert len(post_indices) >= 20
+    assert len(post_indices) > len(sag_indices)
+
+
 def test_artifact_gate_suppresses_proof_and_marker_without_evidence(tmp_path):
     work = tmp_path / "work"
     _write_png(work / "report" / "proof.png")
