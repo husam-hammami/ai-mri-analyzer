@@ -19,6 +19,9 @@ import json
 import shutil
 import logging
 import subprocess
+import threading
+import time
+import uuid
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
@@ -70,6 +73,64 @@ MODALITY_READING = {
 }
 
 
+def _resolve_claude_bin(claude_bin: Optional[str] = None) -> Optional[str]:
+    binp = claude_bin or os.environ.get("MIKA_CLAUDE_BIN") or shutil.which("claude") or "claude"
+    return shutil.which(binp) or (binp if os.path.exists(binp) else None)
+
+
+def _subscription_auth_env() -> dict:
+    env = dict(os.environ)
+    # The normal MIKA path is the user's Claude subscription login, not API-key billing.
+    env.pop("ANTHROPIC_API_KEY", None)
+    env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    return env
+
+
+def _classify_auth_result(returncode: int, stdout: str, stderr: str) -> dict:
+    raw = (stdout or "").strip()
+    err = (stderr or "").strip()
+    combined = f"{raw}\n{err}".strip()
+    info = {
+        "connected": False,
+        "auth_state": "signed_out",
+        "subscription_type": None,
+        "error_code": "CLAUDE_NOT_SIGNED_IN",
+        "error_message": "Sign in with Claude before starting the read.",
+    }
+    brace = raw.find("{")
+    if brace >= 0:
+        try:
+            data = json.loads(raw[brace:])
+            logged_in = bool(data.get("loggedIn") or data.get("logged_in") or data.get("authenticated"))
+            if logged_in:
+                return {
+                    "connected": True,
+                    "auth_state": "connected",
+                    "subscription_type": data.get("subscriptionType") or data.get("subscription_type"),
+                    "error_code": None,
+                    "error_message": None,
+                }
+            msg = data.get("error") or data.get("message")
+            if msg:
+                info["error_message"] = str(msg)
+        except Exception:
+            pass
+    low = combined.lower()
+    if any(token in low for token in ("not logged in", "not signed in", "login required", "please log in")):
+        return info
+    if "logged in" in low or "authenticated" in low or "signed in" in low:
+        return {
+            **info,
+            "connected": True,
+            "auth_state": "connected",
+            "error_code": None,
+            "error_message": None,
+        }
+    if returncode != 0 and combined:
+        info["error_message"] = combined[:500]
+    return info
+
+
 def detect_study_modality(study_dir) -> str:
     """Read the DICOM Modality tag (0008,0060) from a few files so routing/prompts match the
     actual modality. Returns a code like 'MR', 'CT', 'CR', 'DX', 'US', ... or 'MR' as the
@@ -97,6 +158,234 @@ def detect_study_modality(study_dir) -> str:
     return max(counts.items(), key=lambda kv: kv[1])[0]
 
 
+@dataclass
+class ClaudeAuthSession:
+    session_id: str
+    mode: str
+    claude_bin: str
+    started_at: float
+    state: str = "pending"
+    message: str = ""
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    needs_code: bool = False
+    process: Optional[subprocess.Popen] = field(default=None, repr=False)
+    stdout_lines: list = field(default_factory=list, repr=False)
+    stderr_lines: list = field(default_factory=list, repr=False)
+
+
+class ClaudeAuthSessionManager:
+    """In-memory auth sessions for the desktop login flow."""
+
+    def __init__(self) -> None:
+        self._sessions: dict[str, ClaudeAuthSession] = {}
+        self._lock = threading.Lock()
+
+    def _append_pipe(self, session: ClaudeAuthSession, pipe, attr: str) -> None:
+        try:
+            for line in iter(pipe.readline, ""):
+                if not line:
+                    break
+                with self._lock:
+                    getattr(session, attr).append(line)
+        except Exception:
+            pass
+        finally:
+            try:
+                pipe.close()
+            except Exception:
+                pass
+
+    def _availability(self, claude_bin: Optional[str] = None) -> dict:
+        return AgentRunner(claude_bin=claude_bin).readiness_probe()
+
+    def _snapshot(self, session: ClaudeAuthSession, availability: Optional[dict] = None) -> dict:
+        availability = availability or self._availability(session.claude_bin)
+        connected = bool(availability.get("connected"))
+        if connected:
+            session.state = "connected"
+            session.error_code = None
+            session.error_message = None
+            session.needs_code = False
+            session.message = "Claude is connected."
+            self._terminate(session)
+        elif session.state not in ("cancelled", "error", "code_required"):
+            proc = session.process
+            output = "\n".join(session.stdout_lines + session.stderr_lines)
+            low = output.lower()
+            if session.mode == "code" or any(token in low for token in ("paste", "code", "one-time", "verification")):
+                session.state = "code_required"
+                session.needs_code = True
+                session.message = "Paste the Claude sign-in code to finish connecting."
+            if proc and proc.poll() is not None and session.state not in ("code_required", "connected"):
+                session.state = "error"
+                session.error_code = availability.get("error_code") or "CLAUDE_AUTH_FAILED"
+                session.error_message = availability.get("error_message") or output[-500:] or "Claude sign-in did not complete."
+                session.message = session.error_message
+        return {
+            "session_id": session.session_id,
+            "started": session.state not in ("error", "cancelled"),
+            "mode": session.mode,
+            "auth_state": session.state,
+            "connected": connected,
+            "needs_code": session.needs_code,
+            "message": session.message,
+            "error_code": session.error_code or availability.get("error_code"),
+            "error_message": session.error_message or availability.get("error_message"),
+            "subscription_type": availability.get("subscription_type"),
+            "availability": availability,
+        }
+
+    def _terminate(self, session: ClaudeAuthSession) -> None:
+        proc = session.process
+        if not proc or proc.poll() is not None:
+            return
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+
+    def start(self, mode: str = "browser", claude_bin: Optional[str] = None) -> dict:
+        mode = "code" if mode in ("code", "console") else "browser"
+        resolved = _resolve_claude_bin(claude_bin)
+        if not resolved:
+            return {
+                "started": False,
+                "auth_state": "missing_cli",
+                "connected": False,
+                "error_code": "CLAUDE_CLI_MISSING",
+                "error_message": "Claude is not installed or bundled with this MIKA build.",
+                "message": "Claude is not installed or bundled with this MIKA build.",
+            }
+
+        availability = self._availability(resolved)
+        if availability.get("connected"):
+            session = ClaudeAuthSession(
+                session_id=str(uuid.uuid4())[:8],
+                mode=mode,
+                claude_bin=resolved,
+                started_at=time.time(),
+                state="connected",
+                message="Claude is already connected.",
+            )
+            with self._lock:
+                self._sessions[session.session_id] = session
+            return self._snapshot(session, availability)
+
+        args = [resolved, "auth", "login", "--console" if mode == "code" else "--claudeai"]
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+        session = ClaudeAuthSession(
+            session_id=str(uuid.uuid4())[:8],
+            mode=mode,
+            claude_bin=resolved,
+            started_at=time.time(),
+            needs_code=mode == "code",
+            state="code_required" if mode == "code" else "pending",
+            message=("Paste the Claude sign-in code to finish connecting."
+                     if mode == "code" else "A browser window is opening. Sign in to Claude there."),
+        )
+        try:
+            proc = subprocess.Popen(
+                args,
+                env=_subscription_auth_env(),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                bufsize=1,
+                creationflags=creationflags,
+            )
+            session.process = proc
+            if proc.stdout:
+                threading.Thread(target=self._append_pipe, args=(session, proc.stdout, "stdout_lines"), daemon=True).start()
+            if proc.stderr:
+                threading.Thread(target=self._append_pipe, args=(session, proc.stderr, "stderr_lines"), daemon=True).start()
+        except Exception as e:
+            session.state = "error"
+            session.error_code = "CLAUDE_AUTH_START_FAILED"
+            session.error_message = str(e)
+            session.message = str(e)
+        with self._lock:
+            self._sessions[session.session_id] = session
+        return self._snapshot(session, availability)
+
+    def poll(self, session_id: str) -> dict:
+        with self._lock:
+            session = self._sessions.get(session_id)
+        if not session:
+            return {
+                "session_id": session_id,
+                "started": False,
+                "auth_state": "expired",
+                "connected": False,
+                "error_code": "AUTH_SESSION_NOT_FOUND",
+                "error_message": "That sign-in session expired. Start sign-in again.",
+            }
+        return self._snapshot(session)
+
+    def retry(self, session_id: str, mode: str = "browser") -> dict:
+        self.cancel(session_id)
+        return self.start(mode=mode)
+
+    def cancel(self, session_id: str) -> dict:
+        with self._lock:
+            session = self._sessions.get(session_id)
+        if not session:
+            return {
+                "session_id": session_id,
+                "started": False,
+                "auth_state": "cancelled",
+                "connected": False,
+                "message": "Sign-in cancelled.",
+            }
+        self._terminate(session)
+        session.state = "cancelled"
+        session.needs_code = False
+        session.message = "Sign-in cancelled."
+        return self._snapshot(session)
+
+    def submit_code(self, session_id: str, code: str) -> dict:
+        with self._lock:
+            session = self._sessions.get(session_id)
+        if not session:
+            return {
+                "session_id": session_id,
+                "started": False,
+                "auth_state": "expired",
+                "connected": False,
+                "error_code": "AUTH_SESSION_NOT_FOUND",
+                "error_message": "That sign-in session expired. Start sign-in again.",
+            }
+        code = (code or "").strip()
+        if not code:
+            session.state = "code_required"
+            session.needs_code = True
+            session.error_code = "AUTH_CODE_REQUIRED"
+            session.error_message = "Paste the Claude sign-in code."
+            return self._snapshot(session)
+        if not session.process or not session.process.stdin:
+            return self.retry(session_id, mode="code")
+        try:
+            session.process.stdin.write(code + "\n")
+            session.process.stdin.flush()
+            session.state = "pending"
+            session.needs_code = False
+            session.error_code = None
+            session.error_message = None
+            session.message = "Checking the pasted Claude sign-in code..."
+        except Exception as e:
+            session.state = "error"
+            session.error_code = "AUTH_CODE_SUBMIT_FAILED"
+            session.error_message = str(e)
+            session.message = str(e)
+        return self._snapshot(session)
+
+
+AUTH_MANAGER = ClaudeAuthSessionManager()
+
+
 def trigger_claude_login(claude_bin: Optional[str] = None, console: bool = False) -> dict:
     """
     Start the Claude sign-in flow: launches `claude auth login`, which opens the user's
@@ -105,6 +394,7 @@ def trigger_claude_login(claude_bin: Optional[str] = None, console: bool = False
     and the connection becomes ready. Non-blocking: returns immediately; the UI then polls
     /api/agent/availability until `connected` flips true.
     """
+    return AUTH_MANAGER.start(mode="code" if console else "browser", claude_bin=claude_bin)
     binp = claude_bin or os.environ.get("MIKA_CLAUDE_BIN") or shutil.which("claude") or "claude"
     resolved = shutil.which(binp) or (binp if os.path.exists(binp) else None)
     if not resolved:
@@ -262,7 +552,7 @@ class AgentRunner:
 
     def availability(self) -> dict:
         """Report whether the Claude Code CLI is installed and how auth will resolve."""
-        path = shutil.which(self.claude_bin) or (self.claude_bin if os.path.exists(self.claude_bin) else None)
+        path = _resolve_claude_bin(self.claude_bin)
         info = {
             "claude_cli_found": path is not None,
             "claude_bin": path or self.claude_bin,
@@ -272,11 +562,20 @@ class AgentRunner:
             "auth_mode": "subscription (Claude Code login)",
             "connected": False,           # is the host actually signed in to Claude?
             "subscription_type": None,    # e.g. "max", "pro"
+            "auth_state": "missing_cli" if path is None else "signed_out",
+            "error_code": "CLAUDE_CLI_MISSING" if path is None else "CLAUDE_NOT_SIGNED_IN",
+            "error_message": (
+                "Claude is not installed or bundled with this MIKA build."
+                if path is None else "Sign in with Claude before starting the read."
+            ),
         }
         if info["uses_api_key"] and os.environ.get("ANTHROPIC_API_KEY"):
             info["auth_mode"] = "api_key (metered)"
             info["connected"] = True
             info["subscription_type"] = "api"
+            info["auth_state"] = "connected"
+            info["error_code"] = None
+            info["error_message"] = None
         if path:
             try:
                 out = subprocess.run(
@@ -285,21 +584,38 @@ class AgentRunner:
                 info["version"] = (out.stdout or out.stderr).strip().splitlines()[0] if (out.stdout or out.stderr) else None
             except Exception as e:
                 info["version_error"] = str(e)
-            # Real, free login check (no inference): `claude auth status` returns JSON.
-            try:
-                auth = subprocess.run(
-                    [path, "auth", "status"], capture_output=True, text=True, timeout=20
-                )
-                raw = (auth.stdout or "").strip()
-                brace = raw.find("{")
-                if brace >= 0:
-                    data = json.loads(raw[brace:])
-                    info["connected"] = bool(data.get("loggedIn")) or info["connected"]
-                    info["subscription_type"] = data.get("subscriptionType") or info["subscription_type"]
-                elif "logged in" in raw.lower():
-                    info["connected"] = True
-            except Exception as e:
-                info["auth_error"] = str(e)
+            if not info["connected"]:
+                # Real, free login check (no inference): `claude auth status` returns JSON.
+                try:
+                    auth = subprocess.run(
+                        [path, "auth", "status"], capture_output=True, text=True, timeout=20
+                    )
+                    auth_info = _classify_auth_result(auth.returncode, auth.stdout or "", auth.stderr or "")
+                    info.update({k: v for k, v in auth_info.items() if v is not None or k in ("error_code", "error_message")})
+                except Exception as e:
+                    info["auth_error"] = str(e)
+                    info["auth_state"] = "unknown"
+                    info["error_code"] = "CLAUDE_AUTH_STATUS_FAILED"
+                    info["error_message"] = str(e)
+        info["ready"] = bool(info["claude_cli_found"] and info["skill_present"] and info["connected"])
+        return info
+
+    def readiness_probe(self) -> dict:
+        """Cheap preflight for the UI and /api/analyze gate.
+
+        This checks CLI presence, skill presence, and auth status only. It does not invoke
+        an opus/high model run or inspect study images.
+        """
+        info = self.availability()
+        info["preflight"] = {
+            "kind": "claude_auth_status",
+            "uses_model": False,
+            "runs_analysis": False,
+        }
+        if not info.get("skill_present"):
+            info["ready"] = False
+            info["error_code"] = info.get("error_code") or "MIKA_SKILL_MISSING"
+            info["error_message"] = f"MIKA's analysis skill is missing at {SKILL_PATH}."
         return info
 
     # ── Child environment ──
@@ -521,15 +837,21 @@ Produce:
        "findings": [{{"plain": "ONE short bullet (a phrase, not a paragraph)", "certainty": "Confirmed|Likely|Possible",
                      "figure": "<one figure filename>", "caption": "plain caption"}}],
        "change_over_time": {{"points": ["short bullet", ...], "figure": "<longitudinal figure>"}} (omit if single study),
-       "what_it_means": ["short plain bullet, non-prescriptive", ...],
+       "what_it_means": ["plain patient-facing implication: symptoms this can match, why it matters, or what to discuss with the clinician; no measurements, sequence names, tier letters, calibration, or radiology jargon", ...],
        "worth_flagging": ["short plain bullet, e.g. a record discrepancy", ...] (optional),
        "disclaimer": "<the mandatory disclaimer verbatim>"
      }}
-     STYLE: concise PROFESSIONAL BULLET POINTS everywhere except bottom_line (one sentence) -
-     no long paragraphs. Write in a NEUTRAL, IMPERSONAL, PROFESSIONAL register (passive voice
-     where natural, like a radiology report): do NOT use first-person "we/us/our" and avoid
-     "you/your"; plain words, no jargon. Map tiers to plain certainty: Tier A -> "Confirmed",
-     Tier B -> "Likely", Tier C -> "Possible". Choose a sensible overall confidence.
+     Patient copy rules: bottom_line, key_points, findings[].plain, findings[].caption,
+     confidence.note, change_over_time, what_it_means, and worth_flagging are for the patient.
+     They must explain the result in plain language and should never read like a technical
+     interpretation. Keep technical interpretation, differential reasoning, measurements, tiers,
+     modality/sequence details, and audit language in the top-level technical fields and
+     report_clinical.pdf only.
+     STYLE: concise bullets everywhere except bottom_line (one sentence) - no long paragraphs.
+     Write in a neutral, patient-readable register: not chatty, not alarming, no first-person
+     "we/us/our", and avoid "you/your" unless needed for clarity. Map tiers to plain certainty:
+     Tier A -> "Confirmed", Tier B -> "Likely", Tier C -> "Possible". Choose a sensible
+     overall confidence.
 
 When finished, print a single JSON object: {{"pdf": "<path>", "summary": "<path to summary.json>", "figures": [<paths>], "status": "complete"}}.
 """
@@ -547,6 +869,7 @@ When finished, print a single JSON object: {{"pdf": "<path>", "summary": "<path 
         prior_reports: Optional[str] = None,
         task_prompt: Optional[str] = None,   # override the full-report prompt (focused runs)
         require_pdf: bool = True,            # focused runs succeed on figures alone
+        protocol_override: Optional[str] = None,  # use this protocol text instead of the anatomy master (experiment knob; default None = live behavior)
     ) -> AgentResult:
         study = Path(study_dir)
         work = Path(work_dir)
@@ -564,17 +887,22 @@ When finished, print a single JSON object: {{"pdf": "<path>", "summary": "<path 
                                    error=f"Vendored spine skill not found at {SKILL_PATH}")
             protocol_ref = SKILL_PATH
         else:
-            # Non-spine: write that anatomy's master prompt as the protocol the agent follows.
-            try:
-                from prompts import get_master_prompt
-            except ImportError:
-                from backend.prompts import get_master_prompt
             protocol_ref = work / "protocol.md"
-            try:
-                protocol_ref.write_text(get_master_prompt(anatomy), encoding="utf-8")
-            except Exception as e:
-                logger.warning(f"Could not write protocol for {anatomy}: {e}; falling back to spine skill")
-                protocol_ref = SKILL_PATH
+            if protocol_override:
+                # Experiment knob: follow this protocol text verbatim instead of the anatomy master
+                # (e.g. a radiograph-native chest protocol in place of the MRI-tuned chest master).
+                protocol_ref.write_text(protocol_override, encoding="utf-8")
+            else:
+                # Non-spine: write that anatomy's master prompt as the protocol the agent follows.
+                try:
+                    from prompts import get_master_prompt
+                except ImportError:
+                    from backend.prompts import get_master_prompt
+                try:
+                    protocol_ref.write_text(get_master_prompt(anatomy), encoding="utf-8")
+                except Exception as e:
+                    logger.warning(f"Could not write protocol for {anatomy}: {e}; falling back to spine skill")
+                    protocol_ref = SKILL_PATH
         logger.info(f"Agent routing: anatomy={anatomy}, modality={modality}, protocol={protocol_ref}")
 
         prompt = task_prompt or self._build_prompt(

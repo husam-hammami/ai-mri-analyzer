@@ -957,7 +957,12 @@
 
     const api = {
       availability: () => fetch(`${API_BASE}/api/agent/availability`).then(r => r.json()),
-      connect: () => fetch(`${API_BASE}/api/connect`, { method:'POST' }).then(r => r.json()),
+      preflight: () => fetch(`${API_BASE}/api/agent/preflight`).then(r => r.json()),
+      connect: (body={ mode:'browser' }) => fetch(`${API_BASE}/api/connect`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r => r.json()),
+      authStatus: (id) => fetch(`${API_BASE}/api/connect/${id}`).then(r => r.json()),
+      authRetry: (id, body={ mode:'browser' }) => fetch(`${API_BASE}/api/connect/${id}/retry`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r => r.json()),
+      authCancel: (id) => fetch(`${API_BASE}/api/connect/${id}/cancel`, { method:'POST' }).then(r => r.json()),
+      authCode: (id, code) => fetch(`${API_BASE}/api/connect/${id}/code`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ code }) }).then(r => r.json()),
       upload: (fd) => fetch(`${API_BASE}/api/upload`, { method:'POST', body:fd }).then(r => r.json()),
       analyze: (body) => fetch(`${API_BASE}/api/analyze`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r => r.json()),
       status: (id) => fetch(`${API_BASE}/api/status/${id}`),
@@ -989,6 +994,11 @@
 
     function stripTier(s) { return String(s || '').replace(/\s*\[Tier\s*[A-D][^\]]*\]\s*/gi, ' ').replace(/\s+/g,' ').trim(); }
     function tierFromText(s) { const m = String(s||'').match(/\[Tier\s*([A-D])/i); return m ? m[1].toUpperCase() : null; }
+    function detailText(detail, fallback='Something went wrong.') {
+      if (!detail) return fallback;
+      if (typeof detail === 'string') return detail;
+      return detail.error_message || detail.detail || detail.message || fallback;
+    }
 
     // Parse a landmark token from a finding's text (spine day-one mechanism §5.6)
     function reEscape(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -1040,6 +1050,7 @@
           const loc = parseLandmark(anatomy, f.plain, f.caption);
           return {
             id: `finding-${i}`,
+            sourceIndex: i,
             plainSentence: stripTier(f.plain || ''),
             certainty,
             caption: stripTier(f.caption || ''),
@@ -1061,6 +1072,7 @@
           clinicianFindings: (report.agent.summary.findings || []),
           verification: report.verification || {},
           pdfAvailable: !!report.pdf_available,
+          clinicalPdfAvailable: !!report.clinical_pdf_available,
           disclaimer,
         };
       }
@@ -1087,7 +1099,7 @@
         const certainty = TIER_WORD[r.tier];           // D → null
         const plain = stripTier(r.text);
         const loc = parseLandmark(anatomy, plain);
-        return { id:`finding-${i}`, plainSentence: plain, certainty, caption:'',
+        return { id:`finding-${i}`, sourceIndex: i, plainSentence: plain, certainty, caption:'',
                  proofImageUrl: proofUrl(report.job_id, r.figure),
                  location: loc ? { label: loc } : null, measurement:null };
       }).filter(f => f.plainSentence && f.certainty)   // drop empty + Tier-D (certainty resolves to null)
@@ -1109,6 +1121,7 @@
         verification: report.verification || {},
         figures: report.figures || [],
         pdfAvailable: !!report.pdf_available,
+        clinicalPdfAvailable: !!report.clinical_pdf_available,
         disclaimer,
       };
     }
@@ -1416,6 +1429,10 @@
       // read
       const s = (vm && vm.study) || {};
       const line = [s.body_part, s.modality, s.date].filter(Boolean).join(' · ') || 'Your Read';
+      const clinicianView = uiPrefs && uiPrefs.view === 'clinician';
+      const reportKind = clinicianView ? 'clinical' : 'patient';
+      const canDownload = !!(vm && (clinicianView ? vm.clinicalPdfAvailable : vm.pdfAvailable));
+      const downloadLabel = clinicianView ? 'Download clinical report' : 'Download report';
       return (
         <div className="topbar">
           <div className="topbar-l stacked"><span className="topbar-title">{line}</span><span className="topbar-meta">Read complete</span></div>
@@ -1424,7 +1441,7 @@
               <button className={uiPrefs.view==='plain'?'on':''} onClick={()=>setUiPrefs({view:'plain'})}>Plain language</button>
               <button className={uiPrefs.view==='clinician'?'on':''} onClick={()=>setUiPrefs({view:'clinician'})}>Clinician</button>
             </div>
-            <button className="btn btn-primary btn-sm" onClick={onDownload} disabled={vm && !vm.pdfAvailable}>{I.download({width:15,height:15})} Download report</button>
+            <button className="btn btn-primary btn-sm" onClick={()=>onDownload(reportKind)} disabled={vm && !canDownload}>{I.download({width:15,height:15})} {downloadLabel}</button>
           </div>
         </div>
       );
@@ -1448,9 +1465,14 @@
       );
     }
 
-    function ConnectModal({ connection, checking, onConnect, onRecheck, onClose }) {
+    function ConnectModal({ connection, authSession, checking, onConnect, onUseCode, onSubmitCode, onRetry, onCancel, onRecheck, onClose }) {
       const connected = connection && connection.connected;
       const plan = connection && connection.subscription_type;
+      const [code, setCode] = useState('');
+      const state = (authSession && authSession.auth_state) || (connection && connection.auth_state) || '';
+      const needsCode = !!(authSession && authSession.needs_code);
+      const err = (authSession && authSession.error_message) || (connection && connection.error_message) || (connection && connection.auth_error);
+      const msg = (authSession && authSession.message) || '';
       return (
         <div className="overlay" onClick={onClose}>
           <div className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Sign in with Claude">
@@ -1479,9 +1501,20 @@
                     <button className="btn btn-primary" style={{flex:1}} disabled={checking} onClick={onConnect}>
                       {checking ? 'Waiting for sign-in…' : 'Sign in with Claude'}
                     </button>
-                    <button className="btn btn-ghost" onClick={onClose}>Close</button>
+                    <button className="btn btn-ghost" disabled={!authSession || checking} onClick={onCancel}>Cancel</button>
                   </div>
+                  {(msg || state) && <p style={{fontSize:'12px', color:'var(--slate)', margin:'10px 0 0'}}>{msg || state}</p>}
+                  {err && <p style={{fontSize:'12px', color:'var(--danger)', margin:'10px 0 0'}}>{err}</p>}
+                  {needsCode && (
+                    <form style={{display:'flex', gap:'8px', marginTop:'12px'}} onSubmit={e=>{ e.preventDefault(); onSubmitCode(code); }}>
+                      <input value={code} onChange={e=>setCode(e.target.value)} placeholder="Paste Claude code" aria-label="Claude sign-in code"
+                        style={{flex:1, minWidth:0, border:'1px solid var(--line)', borderRadius:'8px', padding:'10px 12px'}} />
+                      <button className="btn btn-primary" disabled={checking || !code.trim()}>Submit</button>
+                    </form>
+                  )}
                   <div style={{textAlign:'center', marginTop:'10px'}}>
+                    <button className="clin-link" style={{fontSize:'12px', marginRight:'14px'}} disabled={checking} onClick={onUseCode}>Use pasted-code sign-in</button>
+                    <button className="clin-link" style={{fontSize:'12px', marginRight:'14px'}} disabled={checking} onClick={onRetry}>Retry</button>
                     <button className="clin-link" style={{fontSize:'12px'}} disabled={checking} onClick={onRecheck}>Already signed in? Re-check</button>
                   </div>
                 </>
@@ -1809,9 +1842,10 @@
     function ClinicianDetail({ vm, jobId, onZoom, active }) {
       const v = vm.verification || {};
       const tech = vm.clinicianFindings || [];
+      const activeTech = active && typeof active.sourceIndex === 'number' ? tech[active.sourceIndex] : null;
       const techFigure = tech.find(f => f.figure);
       const evidenceUrl = (active && active.proofImageUrl) || (techFigure && proofUrl(jobId, techFigure.figure));
-      const evidenceTitle = (active && active.plainSentence) || (techFigure && stripTier(techFigure.text)) || 'No annotated evidence image available';
+      const evidenceTitle = (activeTech && stripTier(activeTech.text)) || (techFigure && stripTier(techFigure.text)) || 'No annotated evidence image available';
       return (
         <div className="clin">
           <div className="clin-strip">
@@ -1825,9 +1859,9 @@
               </div>
               {v.quality_notes && <div className="clin-notes">{v.quality_notes}</div>}
             </div>
-            <button className="btn btn-ghost btn-sm" disabled={!vm.pdfAvailable}
-              onClick={()=>jobId && jobId!=='demo' && window.open(`${API_BASE}/api/report/${jobId}/pdf`,'_blank')}>
-              {I.download({width:14,height:14})} PDF
+            <button className="btn btn-ghost btn-sm" disabled={!vm.clinicalPdfAvailable}
+              onClick={()=>jobId && jobId!=='demo' && window.open(`${API_BASE}/api/report/${jobId}/clinical-pdf`,'_blank')}>
+              {I.download({width:14,height:14})} Clinical PDF
             </button>
           </div>
           <div className="clin-proof">
@@ -1980,22 +2014,25 @@
                     </div>
                     <div className="thread">
                       <div className="thread-title">{CLIN ? 'Findings by tier' : 'Findings'}</div>
-                      {findings.map((f, i) => (
-                        <button key={f.id} id={f.id} className={`frow ${active && active.id===f.id ? 'active':''}`}
-                          aria-expanded={active && active.id===f.id} onClick={()=>selectFinding(f.id)}>
-                          <div className="frow-top"><span className="frow-num">{i+1}</span>
-                            {CLIN ? <span className={`tier-badge t${WORD2LETTER[f.certainty]}`}>Tier {WORD2LETTER[f.certainty]}</span> : <CertaintyChip certainty={f.certainty} />}
-                          </div>
-                          <div className="frow-plain">{f.plainSentence}</div>
-                          {f.caption && <div className="frow-cap">{f.caption}</div>}
-                          {!CLIN && active && active.id===f.id && vm.whatItMeans && vm.whatItMeans.length>0 && (
-                            <div className="frow-extra">
-                              <h4>What this could mean</h4>
-                              <ul className="sec-block" style={{marginTop:0}}>{vm.whatItMeans.map((w,idx)=><li key={idx}>{w}</li>)}</ul>
+                      {findings.map((f, i) => {
+                        const techRow = CLIN && typeof f.sourceIndex === 'number' ? (vm.clinicianFindings || [])[f.sourceIndex] : null;
+                        const rowSentence = (techRow && techRow.text) ? stripTier(techRow.text) : f.plainSentence;
+                        return (
+                          <button key={f.id} id={f.id} className={`frow ${active && active.id===f.id ? 'active':''}`}
+                            aria-expanded={active && active.id===f.id} onClick={()=>selectFinding(f.id)}>
+                            <div className="frow-top"><span className="frow-num">{i+1}</span>
+                              {CLIN ? <span className={`tier-badge t${WORD2LETTER[f.certainty]}`}>Tier {WORD2LETTER[f.certainty]}</span> : <CertaintyChip certainty={f.certainty} />}
                             </div>
-                          )}
-                        </button>
-                      ))}
+                            <div className="frow-plain">{rowSentence}</div>
+                            {!CLIN && active && active.id===f.id && vm.whatItMeans && vm.whatItMeans.length>0 && (
+                              <div className="frow-extra">
+                                <h4>What this may mean</h4>
+                                <ul className="sec-block" style={{marginTop:0}}>{vm.whatItMeans.map((w,idx)=><li key={idx}>{w}</li>)}</ul>
+                              </div>
+                            )}
+                          </button>
+                        );
+                      })}
                       <div className="legend-row">
                         {CLIN ? (
                           <>
@@ -2063,7 +2100,8 @@
       const [showAbout, setShowAbout] = useState(false);
       const [showConnect, setShowConnect] = useState(false);
       const [checkingConn, setCheckingConn] = useState(false);
-      const esRef = useRef(null), pollRef = useRef(null);
+      const [authSession, setAuthSession] = useState(null);
+      const esRef = useRef(null), pollRef = useRef(null), authPollRef = useRef(null);
       const popping = useRef(false);   // true while applying a browser Back/Forward (suppresses re-push)
       const didMountUrl = useRef(false);   // skip the first URL-sync so a deep-link ?job_id isn't stripped on mount
       const [dm, setDm] = useState(DEMO);   // live demo override (dev visual gate; switchable without reload)
@@ -2071,18 +2109,46 @@
 
       const screen = dm ? (dm.startsWith('read') ? 'read' : dm) : screenFor(job);
       const vm = useMemo(() => buildViewModel(report), [report]);
+      const stopAuthPoll = useCallback(() => {
+        if (authPollRef.current) { clearTimeout(authPollRef.current); authPollRef.current = null; }
+      }, []);
 
       // connection check (Connect-with-Claude flow — uses the existing /api/agent/availability + /api/connect)
       const checkConnection = useCallback(async () => {
         setCheckingConn(true);
-        try { setConnection(await api.availability()); }
+        try { const a = await api.preflight(); setConnection(a); if (a.connected) setAuthSession(null); }
         catch (_) { setConnection({ connected:false }); }
         finally { setCheckingConn(false); }
       }, []);
-      useEffect(() => { api.availability().then(setConnection).catch(() => setConnection({ connected:false })); }, []);
+      useEffect(() => { api.preflight().then(setConnection).catch(() => setConnection({ connected:false })); return stopAuthPoll; }, [stopAuthPoll]);
       // "Connect with Claude": launch the browser sign-in (desktop/EXE build), then poll until ready.
-      const connectClaude = useCallback(async () => {
+      const pollAuthSession = useCallback((id) => {
+        stopAuthPoll();
+        const tick = async () => {
+          try {
+            const s = await api.authStatus(id);
+            setAuthSession(s);
+            if (s.availability) setConnection(s.availability);
+            if (s.connected) { setCheckingConn(false); stopAuthPoll(); setAuthSession(null); return; }
+            if (['error','cancelled','expired'].includes(s.auth_state)) { setCheckingConn(false); stopAuthPoll(); return; }
+          } catch (_) {}
+          authPollRef.current = setTimeout(tick, 3000);
+        };
+        tick();
+      }, [stopAuthPoll]);
+
+      const connectClaude = useCallback(async (mode='browser') => {
         setCheckingConn(true);
+        stopAuthPoll();
+        try {
+          const j = await api.connect({ mode });
+          setAuthSession(j);
+          if (j.availability) setConnection(j.availability);
+          if (j.connected) { setCheckingConn(false); setAuthSession(null); return; }
+          if (!j.started) { addToast(j.error_message || j.error || 'Could not start sign-in.', 'error'); setCheckingConn(false); return; }
+          pollAuthSession(j.session_id);
+        } catch (_) { addToast('Could not reach the app service.', 'error'); setCheckingConn(false); }
+        return;
         try {
           const j = await api.connect();
           if (!j.started) { addToast(j.error || 'Could not start sign-in.', 'error'); setCheckingConn(false); return; }
@@ -2092,7 +2158,40 @@
           try { const a = await api.availability(); if (a.connected) { setConnection(a); setCheckingConn(false); return; } } catch (_) {}
         }
         setCheckingConn(false); checkConnection();
-      }, [addToast, checkConnection]);
+      }, [addToast, checkConnection, pollAuthSession, stopAuthPoll]);
+
+      const retryAuth = useCallback(async (mode='browser') => {
+        if (!authSession || !authSession.session_id) return connectClaude(mode);
+        setCheckingConn(true);
+        stopAuthPoll();
+        try {
+          const s = await api.authRetry(authSession.session_id, { mode });
+          setAuthSession(s);
+          if (s.availability) setConnection(s.availability);
+          if (s.connected) { setCheckingConn(false); setAuthSession(null); return; }
+          if (!s.started) { addToast(s.error_message || 'Could not restart sign-in.', 'error'); setCheckingConn(false); return; }
+          pollAuthSession(s.session_id);
+        } catch (_) { addToast('Could not restart sign-in.', 'error'); setCheckingConn(false); }
+      }, [authSession, addToast, connectClaude, pollAuthSession, stopAuthPoll]);
+
+      const cancelAuth = useCallback(async () => {
+        if (!authSession || !authSession.session_id) { setCheckingConn(false); setAuthSession(null); return; }
+        stopAuthPoll();
+        try { setAuthSession(await api.authCancel(authSession.session_id)); } catch (_) {}
+        setCheckingConn(false);
+      }, [authSession, stopAuthPoll]);
+
+      const submitAuthCode = useCallback(async (code) => {
+        if (!authSession || !authSession.session_id) return;
+        setCheckingConn(true);
+        try {
+          const s = await api.authCode(authSession.session_id, code);
+          setAuthSession(s);
+          if (s.availability) setConnection(s.availability);
+          if (s.connected) { setCheckingConn(false); setAuthSession(null); return; }
+          pollAuthSession(s.session_id);
+        } catch (_) { addToast('Could not submit the sign-in code.', 'error'); setCheckingConn(false); }
+      }, [authSession, addToast, pollAuthSession]);
 
       // a11y: move focus to the new screen's heading on transition (SR + keyboard users land in context)
       useEffect(() => {
@@ -2199,10 +2298,13 @@
       // ── analyze ──
       const onStart = useCallback(async () => {
         if (!job.id) return;
-        if (!connection || !connection.connected) { setShowConnect(true); return; }  // must be connected to Claude
+        let pf = connection;
+        try { pf = await api.preflight(); setConnection(pf); } catch (_) {}
+        if (!pf || !pf.connected || !pf.ready) { setShowConnect(true); return; }  // must be connected to Claude
         try {
           const r = await api.analyze({ job_id:job.id, mode:'agent', clinical_history: history || null });
-          if (r.detail) { addToast(r.detail, 'error'); return; }
+          if (r.detail || r.error_message) { addToast(detailText(r.detail || r.error_message, 'Could not start the read.'), 'error'); if (r.auth_state) setConnection(c => ({ ...(c||{}), connected:false, auth_state:r.auth_state, error_message:r.error_message||r.detail })); return; }
+          setConnection(c => ({ ...(c||{}), connected:true, ready:true, auth_state:'connected', error_message:null }));
           setJob(j => ({ ...j, status:'inventory', mode:r.mode||'agent', progress:8, est_total_seconds:j.est_total_seconds }));
           setReady(null);
           watch(job.id);
@@ -2291,7 +2393,11 @@
         return () => window.removeEventListener('popstate', onPop);
       }, [job.id, fetchReport, stopStream]);
 
-      const onDownload = useCallback(() => { if (job.id) window.open(`${API_BASE}/api/report/${job.id}/pdf`, '_blank'); }, [job.id]);
+      const onDownload = useCallback((kind='patient') => {
+        if (!job.id) return;
+        const endpoint = kind === 'clinical' ? 'clinical-pdf' : 'pdf';
+        window.open(`${API_BASE}/api/report/${job.id}/${endpoint}`, '_blank');
+      }, [job.id]);
       const onNotify = useCallback(async () => {
         if (!('Notification' in window)) {
           addToast('Desktop notifications are not available in this browser.', 'warning');
@@ -2336,8 +2442,10 @@
             </div>
           </div>
           {showAbout && <AboutModal onClose={()=>setShowAbout(false)} />}
-          {showConnect && <ConnectModal connection={connection} checking={checkingConn}
-            onConnect={connectClaude} onRecheck={checkConnection} onClose={()=>setShowConnect(false)} />}
+          {showConnect && <ConnectModal connection={connection} authSession={authSession} checking={checkingConn}
+            onConnect={()=>connectClaude('browser')} onUseCode={()=>retryAuth('code')} onSubmitCode={submitAuthCode}
+            onRetry={()=>retryAuth('browser')} onCancel={cancelAuth} onRecheck={checkConnection}
+            onClose={()=>{ stopAuthPoll(); setShowConnect(false); }} />}
           <Lightbox src={lightbox} onClose={()=>setLightbox(null)} />
           <ToastContainer toasts={toasts} />
         </div>
@@ -2346,7 +2454,7 @@
 
     /* ═══════════════ Dev fixtures (visual gate without a 20-min run) ═══════════════ */
     const DEMO_REPORT = {
-      job_id:'demo', mode:'agent', detected_anatomy:'spine', pdf_available:true,
+      job_id:'demo', mode:'agent', detected_anatomy:'spine', pdf_available:true, clinical_pdf_available:true,
       disclaimer:'MIKA is an AI assistant and does not replace a doctor. Review all findings with a qualified clinician.',
       verification:{ status:'passed', quality_score:88 },
       agent:{ summary:{ patient:{
@@ -2360,10 +2468,14 @@
           { plain:'Mild spinal canal narrowing at L4-L5', certainty:'Confirmed', figure:'/assets/_demo/proof-l4l5-canal.png', caption:'Mild central canal narrowing; no cord or cauda compression.' },
           { plain:'Small annular tear at L4-L5', certainty:'Possible', figure:'/assets/_demo/proof-l4l5-tear.png', caption:'A small high-signal zone in the disc rim may represent an annular tear.' },
         ],
-        what_it_means:['The L5-S1 disc is touching the S1 nerve root. That pattern can line up with pain, tingling, or numbness traveling down the leg.','This finding is common. Treatment depends on your symptoms, exam, and your clinician\'s review.'],
+        what_it_means:['The L5-S1 disc contact can match pain, tingling, or numbness traveling down the leg.','Treatment decisions depend on symptoms, the physical exam, and clinician review.'],
         worth_flagging:[],
         disclaimer:'MIKA is an AI assistant and does not replace a doctor. Review all findings with a qualified clinician.',
-      }, findings:[{text:'L5-S1 disc-nerve contact [Tier A]', tier:'A', figure:'fig1.png'}] } },
+      }, findings:[
+        {text:'L5-S1 disc material contacts and displaces the descending S1 nerve root [Tier A]', tier:'A', figure:'fig1.png'},
+        {text:'Mild central canal narrowing at L4-L5 without cord or cauda compression [Tier A]', tier:'A', figure:'fig2.png'},
+        {text:'Small annular fissure at L4-L5 [Tier C]', tier:'C', figure:'fig3.png'},
+      ] } },
     };
     const DEMO_REPORT_EMPTY = { ...DEMO_REPORT, agent:{ summary:{ patient:{ ...DEMO_REPORT.agent.summary.patient, bottom_line:'', findings:[], what_it_means:[], worth_flagging:[], key_points:['No significant abnormality was flagged on this automated read.'], confidence:{label:'Moderate', note:'Limited by image quality in places.'} } } } };
     const DEMO_SEQUENCES = { anatomy:'spine', modality:'MR', level_map:'/assets/_demo/proof-levelref.png', sequences:[
@@ -2376,7 +2488,7 @@
 
     // Non-spine demos to verify precise pointing for ANY region (markers match named structures).
     const DEMO_REPORT_BRAIN = {
-      job_id:'demo', mode:'agent', detected_anatomy:'brain', pdf_available:false,
+      job_id:'demo', mode:'agent', detected_anatomy:'brain', pdf_available:false, clinical_pdf_available:false,
       disclaimer: DEMO_REPORT.disclaimer, verification:{ status:'passed', quality_score:84 },
       agent:{ summary:{ patient:{
         study:{ body_part:'Brain', modality:'MRI', date:'', comparison:'' },
@@ -2388,12 +2500,16 @@
           { plain:'Mild volume loss in the temporal lobe', certainty:'Likely', figure:'', caption:'Mild temporal-lobe volume loss, likely age-related.' },
           { plain:'Tiny nonspecific focus in the cerebellum', certainty:'Possible', figure:'', caption:'A tiny focus in the cerebellum, of uncertain significance.' },
         ],
-        what_it_means:['The frontal-lobe lesion should be correlated with your symptoms and may need a follow-up scan.'],
+        what_it_means:['The frontal-lobe lesion should be matched with symptoms and clinician review. A follow-up scan may be considered.'],
         worth_flagging:[], disclaimer: DEMO_REPORT.disclaimer,
-      } } },
+      }, findings:[
+        {text:'Small right frontal-lobe lesion [Tier A]', tier:'A', figure:''},
+        {text:'Mild temporal-lobe volume loss [Tier B]', tier:'B', figure:''},
+        {text:'Tiny nonspecific cerebellar focus [Tier C]', tier:'C', figure:''},
+      ] } },
     };
     const DEMO_REPORT_MSK = {
-      job_id:'demo', mode:'agent', detected_anatomy:'msk', pdf_available:false,
+      job_id:'demo', mode:'agent', detected_anatomy:'msk', pdf_available:false, clinical_pdf_available:false,
       disclaimer: DEMO_REPORT.disclaimer, verification:{ status:'passed', quality_score:86 },
       agent:{ summary:{ patient:{
         study:{ body_part:'Knee', modality:'MRI', date:'', comparison:'' },
@@ -2405,21 +2521,25 @@
           { plain:'Mild strain of the anterior cruciate ligament', certainty:'Likely', figure:'', caption:'The anterior cruciate ligament shows mild strain.' },
           { plain:'Early thinning of the cartilage', certainty:'Possible', figure:'', caption:'Early cartilage thinning along the joint surface.' },
         ],
-        what_it_means:['A meniscus tear is common and is often managed without surgery — your doctor will advise.'],
+        what_it_means:['A meniscus tear can match inner-knee pain. Treatment depends on symptoms, exam findings, and clinician review.'],
         worth_flagging:[], disclaimer: DEMO_REPORT.disclaimer,
-      } } },
+      }, findings:[
+        {text:'Tear through the body of the medial meniscus [Tier A]', tier:'A', figure:''},
+        {text:'Mild anterior cruciate ligament sprain [Tier B]', tier:'B', figure:''},
+        {text:'Early chondral thinning along the joint surface [Tier C]', tier:'C', figure:''},
+      ] } },
     };
     function _demoReport(anatomy, bodyPart, modality, bottom, findings) {
-      return { job_id:'demo', mode:'agent', detected_anatomy:anatomy, pdf_available:false, disclaimer:DEMO_REPORT.disclaimer,
+      return { job_id:'demo', mode:'agent', detected_anatomy:anatomy, pdf_available:false, clinical_pdf_available:false, disclaimer:DEMO_REPORT.disclaimer,
         verification:{ status:'passed', quality_score:85 },
         agent:{ summary:{ patient:{
           study:{ body_part:bodyPart, modality, date:'', comparison:'' }, bottom_line:bottom,
           confidence:{ label:'Moderate', score:80, note:'Seen on more than one view.' },
           key_points: findings.slice(0,2).map(f => f[0]),
           findings: findings.map(f => ({ plain:f[0], certainty:f[1], figure:'', caption:f[0] + '.' })),
-          what_it_means:['Discuss these findings with your doctor — the proof images show exactly what was seen.'],
+          what_it_means:['The finding should be matched with symptoms, exam findings, and clinician review.'],
           worth_flagging:[], disclaimer:DEMO_REPORT.disclaimer,
-        } } } };
+        }, findings:findings.map(f => ({ text:`${f[0]} [Tier ${WORD2LETTER[f[1]] || 'C'}]`, tier:WORD2LETTER[f[1]] || 'C', figure:'' })) } } };
     }
     const DEMO_BY_ANATOMY = {
       spine: DEMO_REPORT, brain: DEMO_REPORT_BRAIN, msk: DEMO_REPORT_MSK,

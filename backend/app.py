@@ -47,7 +47,12 @@ from services.claude_interpreter import (
 )
 from services.batch_sender import BatchSender
 from services.verification import VerificationPass
-from services.agent_runner import AgentRunner, _normalize_summary, DEFAULT_TIMEOUT_S as AGENT_TIMEOUT_S
+from services.agent_runner import (
+    AgentRunner,
+    AUTH_MANAGER,
+    _normalize_summary,
+    DEFAULT_TIMEOUT_S as AGENT_TIMEOUT_S,
+)
 try:
     from backend.prompts.base_prompt import REPORT_DISCLAIMER
 except ImportError:
@@ -228,6 +233,9 @@ class AnalysisJob:
         self.truncated: bool = False          # read hit the time cap with partial output (Fix 4)
         self.heartbeat_ts: float = time.time()  # last on-disk heartbeat (Fix 1 watchdog/boot recovery)
         self.error: Optional[str] = None
+        self.error_code: Optional[str] = None
+        self.auth_state: Optional[str] = None
+        self.progress_phase: str = self.status
         self.created_at = datetime.utcnow().isoformat()
 
 JOBS: dict[str, AnalysisJob] = {}
@@ -276,6 +284,280 @@ def _safe_join(job_id: str, rel: str) -> Optional[Path]:
     return None
 
 
+def _find_clinical_pdf(job_id: str, job: Optional["AnalysisJob"] = None) -> Optional[Path]:
+    """Return this job's preserved clinician PDF, if the agent produced one."""
+    candidates = []
+    if job and getattr(job, "pdf_path", None):
+        candidates.append(Path(job.pdf_path).with_name("report_clinical.pdf"))
+    if job and getattr(job, "work_dir", None):
+        candidates.append(Path(job.work_dir) / "report" / "report_clinical.pdf")
+    try:
+        meta = _load_meta(job_id)
+        if meta and meta.get("clinical_pdf"):
+            candidates.append(_job_dir(job_id) / str(meta["clinical_pdf"]).replace("\\", "/"))
+    except Exception:
+        pass
+    candidates.append(_job_dir(job_id) / "work" / "report" / "report_clinical.pdf")
+
+    seen = set()
+    for candidate in candidates:
+        try:
+            resolved = Path(candidate).resolve()
+        except Exception:
+            continue
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        if not resolved.is_file():
+            continue
+        safe = _safe_join(job_id, _rel_to_job(job_id, str(resolved)))
+        if safe:
+            return safe
+    return None
+
+
+def _find_patient_pdf(job_id: str, job: Optional["AnalysisJob"] = None) -> Optional[Path]:
+    """Return the patient-facing report.pdf for live or persisted jobs."""
+    candidates = []
+    if job and getattr(job, "pdf_path", None):
+        p = Path(job.pdf_path)
+        if p.name == "report.pdf":
+            candidates.append(p)
+        candidates.append(p.with_name("report.pdf"))
+    if job and getattr(job, "work_dir", None):
+        candidates.append(Path(job.work_dir) / "report" / "report.pdf")
+    try:
+        meta = _load_meta(job_id)
+        if meta and meta.get("pdf"):
+            candidates.append(_job_dir(job_id) / str(meta["pdf"]).replace("\\", "/"))
+    except Exception:
+        pass
+    candidates.append(_job_dir(job_id) / "work" / "report" / "report.pdf")
+
+    seen = set()
+    for candidate in candidates:
+        try:
+            resolved = Path(candidate).resolve()
+        except Exception:
+            continue
+        key = str(resolved)
+        if key in seen:
+            continue
+        seen.add(key)
+        if resolved.name != "report.pdf" or not resolved.is_file():
+            continue
+        safe = _safe_join(job_id, _rel_to_job(job_id, str(resolved)))
+        if safe:
+            return safe
+    return None
+
+
+def _coerce_list(v) -> list:
+    if isinstance(v, list):
+        return v
+    if v in (None, ""):
+        return []
+    return [v]
+
+
+def _coerce_dict(v) -> dict:
+    return v if isinstance(v, dict) else {}
+
+
+def _summary_for_job(job: "AnalysisJob") -> dict:
+    raw = ((job.agent or {}).get("summary")
+           or ((job.measurements or {}).get("agent_summary") if job.measurements else None)
+           or {})
+    return _normalize_summary(raw)
+
+
+def _interpretation_from_summary(summary: dict) -> dict:
+    if not summary:
+        return {}
+    patient = _coerce_dict(summary.get("patient"))
+    confidence = _coerce_dict(patient.get("confidence"))
+    return {
+        "findings": _coerce_list(summary.get("findings")),
+        "impression": _coerce_list(summary.get("impression")),
+        "incidentals": _coerce_list(summary.get("incidentals")),
+        "discrepancies": _coerce_list(summary.get("discrepancies")),
+        "confidence_summary": summary.get("confidence_summary") or confidence.get("note") or "",
+        "model_used": (summary.get("model_used") or (summary.get("self_audit") or {}).get("model")),
+        "tokens": summary.get("tokens") or {},
+        "source": "agent_summary",
+    }
+
+
+def _normalized_report_sections(
+    *,
+    job: "AnalysisJob",
+    summary: dict,
+    interpretation_dict: dict,
+    figures: list,
+    detected_anatomy: str,
+    anatomy_subregion: str,
+    calibration_status: str,
+    patient_pdf: Optional[Path],
+    clinical_pdf: Optional[Path],
+) -> dict:
+    m = job.measurements or {}
+    patient_block = _coerce_dict(summary.get("patient"))
+    patient_study = _coerce_dict(patient_block.get("study"))
+    patient_demographics = _coerce_dict(patient_block.get("patient")) or m.get("demographics", {})
+    technical_findings = _coerce_list(summary.get("findings"))
+    patient_findings = _coerce_list(patient_block.get("findings"))
+
+    findings = []
+    for idx, finding in enumerate(patient_findings, start=1):
+        if isinstance(finding, dict):
+            findings.append({
+                "id": f"patient-{idx}",
+                "audience": "patient",
+                "plain": finding.get("plain", ""),
+                "certainty": finding.get("certainty", ""),
+                "figure": finding.get("figure"),
+                "caption": finding.get("caption", ""),
+            })
+    for idx, finding in enumerate(technical_findings, start=1):
+        if isinstance(finding, dict):
+            findings.append({
+                "id": f"clinician-{idx}",
+                "audience": "clinician",
+                "text": finding.get("text") or finding.get("plain") or "",
+                "tier": finding.get("tier") or finding.get("confidence_tier"),
+                "figure": finding.get("figure"),
+                "caption": finding.get("caption", ""),
+            })
+
+    confidence = _coerce_dict(patient_block.get("confidence"))
+    if not confidence:
+        confidence = {
+            "label": "",
+            "score": None,
+            "note": interpretation_dict.get("confidence_summary", ""),
+        }
+    progress_phase = getattr(job, "progress_phase", None) or job.status
+    if progress_phase == "pending" and job.status != "pending":
+        progress_phase = job.status
+
+    study = {
+        "body_part": patient_study.get("body_part") or detected_anatomy,
+        "modality": patient_study.get("modality") or m.get("modality", ""),
+        "date": patient_study.get("date", ""),
+        "comparison": patient_study.get("comparison", ""),
+        "description": m.get("study_description", "") or summary.get("study_description", ""),
+        "detected_anatomy": detected_anatomy,
+        "anatomy_subregion": anatomy_subregion,
+        "calibration_status": calibration_status,
+    }
+
+    return {
+        "study": study,
+        "patient": {
+            "demographics": patient_demographics,
+            "bottom_line": patient_block.get("bottom_line", ""),
+            "key_points": _coerce_list(patient_block.get("key_points")),
+            "findings": patient_findings,
+            "confidence": confidence,
+            "change_over_time": _coerce_dict(patient_block.get("change_over_time")),
+            "what_it_means": _coerce_list(patient_block.get("what_it_means")),
+            "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
+            "disclaimer": patient_block.get("disclaimer") or REPORT_DISCLAIMER,
+        },
+        "clinician": {
+            "findings": technical_findings,
+            "impression": _coerce_list(summary.get("impression")) or _coerce_list(interpretation_dict.get("impression")),
+            "incidentals": _coerce_list(summary.get("incidentals")) or _coerce_list(interpretation_dict.get("incidentals")),
+            "discrepancies": _coerce_list(summary.get("discrepancies")) or _coerce_list(interpretation_dict.get("discrepancies")),
+            "confidence_summary": summary.get("confidence_summary") or interpretation_dict.get("confidence_summary", ""),
+            "calibration_status": calibration_status,
+        },
+        "findings": findings,
+        "confidence": confidence,
+        "assets": {
+            "figures": figures,
+            "images": list((job.annotated_images or {}).keys()),
+            "pdf": {
+                "patient_available": bool(patient_pdf),
+                "clinical_available": bool(clinical_pdf),
+            },
+        },
+        "status": job.status,
+        "error_code": getattr(job, "error_code", None),
+        "error_message": getattr(job, "error", None),
+        "auth_state": getattr(job, "auth_state", None),
+        "progress_phase": progress_phase,
+    }
+
+
+def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
+    """Backfill Run 1 contract fields for reports written by older builds."""
+    out = dict(payload or {})
+    summary = _normalize_summary(
+        ((out.get("agent") or {}).get("summary")
+         or (out.get("measurements") or {}).get("agent_summary")
+         or {})
+    )
+    patient_pdf = _find_patient_pdf(job_id)
+    clinical_pdf = _find_clinical_pdf(job_id)
+    out["pdf_available"] = bool(out.get("pdf_available") or patient_pdf)
+    out["clinical_pdf_available"] = bool(out.get("clinical_pdf_available") or clinical_pdf)
+    out.setdefault("error_code", None)
+    out.setdefault("error_message", out.get("error"))
+    out.setdefault("auth_state", None)
+    out.setdefault("progress_phase", out.get("status", "complete"))
+    if "interpretation" not in out or not out.get("interpretation"):
+        out["interpretation"] = _interpretation_from_summary(summary)
+    if all(k in out for k in ("study", "patient", "clinician", "findings", "confidence", "assets")):
+        return out
+
+    m = out.get("measurements") or {}
+    patient_block = _coerce_dict(summary.get("patient"))
+    patient_study = _coerce_dict(patient_block.get("study"))
+    confidence = _coerce_dict(patient_block.get("confidence"))
+    out.setdefault("study", {
+        "body_part": patient_study.get("body_part") or out.get("detected_anatomy", "unknown"),
+        "modality": patient_study.get("modality") or m.get("modality", ""),
+        "date": patient_study.get("date", ""),
+        "comparison": patient_study.get("comparison", ""),
+        "description": out.get("study_description", "") or m.get("study_description", ""),
+        "detected_anatomy": out.get("detected_anatomy", "unknown"),
+        "anatomy_subregion": out.get("anatomy_subregion", ""),
+        "calibration_status": out.get("calibration_status", "unknown"),
+    })
+    out.setdefault("patient", {
+        "demographics": _coerce_dict(patient_block.get("patient")) or out.get("demographics", {}),
+        "bottom_line": patient_block.get("bottom_line", ""),
+        "key_points": _coerce_list(patient_block.get("key_points")),
+        "findings": _coerce_list(patient_block.get("findings")),
+        "confidence": confidence,
+        "change_over_time": _coerce_dict(patient_block.get("change_over_time")),
+        "what_it_means": _coerce_list(patient_block.get("what_it_means")),
+        "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
+        "disclaimer": patient_block.get("disclaimer") or out.get("disclaimer") or REPORT_DISCLAIMER,
+    })
+    out.setdefault("clinician", {
+        "findings": _coerce_list(summary.get("findings")),
+        "impression": _coerce_list(summary.get("impression")) or _coerce_list((out.get("interpretation") or {}).get("impression")),
+        "incidentals": _coerce_list(summary.get("incidentals")),
+        "discrepancies": _coerce_list(summary.get("discrepancies")),
+        "confidence_summary": summary.get("confidence_summary") or (out.get("interpretation") or {}).get("confidence_summary", ""),
+        "calibration_status": out.get("calibration_status", "unknown"),
+    })
+    out.setdefault("findings", [])
+    out.setdefault("confidence", confidence)
+    out.setdefault("assets", {
+        "figures": out.get("figures", []),
+        "images": out.get("annotated_images", []),
+        "pdf": {
+            "patient_available": out["pdf_available"],
+            "clinical_available": out["clinical_pdf_available"],
+        },
+    })
+    return out
+
+
 def _persist_report(job: "AnalysisJob") -> None:
     """Write report.json + meta.json for a completed job so it survives a restart. Non-fatal."""
     try:
@@ -285,6 +567,8 @@ def _persist_report(job: "AnalysisJob") -> None:
         (jd / "report.json").write_text(json.dumps(payload, default=str), encoding="utf-8")
 
         images = {name: _rel_to_job(job.job_id, p) for name, p in (job.annotated_images or {}).items()}
+        patient_pdf = _find_patient_pdf(job.job_id, job)
+        clinical_pdf = _find_clinical_pdf(job.job_id, job)
         # Cover thumbnail for the Recent list: prefer a real study slice, else the first figure.
         thumb = next((n for n in images if n.startswith("seqthumb")), None) or next(iter(images), None)
         m = job.measurements or {}
@@ -297,11 +581,23 @@ def _persist_report(job: "AnalysisJob") -> None:
             "detected_anatomy": m.get("detected_anatomy", "unknown"),
             "anatomy_subregion": m.get("anatomy_subregion", ""),
             "modality": m.get("modality", ""),
-            "title": payload.get("study_description") or m.get("study_description") or "",
+            "title": (
+                (payload.get("study") or {}).get("description")
+                or (payload.get("study") or {}).get("body_part")
+                or payload.get("study_description")
+                or m.get("study_description")
+                or ""
+            ),
             "thumb": thumb,
             "images": images,
-            "pdf": _rel_to_job(job.job_id, job.pdf_path) if job.pdf_path else None,
-            "pdf_available": bool(job.agent.get("pdf_available")) if job.agent else False,
+            "pdf": _rel_to_job(job.job_id, str(patient_pdf)) if patient_pdf else None,
+            "pdf_available": bool(patient_pdf),
+            "clinical_pdf": _rel_to_job(job.job_id, str(clinical_pdf)) if clinical_pdf else None,
+            "clinical_pdf_available": bool(clinical_pdf),
+            "error_code": getattr(job, "error_code", None),
+            "error_message": getattr(job, "error", None),
+            "auth_state": getattr(job, "auth_state", None),
+            "progress_phase": getattr(job, "progress_phase", job.status),
             "truncated": bool(getattr(job, "truncated", False)),
         }
         (jd / "meta.json").write_text(json.dumps(meta, default=str), encoding="utf-8")
@@ -340,17 +636,24 @@ def _list_reports() -> list[dict]:
             meta = _load_meta(d.name)
             if not meta:
                 continue
+            report = _load_report(d.name) or {}
+            study = report.get("study") or {}
             out.append({
                 "job_id": meta.get("job_id", d.name),
                 "status": meta.get("status", "complete"),
-                "title": meta.get("title", ""),
-                "detected_anatomy": meta.get("detected_anatomy", "unknown"),
-                "anatomy_subregion": meta.get("anatomy_subregion", ""),
-                "modality": meta.get("modality", ""),
+                "title": meta.get("title") or study.get("description") or study.get("body_part") or "",
+                "detected_anatomy": meta.get("detected_anatomy") or study.get("detected_anatomy") or "unknown",
+                "anatomy_subregion": meta.get("anatomy_subregion") or study.get("anatomy_subregion") or "",
+                "modality": meta.get("modality") or study.get("modality") or "",
                 "created_at": meta.get("created_at", ""),
                 "completed_at": meta.get("completed_at", ""),
                 "thumb": meta.get("thumb"),
-                "pdf_available": meta.get("pdf_available", False),
+                "pdf_available": bool(meta.get("pdf_available") or _find_patient_pdf(d.name)),
+                "clinical_pdf_available": bool(meta.get("clinical_pdf_available") or _find_clinical_pdf(d.name)),
+                "error_code": meta.get("error_code"),
+                "error_message": meta.get("error_message"),
+                "auth_state": meta.get("auth_state"),
+                "progress_phase": meta.get("progress_phase", meta.get("status", "complete")),
             })
     except Exception as e:
         logger.warning(f"Could not list reports: {e}")
@@ -398,6 +701,19 @@ def _assert_env_for_read() -> None:
         raise RuntimeError(f"environment changed — restart MIKA ({detail})")
 
 
+def _classify_run_error(message: Optional[str]) -> str:
+    text = (message or "").lower()
+    if any(token in text for token in ("not logged in", "not signed in", "login", "auth status", "authentication")):
+        return "CLAUDE_NOT_SIGNED_IN"
+    if "claude code cli not found" in text or "not installed" in text:
+        return "CLAUDE_CLI_MISSING"
+    if "environment changed" in text:
+        return "ENVIRONMENT_CHANGED"
+    if "timed out" in text:
+        return "AGENT_TIMEOUT"
+    return "AGENT_RUN_FAILED"
+
+
 def _warn_if_onedrive_data_dir() -> None:
     """Deferred item: a OneDrive-synced data dir can lock files mid-read (an F1 trigger). Warn
     only — never a hard gate."""
@@ -419,8 +735,17 @@ def _warn_if_onedrive_data_dir() -> None:
 WATCHDOG_MARGIN_S = int(os.environ.get("MIKA_WATCHDOG_MARGIN_S", "120"))
 
 
-def _write_status_file(job_id: str, status: str, progress: int, message: str,
-                       heartbeat_ts: float, truncated: bool = False) -> None:
+def _write_status_file(
+    job_id: str,
+    status: str,
+    progress: int,
+    message: str,
+    heartbeat_ts: float,
+    truncated: bool = False,
+    error_code: Optional[str] = None,
+    auth_state: Optional[str] = None,
+    progress_phase: Optional[str] = None,
+) -> None:
     """Write DATA_DIR/<job>/status.json (the on-disk heartbeat). Non-fatal."""
     try:
         jd = _job_dir(job_id)
@@ -428,6 +753,8 @@ def _write_status_file(job_id: str, status: str, progress: int, message: str,
         (jd / "status.json").write_text(json.dumps({
             "job_id": job_id, "status": status, "progress": progress,
             "message": message, "heartbeat_ts": heartbeat_ts, "truncated": truncated,
+            "error_code": error_code, "auth_state": auth_state,
+            "progress_phase": progress_phase or status,
         }), encoding="utf-8")
     except Exception as e:
         logger.debug(f"status.json write failed for {job_id}: {e}")
@@ -437,8 +764,17 @@ def _write_status_heartbeat(job: "AnalysisJob") -> None:
     """Stamp a fresh heartbeat for a live job and mirror its state to disk."""
     ts = time.time()
     job.heartbeat_ts = ts
-    _write_status_file(job.job_id, job.status, job.progress, job.progress_message or "",
-                       ts, bool(getattr(job, "truncated", False)))
+    _write_status_file(
+        job.job_id,
+        job.status,
+        job.progress,
+        job.progress_message or "",
+        ts,
+        bool(getattr(job, "truncated", False)),
+        getattr(job, "error_code", None),
+        getattr(job, "auth_state", None),
+        getattr(job, "progress_phase", job.status),
+    )
 
 
 def _load_status(job_id: str) -> Optional[dict]:
@@ -554,6 +890,8 @@ def _maybe_expire_job(job: "AnalysisJob") -> bool:
         return False
     job.status = "error"
     job.error = job.error or "read timed out — please re-run"
+    job.error_code = job.error_code or "AGENT_TIMEOUT"
+    job.progress_phase = "error"
     job.progress_message = "Read timed out"
     _write_status_heartbeat(job)
     logger.warning(f"Watchdog expired stuck job {job.job_id} (no heartbeat for >{AGENT_TIMEOUT_S + WATCHDOG_MARGIN_S}s)")
@@ -574,6 +912,14 @@ class AnalyzeRequest(BaseModel):
     notify_email: Optional[str] = None   # §7.7: opt-in "we'll email you when it's ready" (survives tab close)
 
 
+class AuthStartRequest(BaseModel):
+    mode: str = "browser"  # browser | code
+
+
+class AuthCodeRequest(BaseModel):
+    code: str
+
+
 class JobStatus(BaseModel):
     job_id: str
     status: str
@@ -581,6 +927,10 @@ class JobStatus(BaseModel):
     progress_message: str
     created_at: str
     error: Optional[str] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+    auth_state: Optional[str] = None
+    progress_phase: Optional[str] = None
     eta_seconds: Optional[int] = None
     est_total_seconds: Optional[int] = None
     active_sequence: Optional[str] = None
@@ -712,6 +1062,12 @@ async def agent_availability():
     return AgentRunner().availability()
 
 
+@app.get("/api/agent/preflight")
+async def agent_preflight():
+    """Cheap readiness check before a full opus/high analysis."""
+    return AgentRunner().readiness_probe()
+
+
 @app.get("/health")
 async def health():
     """Fix 3: liveness + read-environment check. 200 when the read pipeline imports and the
@@ -724,13 +1080,34 @@ async def health():
 
 
 @app.post("/api/connect")
-async def connect_claude(console: bool = False):
+async def connect_claude(request: Optional[AuthStartRequest] = None, console: bool = False):
     """
-    'Connect with Claude' button: launch the browser sign-in to the user's own Claude
-    account (desktop/EXE build). The UI then polls /api/agent/availability until connected.
+    Start an in-app Claude auth session. Browser sign-in is the default; code mode is
+    available for environments where the CLI asks for a pasted code.
     """
-    from services.agent_runner import trigger_claude_login
-    return trigger_claude_login(console=console)
+    mode = "code" if console else ((request.mode if request else "browser") or "browser")
+    return AUTH_MANAGER.start(mode=mode)
+
+
+@app.get("/api/connect/{session_id}")
+async def poll_claude_connect(session_id: str):
+    return AUTH_MANAGER.poll(session_id)
+
+
+@app.post("/api/connect/{session_id}/retry")
+async def retry_claude_connect(session_id: str, request: Optional[AuthStartRequest] = None):
+    mode = (request.mode if request else "browser") or "browser"
+    return AUTH_MANAGER.retry(session_id, mode=mode)
+
+
+@app.post("/api/connect/{session_id}/cancel")
+async def cancel_claude_connect(session_id: str):
+    return AUTH_MANAGER.cancel(session_id)
+
+
+@app.post("/api/connect/{session_id}/code")
+async def submit_claude_code(session_id: str, request: AuthCodeRequest):
+    return AUTH_MANAGER.submit_code(session_id, request.code)
 
 
 @app.post("/api/analyze")
@@ -746,11 +1123,36 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
 
     mode = (request.mode or "agent").lower()
     job.mode = mode
+    job.error = None
+    job.error_code = None
+    job.progress_message = ""
+    job.progress_phase = "queued"
 
     if mode == "agent":
         # Agent mode runs the skill via Claude Code on your subscription — no API key needed.
-        avail = AgentRunner().availability()
-        if not avail.get("claude_cli_found"):
+        avail = AgentRunner().readiness_probe()
+        job.auth_state = avail.get("auth_state")
+        if not avail.get("ready"):
+            job.status = "error"
+            job.progress = 0
+            job.progress_phase = "auth"
+            job.error_code = avail.get("error_code") or "CLAUDE_NOT_READY"
+            job.error = avail.get("error_message") or "Claude is not ready. Sign in and retry."
+            job.progress_message = job.error
+            _write_status_heartbeat(job)
+            return JSONResponse(
+                {
+                    "detail": job.error,
+                    "job_id": job.job_id,
+                    "status": "error",
+                    "error_code": job.error_code,
+                    "error_message": job.error,
+                    "auth_state": job.auth_state,
+                    "preflight": avail.get("preflight"),
+                },
+                status_code=400,
+            )
+        if not avail.get("ready") and not avail.get("claude_cli_found"):
             raise HTTPException(
                 400,
                 "Agent mode needs the Claude Code CLI installed and logged in on your "
@@ -759,6 +1161,8 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
             )
         job.status = "inventory"
         job.progress = 0
+        job.progress_phase = "inventory"
+        job.auth_state = "connected"
         background_tasks.add_task(
             _run_agent_pipeline,
             job=job,
@@ -785,6 +1189,7 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
 
     job.status = "inventory"
     job.progress = 0
+    job.progress_phase = "inventory"
     background_tasks.add_task(
         _run_analysis_pipeline,
         job=job,
@@ -802,6 +1207,12 @@ async def get_status(job_id: str):
     """Get current analysis status (poll or SSE)."""
     _validate_job_id(job_id)
     job = JOBS.get(job_id)
+    if job and job.status != "complete":
+        raise HTTPException(400, f"Analysis not complete (status: {job.status})")
+    patient_pdf = _find_patient_pdf(job_id, job)
+    if patient_pdf:
+        return FileResponse(str(patient_pdf), media_type="application/pdf", filename="mika_report.pdf")
+    raise HTTPException(404, "No PDF report available for this job")
     if not job:
         # No live run. First bring the on-disk job to an honest terminal state (Fix 1): salvage a
         # finished-but-unpersisted report, or mark an interrupted one as error.
@@ -813,6 +1224,10 @@ async def get_status(job_id: str):
                 job_id=job_id, status=st, progress=100 if st == "complete" else 0,
                 progress_message="Report ready" if st == "complete" else (meta.get("error") or ""),
                 created_at=meta.get("created_at", ""), error=meta.get("error"),
+                error_code=meta.get("error_code"),
+                error_message=meta.get("error_message") or meta.get("error"),
+                auth_state=meta.get("auth_state"),
+                progress_phase=meta.get("progress_phase") or st,
                 truncated=bool(meta.get("truncated")),
             )
         disk = _load_status(job_id)
@@ -822,6 +1237,10 @@ async def get_status(job_id: str):
                 job_id=job_id, status=st, progress=disk.get("progress", 0),
                 progress_message=disk.get("message", ""), created_at="",
                 error=disk.get("message") if st == "error" else None,
+                error_code=disk.get("error_code"),
+                error_message=disk.get("message") if st == "error" else None,
+                auth_state=disk.get("auth_state"),
+                progress_phase=disk.get("progress_phase") or st,
                 truncated=bool(disk.get("truncated")),
             )
         raise HTTPException(404, f"Job {job_id} not found")
@@ -834,6 +1253,10 @@ async def get_status(job_id: str):
         progress_message=job.progress_message,
         created_at=job.created_at,
         error=job.error,
+        error_code=getattr(job, "error_code", None),
+        error_message=job.error,
+        auth_state=getattr(job, "auth_state", None),
+        progress_phase=getattr(job, "progress_phase", job.status),
         eta_seconds=job.eta_seconds,
         est_total_seconds=job.est_total_seconds,
         active_sequence=job.active_sequence,
@@ -856,7 +1279,12 @@ async def stream_status(job_id: str):
             st = meta.get("status", "complete")
             payload = {"status": st, "progress": 100 if st == "complete" else 0,
                        "message": "Report ready" if st == "complete" else (meta.get("error") or ""),
-                       "error": meta.get("error"), "truncated": bool(meta.get("truncated"))}
+                       "error": meta.get("error"),
+                       "error_code": meta.get("error_code"),
+                       "error_message": meta.get("error_message") or meta.get("error"),
+                       "auth_state": meta.get("auth_state"),
+                       "progress_phase": meta.get("progress_phase") or st,
+                       "truncated": bool(meta.get("truncated"))}
         else:
             disk = _load_status(job_id)
             if disk:
@@ -864,6 +1292,10 @@ async def stream_status(job_id: str):
                 payload = {"status": st, "progress": disk.get("progress", 0),
                            "message": disk.get("message", ""),
                            "error": disk.get("message") if st == "error" else None,
+                           "error_code": disk.get("error_code"),
+                           "error_message": disk.get("message") if st == "error" else None,
+                           "auth_state": disk.get("auth_state"),
+                           "progress_phase": disk.get("progress_phase") or st,
                            "truncated": bool(disk.get("truncated"))}
         if payload is not None:
             async def _one():
@@ -883,6 +1315,10 @@ async def stream_status(job_id: str):
                     "progress": job.progress,
                     "message": job.progress_message,
                     "error": job.error,
+                    "error_code": getattr(job, "error_code", None),
+                    "error_message": job.error,
+                    "auth_state": getattr(job, "auth_state", None),
+                    "progress_phase": getattr(job, "progress_phase", job.status),
                     "eta_seconds": job.eta_seconds,
                     "est_total_seconds": job.est_total_seconds,
                     "active_sequence": job.active_sequence,
@@ -908,6 +1344,7 @@ async def stream_status(job_id: str):
 def _build_report_payload(job: "AnalysisJob") -> dict:
     """Assemble the full report payload for a completed job. Used by GET /api/report and by
     _persist_report (which writes it to disk so the same payload is served after a restart)."""
+    summary = _summary_for_job(job)
     interpretation_dict = {}
     if job.interpretation:
         interp = job.interpretation
@@ -958,6 +1395,8 @@ def _build_report_payload(job: "AnalysisJob") -> dict:
                 "output": interp.output_tokens,
             },
         }
+    elif summary:
+        interpretation_dict = _interpretation_from_summary(summary)
 
     detected_anatomy = (
         job.measurements.get("detected_anatomy", "unknown")
@@ -980,8 +1419,10 @@ def _build_report_payload(job: "AnalysisJob") -> dict:
         fig_n += 1
         figures.append({"figure": fig_n, "name": name,
                         "description": FIGURE_DESCRIPTIONS.get(name, name)})
+    patient_pdf = _find_patient_pdf(job.job_id, job)
+    clinical_pdf = _find_clinical_pdf(job.job_id, job)
 
-    return {
+    payload = {
         "job_id": job.job_id,
         "demographics": job.measurements.get("demographics", {}) if job.measurements else {},
         "study_description": job.measurements.get("study_description", "") if job.measurements else "",
@@ -999,9 +1440,22 @@ def _build_report_payload(job: "AnalysisJob") -> dict:
         "disclaimer": REPORT_DISCLAIMER,
         "mode": job.mode,
         "agent": job.agent,
-        "pdf_available": bool(job.agent.get("pdf_available")),
+        "pdf_available": bool(patient_pdf),
+        "clinical_pdf_available": bool(clinical_pdf),
         "truncated": bool(getattr(job, "truncated", False)),   # Fix 4: read may be incomplete — re-run recommended
     }
+    payload.update(_normalized_report_sections(
+        job=job,
+        summary=summary,
+        interpretation_dict=interpretation_dict,
+        figures=figures,
+        detected_anatomy=detected_anatomy,
+        anatomy_subregion=anatomy_subregion,
+        calibration_status=payload["calibration_status"],
+        patient_pdf=patient_pdf,
+        clinical_pdf=clinical_pdf,
+    ))
+    return payload
 
 
 @app.get("/api/report/{job_id}")
@@ -1016,7 +1470,7 @@ async def get_report(job_id: str):
         return _build_report_payload(job)
     disk = _load_report(job_id)
     if disk:
-        return disk
+        return _normalize_loaded_report(job_id, disk)
     raise HTTPException(404, "Report not found")
 
 
@@ -1029,7 +1483,7 @@ async def list_reports():
 
 @app.get("/api/report/{job_id}/pdf")
 async def get_report_pdf(job_id: str):
-    """Serve the agent-generated PDF report (agent mode), from the live job or from disk."""
+    """Serve the patient-facing PDF report, from the live job or from disk."""
     _validate_job_id(job_id)
     job = JOBS.get(job_id)
     if not job:
@@ -1037,7 +1491,7 @@ async def get_report_pdf(job_id: str):
         meta = _load_meta(job_id)
         if meta and meta.get("pdf_available") and meta.get("pdf"):
             p = _safe_join(job_id, meta["pdf"])
-            if p:
+            if p and p.name == "report.pdf":
                 return FileResponse(str(p), media_type="application/pdf", filename="mika_report.pdf")
         raise HTTPException(404, "No PDF report available for this job")
     # Only serve a PDF the CURRENT run actually produced — never a stale file from a prior run of the
@@ -1048,14 +1502,39 @@ async def get_report_pdf(job_id: str):
     if not pdf_path or not os.path.exists(pdf_path):
         # Fallback only if the in-flight path wasn't recorded (older job): recover from the report dir.
         candidate = Path(job.work_dir) / "report"
-        pdfs = sorted(candidate.glob("*.pdf")) if candidate.exists() else []
-        pdf_path = str(pdfs[0]) if pdfs else None
+        patient_pdf = candidate / "report.pdf"
+        pdf_path = str(patient_pdf) if patient_pdf.exists() else None
     if not pdf_path or not os.path.exists(pdf_path):
         raise HTTPException(404, "No PDF report available for this job")
+    if Path(pdf_path).name != "report.pdf":
+        raise HTTPException(404, "No patient PDF report available for this job")
     # Never serve a file outside this job's own directory.
     if not _safe_join(job_id, _rel_to_job(job_id, pdf_path)):
         raise HTTPException(404, "No PDF report available for this job")
     return FileResponse(pdf_path, media_type="application/pdf", filename="mika_report.pdf")
+
+
+@app.get("/api/report/{job_id}/clinical-pdf")
+async def get_clinical_report_pdf(job_id: str):
+    """Serve the preserved clinician/technical PDF, if the agent produced it."""
+    _validate_job_id(job_id)
+    job = JOBS.get(job_id)
+    if job and job.status != "complete":
+        raise HTTPException(400, f"Analysis not complete (status: {job.status})")
+    pdf_path = _find_clinical_pdf(job_id, job)
+    if not pdf_path:
+        raise HTTPException(404, "No clinician PDF report available for this job")
+    return FileResponse(str(pdf_path), media_type="application/pdf", filename="mika_clinical_report.pdf")
+
+
+@app.get("/api/reports/{job_id}/pdf")
+async def get_report_pdf_alias(job_id: str):
+    return await get_report_pdf(job_id)
+
+
+@app.get("/api/reports/{job_id}/clinical-pdf")
+async def get_clinical_report_pdf_alias(job_id: str):
+    return await get_clinical_report_pdf(job_id)
 
 
 def _safe_image_name(image_name: str) -> bool:
@@ -1147,6 +1626,8 @@ async def cancel_job(job_id: str):
     job.cancelled = True   # honored by _run_agent_pipeline's loop + completion guard so a late success can't revert it
     job.status = "error"
     job.error = "Cancelled by user"
+    job.error_code = "CANCELLED"
+    job.progress_phase = "cancelled"
     job.progress_message = "Cancelled"
     _write_status_heartbeat(job)   # Fix 1: terminal heartbeat so boot recovery sees a clean error, not "interrupted"
     return {"job_id": job_id, "status": "error", "cancelled": True,
@@ -1306,6 +1787,7 @@ async def _run_agent_pipeline(
         job.est_total_seconds = est
         job.eta_seconds = est
         job.status = "interpreting"
+        job.progress_phase = "interpreting"
         job.progress = 8
         job.progress_message = "Launching analysis on your subscription..."
         _write_status_heartbeat(job)   # Fix 1: first on-disk heartbeat (boot recovery can detect a kill from here on)
@@ -1390,6 +1872,10 @@ async def _run_agent_pipeline(
 
         if result.success:
             job.status = "complete"
+            job.progress_phase = "complete"
+            job.error = None
+            job.error_code = None
+            job.auth_state = "connected"
             job.progress = 100
             job.progress_message = (
                 "Analysis complete — this read may be incomplete; re-run recommended"
@@ -1403,6 +1889,9 @@ async def _run_agent_pipeline(
         else:
             job.status = "error"
             job.error = result.error or "Agent run failed without producing a report"
+            job.error_code = _classify_run_error(job.error)
+            job.auth_state = "signed_out" if job.error_code == "CLAUDE_NOT_SIGNED_IN" else job.auth_state
+            job.progress_phase = "error"
             job.progress_message = f"Agent error: {job.error}"
             _write_status_heartbeat(job)   # Fix 1: terminal heartbeat
             _notify_email(notify_email, job.job_id, "error")
@@ -1410,6 +1899,9 @@ async def _run_agent_pipeline(
         logger.exception(f"Agent pipeline failed for job {job.job_id}")
         job.status = "error"
         job.error = str(e)
+        job.error_code = _classify_run_error(job.error)
+        job.auth_state = "signed_out" if job.error_code == "CLAUDE_NOT_SIGNED_IN" else job.auth_state
+        job.progress_phase = "error"
         job.progress_message = f"Error: {str(e)}"
         _write_status_heartbeat(job)   # Fix 1: terminal heartbeat
         _notify_email(notify_email, job.job_id, "error")
