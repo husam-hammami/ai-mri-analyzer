@@ -47,6 +47,8 @@ from services.claude_interpreter import (
 )
 from services.batch_sender import BatchSender
 from services.verification import VerificationPass
+from services.evidence_pack import EvidencePackBuilder, manifest_text_summary
+from services.artifacts import ArtifactQaGate, ArtifactRegistry
 from services.agent_runner import (
     AgentRunner,
     AUTH_MANAGER,
@@ -229,6 +231,9 @@ class AnalysisJob:
         self.annotated_images: dict = {}
         self.annotation_audit: list = []      # per-arrow 3C/3D audit from the engine
         self.verification: dict = {}          # 12-item audit + corrections + quality
+        self.evidence_manifest: dict = {}
+        self.artifact_registry: dict = {}
+        self.artifact_qa: dict = {}
         self.mode: str = "lite"               # "agent" | "lite"
         self.active_sequence: Optional[str] = None  # live "now reading X", when the agent reports it
         self.active_region: Optional[str] = None     # live "now inspecting <level/region>", when reported
@@ -423,6 +428,9 @@ def _normalized_findings_from_summary(summary: dict) -> list[dict]:
                 "certainty": finding.get("certainty", ""),
                 "figure": finding.get("figure"),
                 "caption": finding.get("caption", ""),
+                "evidence_refs": _finding_evidence_refs(finding),
+                "trust": _coerce_dict(finding.get("trust")),
+                "location_trusted": finding.get("location_trusted"),
             })
         elif isinstance(finding, str) and finding.strip():
             findings.append({
@@ -443,6 +451,15 @@ def _normalized_findings_from_summary(summary: dict) -> list[dict]:
                 "tier": finding.get("tier") or finding.get("confidence_tier"),
                 "figure": finding.get("figure"),
                 "caption": finding.get("caption", ""),
+                "evidence_refs": _finding_evidence_refs(finding),
+                "series": finding.get("series"),
+                "image": finding.get("image"),
+                "plane": finding.get("plane"),
+                "side": finding.get("side"),
+                "level_or_region": finding.get("level_or_region") or finding.get("level") or finding.get("region"),
+                "calibration_basis": finding.get("calibration_basis"),
+                "trust": _coerce_dict(finding.get("trust")),
+                "location_trusted": finding.get("location_trusted"),
             })
         elif isinstance(finding, str) and finding.strip():
             findings.append({
@@ -526,6 +543,9 @@ def _normalized_report_sections(
                 "patient_available": bool(patient_pdf),
                 "clinical_available": bool(clinical_pdf),
             },
+            "evidence": job.evidence_manifest or {},
+            "artifacts": job.artifact_registry or {},
+            "artifact_qa": job.artifact_qa or {},
         },
         "status": job.status,
         "error_code": getattr(job, "error_code", None),
@@ -552,6 +572,9 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
     normalized_findings = _normalized_findings_from_summary(summary)
     patient_pdf = _find_patient_pdf(job_id)
     clinical_pdf = _find_clinical_pdf(job_id)
+    evidence = _read_job_json(job_id, "work/evidence/evidence_manifest.json")
+    artifact_registry = _read_job_json(job_id, "work/artifacts/artifact_registry.json")
+    artifact_qa = _read_job_json(job_id, "work/artifacts/artifact_qa.json")
     out["pdf_available"] = bool(out.get("pdf_available") or patient_pdf)
     out["clinical_pdf_available"] = bool(out.get("clinical_pdf_available") or clinical_pdf)
     out.setdefault("error_code", None)
@@ -599,6 +622,9 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         pdf_assets["patient_available"] = bool(pdf_assets.get("patient_available") or out["pdf_available"])
         pdf_assets["clinical_available"] = bool(pdf_assets.get("clinical_available") or out["clinical_pdf_available"])
         assets["pdf"] = pdf_assets
+        assets.setdefault("evidence", evidence)
+        assets.setdefault("artifacts", artifact_registry)
+        assets.setdefault("artifact_qa", artifact_qa)
         out["assets"] = assets
         return out
 
@@ -641,8 +667,180 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             "patient_available": out["pdf_available"],
             "clinical_available": out["clinical_pdf_available"],
         },
+        "evidence": evidence,
+        "artifacts": artifact_registry,
+        "artifact_qa": artifact_qa,
     })
+    out["assets"].setdefault("evidence", evidence)
+    out["assets"].setdefault("artifacts", artifact_registry)
+    out["assets"].setdefault("artifact_qa", artifact_qa)
     return out
+
+
+def _read_job_json(job_id: str, rel: str) -> dict:
+    try:
+        path = _safe_join(job_id, rel)
+        if path:
+            return json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        pass
+    return {}
+
+
+def _prepare_evidence_pack(job: "AnalysisJob", study_root: Optional[str] = None) -> dict:
+    """Build and persist the Run 2 PHI-safe evidence manifest for this job."""
+    root = Path(study_root) if study_root else Path(job.dicom_dir)
+    try:
+        builder = EvidencePackBuilder(root, job.work_dir)
+        pack = builder.build()
+        manifest = pack.to_manifest()
+        manifest["manifest_path"] = _rel_to_job(job.job_id, pack.manifest_path)
+
+        # If the upload started as image exports, keep the calibration cap explicit even
+        # if the converter wrapped them as DICOM for downstream compatibility.
+        upload_dir = _job_dir(job.job_id) / "upload"
+        has_image_exports = any(
+            p.is_file() and p.suffix.lower() in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
+            for p in upload_dir.rglob("*")
+        ) if upload_dir.exists() else False
+        if has_image_exports:
+            manifest["study"]["input_type"] = "image_export"
+            manifest["study"]["calibrated"] = False
+            manifest["study"]["calibration_reason"] = "Original upload was an image export without trustworthy scale metadata"
+            if "Image-export upload: precise measurements and pinpoint markers are disabled." not in manifest["limitations"]:
+                manifest["limitations"].append("Image-export upload: precise measurements and pinpoint markers are disabled.")
+
+        # Carry known inventory labels into the manifest, without PHI.
+        m = job.measurements or {}
+        if m:
+            manifest["study"]["anatomy"] = m.get("detected_anatomy", manifest["study"].get("anatomy", "unknown"))
+            manifest["study"]["subregion"] = m.get("anatomy_subregion", manifest["study"].get("subregion", ""))
+            manifest["study"]["modality"] = m.get("modality", manifest["study"].get("modality", ""))
+        Path(pack.manifest_path).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        job.evidence_manifest = manifest
+        return manifest
+    except Exception as e:
+        logger.warning(f"EvidencePack build failed for {job.job_id}: {e}")
+        job.evidence_manifest = {
+            "manifest_version": 1,
+            "study": {
+                "input_type": "unknown",
+                "modality": (job.measurements or {}).get("modality", ""),
+                "anatomy": (job.measurements or {}).get("detected_anatomy", "unknown"),
+                "subregion": (job.measurements or {}).get("anatomy_subregion", ""),
+                "calibrated": False,
+                "calibration_reason": "EvidencePack build failed",
+                "series_count": 0,
+                "image_count": 0,
+                "selected_image_count": 0,
+            },
+            "series": [],
+            "selected_images": [],
+            "limitations": [f"EvidencePack build failed: {type(e).__name__}"],
+        }
+        return job.evidence_manifest
+
+
+def _evidence_manifest_path(job: "AnalysisJob") -> Optional[str]:
+    rel = (job.evidence_manifest or {}).get("manifest_path")
+    if not rel:
+        p = Path(job.work_dir) / "evidence" / "evidence_manifest.json"
+        return str(p) if p.exists() else None
+    p = _safe_join(job.job_id, rel)
+    return str(p) if p else None
+
+
+def _finding_evidence_refs(finding: dict) -> list[str]:
+    val = finding.get("evidence_refs") or finding.get("evidence_ids") or finding.get("evidence_ref")
+    if isinstance(val, list):
+        return [str(v) for v in val if str(v).strip()]
+    if isinstance(val, str) and val.strip():
+        return [val.strip()]
+    return []
+
+
+def _summary_figure_evidence(summary: dict) -> dict[str, list[str]]:
+    out: dict[str, list[str]] = {}
+    patient_findings = ((summary.get("patient") or {}).get("findings") or [])
+    clinician_findings = summary.get("findings") or []
+    for finding in list(patient_findings) + list(clinician_findings):
+        if not isinstance(finding, dict):
+            continue
+        fig = finding.get("figure") or finding.get("file")
+        refs = _finding_evidence_refs(finding)
+        if fig and refs:
+            out.setdefault(Path(str(fig)).stem, [])
+            out[Path(str(fig)).stem].extend(refs)
+    return {k: sorted(set(v)) for k, v in out.items()}
+
+
+def _artifact_kind(name: str) -> str:
+    low = name.lower()
+    if low.startswith("seqthumb"):
+        return "reference_image"
+    if "body" in low and "map" in low:
+        return "body_map"
+    if "panel" in low or "contrast" in low or "comparison" in low:
+        return "comparison_panel"
+    if "annotated" in low or "level_reference" in low:
+        return "annotated_slice"
+    return "proof_image"
+
+
+def _run_artifact_qa(job: "AnalysisJob") -> None:
+    summary = _summary_for_job(job)
+    registry = ArtifactRegistry(job.work_dir)
+    fig_evidence = _summary_figure_evidence(summary)
+    m = job.measurements or {}
+    anatomy = m.get("detected_anatomy", "unknown")
+    modality = m.get("modality", "")
+    calibration_state = "calibrated" if (job.evidence_manifest or {}).get("study", {}).get("calibrated") else "uncalibrated"
+    for name, path in (job.annotated_images or {}).items():
+        registry.add_visual(
+            kind=_artifact_kind(name),
+            path=path,
+            source="generated",
+            linked_finding_id=None,
+            anatomy=anatomy,
+            modality=modality,
+            sequence_view=name,
+            calibration_state=calibration_state,
+            marker_type="region" if calibration_state == "uncalibrated" else "pinpoint",
+            evidence_ids=fig_evidence.get(Path(name).stem, []),
+        )
+    gate = ArtifactQaGate(job.work_dir, evidence_manifest=job.evidence_manifest)
+    qa = gate.run(registry, summary)
+    job.artifact_registry = registry.to_manifest()
+    job.artifact_qa = qa
+    if job.agent:
+        job.agent["summary"] = summary
+        job.agent["artifact_qa"] = qa
+    if job.measurements is not None:
+        job.measurements["artifact_qa"] = qa
+    _rewrite_agent_summary_and_patient_pdf(job, summary)
+
+
+def _rewrite_agent_summary_and_patient_pdf(job: "AnalysisJob", summary: dict) -> None:
+    if not summary:
+        return
+    report_dir = Path(job.work_dir) / "report"
+    try:
+        report_dir.mkdir(parents=True, exist_ok=True)
+        (report_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.debug(f"Could not rewrite gated summary.json: {e}")
+    patient = summary.get("patient")
+    if not patient:
+        return
+    try:
+        try:
+            from backend.services.report_builder import build_patient_report
+        except ImportError:
+            from services.report_builder import build_patient_report
+        build_patient_report(patient, report_dir, report_dir / "report.pdf")
+        job.pdf_path = str(report_dir / "report.pdf")
+    except Exception as e:
+        logger.warning(f"Could not rebuild patient PDF after artifact QA: {e}")
 
 
 def _persist_report(job: "AnalysisJob") -> None:
@@ -682,6 +880,9 @@ def _persist_report(job: "AnalysisJob") -> None:
             "pdf_available": bool(patient_pdf),
             "clinical_pdf": _rel_to_job(job.job_id, str(clinical_pdf)) if clinical_pdf else None,
             "clinical_pdf_available": bool(clinical_pdf),
+            "evidence_manifest": (job.evidence_manifest or {}).get("manifest_path"),
+            "artifact_registry": (job.artifact_qa or {}).get("registry_path"),
+            "artifact_qa_status": (job.artifact_qa or {}).get("status"),
             "error_code": getattr(job, "error_code", None),
             "error_message": getattr(job, "error", None),
             "auth_state": getattr(job, "auth_state", None),
@@ -1865,6 +2066,8 @@ async def _run_agent_pipeline(
         except Exception as e:
             logger.warning(f"Inventory pre-step failed (Wait degrades to whole-figure glow): {e}")
 
+        evidence_manifest = _prepare_evidence_pack(job, study_root)
+
         runner = AgentRunner(api_key=api_key, auth_token=auth_token)
         est = _estimate_agent_seconds(n_studies=1, effort=runner.effort)
         job.est_total_seconds = est
@@ -1885,6 +2088,7 @@ async def _run_agent_pipeline(
             clinical_history=clinical_history,
             surgical_notes=surgical_notes,
             prior_reports=prior_reports,
+            evidence_manifest_path=_evidence_manifest_path(job),
         ))
         start = time.monotonic()
         while True:
@@ -1951,7 +2155,13 @@ async def _run_agent_pipeline(
             "calibration_status": (result.summary or {}).get("calibration_status", pre.get("calibration_status", "unknown")),
             "study_description": (result.summary or {}).get("study_description", ""),
             "agent_summary": result.summary,
+            "evidence_pack": {
+                "study": (evidence_manifest or {}).get("study", {}),
+                "selected_image_count": len((evidence_manifest or {}).get("selected_images", [])),
+                "limitations": (evidence_manifest or {}).get("limitations", []),
+            },
         }
+        _run_artifact_qa(job)
 
         if result.success:
             job.status = "complete"
@@ -2190,6 +2400,12 @@ async def _run_analysis_pipeline(
         # export_measurements_json omits modality — carry the detected value so the Wait/sequences
         # panel labels CT/CR/X-ray studies correctly instead of always defaulting to "MR". (AR-3)
         job.measurements["modality"] = detected_modality
+        evidence_manifest = _prepare_evidence_pack(job, str(Path(job.dicom_dir).parent))
+        job.measurements["evidence_pack"] = {
+            "study": (evidence_manifest or {}).get("study", {}),
+            "selected_image_count": len((evidence_manifest or {}).get("selected_images", [])),
+            "limitations": (evidence_manifest or {}).get("limitations", []),
+        }
 
         # Phase 4: Claude interpretation
         job.status = "interpreting"
@@ -2208,8 +2424,11 @@ async def _run_analysis_pipeline(
         batch_sender = BatchSender(
             work_dir=Path(job.work_dir),
             anatomy_type=detected_anatomy,
+            evidence_manifest=evidence_manifest,
         )
         image_content_blocks, image_count = batch_sender.build_message_content()
+        if evidence_manifest:
+            image_content_blocks.insert(0, {"type": "text", "text": manifest_text_summary(evidence_manifest)})
         logger.info(f"BatchSender: {image_count} images prepared for Claude")
 
         # Numbered annotated proof figures (Figure 0 = Level Reference) + figure inventory.
@@ -2357,6 +2576,7 @@ async def _run_analysis_pipeline(
             job.verification = {"status": "incomplete", "quality_notes": str(e)}
 
         job.interpretation = interpretation
+        _run_artifact_qa(job)
 
         # Complete
         job.status = "complete"

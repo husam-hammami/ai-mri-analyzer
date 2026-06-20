@@ -40,6 +40,7 @@ class ImageEntry:
     total_slices: int
     plane: str = ""
     priority: int = 99  # Lower = higher priority
+    evidence_id: str = ""
 
 
 # ── Anatomy-Specific Priority Tables ──
@@ -147,12 +148,41 @@ class BatchSender:
         anatomy_type: str,
         max_images: int = MAX_IMAGES,
         target_tokens: int = TARGET_TOKENS,
+        evidence_manifest: Optional[dict] = None,
     ):
         self.work_dir = Path(work_dir)
         self.anatomy = anatomy_type
         self.max_images = max_images
         self.target_tokens = target_tokens
         self.raw_png_dir = self.work_dir / "raw_png"
+        self.evidence_manifest = evidence_manifest or None
+
+    def collect_evidence_images(self) -> list[ImageEntry]:
+        """Collect already-selected EvidencePack images, preserving evidence IDs."""
+        manifest = self.evidence_manifest or {}
+        selected = manifest.get("selected_images") or []
+        series = {s.get("series_id"): s for s in (manifest.get("series") or [])}
+        images = []
+        for item in selected:
+            rel = item.get("relative_path")
+            if not rel:
+                continue
+            path = self.work_dir / str(rel).replace("\\", "/")
+            if not path.exists():
+                continue
+            s = series.get(item.get("series_id"), {})
+            seq_name = s.get("name") or item.get("series_id") or "evidence"
+            images.append(ImageEntry(
+                path=path,
+                sequence_name=seq_name,
+                slice_num=int(item.get("image_index") or 1),
+                total_slices=int(s.get("slice_count") or item.get("image_index") or 1),
+                plane=item.get("plane") or s.get("plane") or "",
+                priority=self._get_priority(seq_name),
+                evidence_id=item.get("evidence_id") or "",
+            ))
+        logger.info(f"Collected {len(images)} images from EvidencePack manifest")
+        return images
 
     def collect_all_images(self) -> list[ImageEntry]:
         """Scan raw_png/ directory for all converted slices.
@@ -287,9 +317,10 @@ class BatchSender:
                 continue
 
             # Label for this slice
+            evidence = f"Evidence {img.evidence_id}; " if img.evidence_id else ""
             content_blocks.append({
                 "type": "text",
-                "text": f"[Slice {img.slice_num}/{img.total_slices}]",
+                "text": f"[{evidence}Slice {img.slice_num}/{img.total_slices}]",
             })
 
             # Image block
@@ -310,7 +341,7 @@ class BatchSender:
         Returns:
             Tuple of (content_blocks, image_count)
         """
-        images = self.collect_all_images()
+        images = self.collect_evidence_images() if self.evidence_manifest else self.collect_all_images()
         if not images:
             logger.warning("No images found — returning empty content")
             return [], 0

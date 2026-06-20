@@ -26,6 +26,11 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
 
+try:
+    from services.evidence_pack import load_manifest, manifest_text_summary
+except ImportError:
+    from backend.services.evidence_pack import load_manifest, manifest_text_summary
+
 logger = logging.getLogger("mika.agent")
 
 # Vendored skill shipped with the app (self-contained — no dependency on a plugin session).
@@ -711,6 +716,7 @@ class AgentRunner:
         surgical_notes: Optional[str] = None,
         prior_reports: Optional[str] = None,
         modality: str = "MR",
+        evidence_manifest_path: Optional[str] = None,
     ) -> str:
         label = ANATOMY_LABELS.get(anatomy, "medical imaging")
         is_spine = anatomy == "spine"
@@ -744,6 +750,31 @@ class AgentRunner:
             context += f"\nSurgical / operative notes (use ONLY in reconciliation, AFTER your blind read):\n{surgical_notes}\n"
         if prior_reports:
             context += f"\nPrior radiology reports (use ONLY in reconciliation, AFTER your blind read):\n{prior_reports}\n"
+        evidence_block = ""
+        if evidence_manifest_path:
+            try:
+                evidence_manifest = load_manifest(evidence_manifest_path)
+                evidence_summary = manifest_text_summary(evidence_manifest)
+            except Exception as e:
+                evidence_summary = f"Evidence manifest could not be read before prompt assembly: {e}"
+            evidence_block = f"""
+EVIDENCE PACK - mandatory primary review set:
+  Manifest path: {evidence_manifest_path}
+  Selected image files are listed in that JSON manifest under selected_images[].relative_path.
+{evidence_summary}
+
+Rules for this evidence pack:
+  - Treat selected evidence images as the explicit set MIKA sent for this read. State limitations
+    when a structure, plane, side, or level is not represented.
+  - Every technical finding in summary.json MUST include evidence_refs: ["ev###", ...] citing
+    one or more selected evidence IDs from the manifest.
+  - For every finding, include series/sequence, evidence image or slice, plane, side/laterality
+    if assessable, level/region if assessable, confidence tier, and calibration_basis.
+  - If the evidence is insufficient for a location, laterality, level, or measurement, output
+    Tier D / cannot assess for that element. Do not guess and do not place a precise marker.
+  - On uncalibrated image exports, do not report precise measurements and do not use pinpoint
+    annotations. Use region boxes only when location evidence is adequate.
+"""
 
         # Anatomy-specific vs general wording (so a non-spine study is NOT forced through spine logic).
         if is_spine:
@@ -779,6 +810,7 @@ OUTPUTS specified at the bottom of THIS message (they override any output format
 {modality_block}
 PRIMARY STUDY DIRECTORY (current study — DICOM and/or images):
   {study_dir}
+{evidence_block}
 {priors}{context}
 TOOLS: You have bash, python, read, and write. Do your own slice-by-slice analysis —
 convert DICOM with windowing, run intensity profiling for landmark/structure localization
@@ -823,7 +855,7 @@ Produce:
      This is for the doctor — NOT the patient. The patient-facing report is generated
      automatically (see #3), so do NOT hand-write a patient PDF.
   3. A machine-readable `summary.json`. Keep the technical detail here (calibration_status,
-     levels, findings [{{text, tier, figure}}], impression, discrepancies, incidentals,
+     levels, findings [{{text, tier, figure, evidence_refs, series, image, plane, side, level_or_region, calibration_basis}}], impression, discrepancies, incidentals,
      figures [{{file, caption}}], self_audit) AND add a top-level "patient" block — this is
      what the user actually sees, so write it in PLAIN language with NO tier letters, NO pixel
      intensities, NO audit trail, NO calibration/DICOM jargon:
@@ -870,6 +902,7 @@ When finished, print a single JSON object: {{"pdf": "<path>", "summary": "<path 
         task_prompt: Optional[str] = None,   # override the full-report prompt (focused runs)
         require_pdf: bool = True,            # focused runs succeed on figures alone
         protocol_override: Optional[str] = None,  # use this protocol text instead of the anatomy master (experiment knob; default None = live behavior)
+        evidence_manifest_path: Optional[str] = None,
     ) -> AgentResult:
         study = Path(study_dir)
         work = Path(work_dir)
@@ -908,6 +941,7 @@ When finished, print a single JSON object: {{"pdf": "<path>", "summary": "<path 
         prompt = task_prompt or self._build_prompt(
             study, out_dir, anatomy, protocol_ref, prior_studies,
             clinical_history, surgical_notes, prior_reports, modality,
+            evidence_manifest_path=evidence_manifest_path,
         )
 
         # Pass the (large) prompt via STDIN, not argv: the Windows claude.CMD shim runs

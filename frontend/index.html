@@ -1032,6 +1032,19 @@
       return null;
     }
 
+    function hasRun2Trust(f) {
+      return !!(f && f.trust && typeof f.trust === 'object');
+    }
+    function trustAllowsProof(f) {
+      return !hasRun2Trust(f) || f.trust.proof_image !== false;
+    }
+    function trustAllowsMarker(f) {
+      return !hasRun2Trust(f) || (f.trust.body_map_marker !== false && f.location_trusted !== false);
+    }
+    function trustedFigure(jobId, f) {
+      return (f && f.figure && trustAllowsProof(f)) ? proofUrl(jobId, f.figure) : null;
+    }
+
     /* ═══════════════ buildViewModel (adapter = default, patient block = enhancement) §5 ═══════════════ */
     function buildViewModel(report) {
       if (!report) return null;
@@ -1047,14 +1060,14 @@
         const conf = patient.confidence || {};
         const findings = (patient.findings || []).map((f, i) => {
           const certainty = ['Confirmed','Likely','Possible'].includes(f.certainty) ? f.certainty : 'Possible';
-          const loc = parseLandmark(anatomy, f.plain, f.caption);
+          const loc = trustAllowsMarker(f) ? parseLandmark(anatomy, f.plain, f.caption) : null;
           return {
             id: `finding-${i}`,
             sourceIndex: i,
             plainSentence: stripTier(f.plain || ''),
             certainty,
             caption: stripTier(f.caption || ''),
-            proofImageUrl: proofUrl(report.job_id, f.figure),
+            proofImageUrl: trustedFigure(report.job_id, f),
             location: loc ? { label: loc } : null,
             measurement: null,
           };
@@ -1093,14 +1106,20 @@
       // Prefer the agent's {text,tier,figure}; else the lite impression lines. Tier D = "cannot be
       // assessed" → NEVER a patient finding and never upgraded to Possible (CERT-5).
       const rawRows = agentTech.length
-        ? agentTech.map(f => ({ text: f.text || '', tier: (f.tier || tierFromText(f.text) || '').toUpperCase(), figure: f.figure }))
+        ? agentTech.map(f => ({
+            text: f.text || '',
+            tier: (f.tier || tierFromText(f.text) || '').toUpperCase(),
+            figure: f.figure,
+            trust: f.trust,
+            location_trusted: f.location_trusted,
+          }))
         : impression.map(line => ({ text: line, tier: (tierFromText(line) || '').toUpperCase(), figure: null }));
       const findings = rawRows.map((r, i) => {
         const certainty = TIER_WORD[r.tier];           // D → null
         const plain = stripTier(r.text);
-        const loc = parseLandmark(anatomy, plain);
+        const loc = trustAllowsMarker(r) ? parseLandmark(anatomy, plain) : null;
         return { id:`finding-${i}`, sourceIndex: i, plainSentence: plain, certainty, caption:'',
-                 proofImageUrl: proofUrl(report.job_id, r.figure),
+                 proofImageUrl: trustedFigure(report.job_id, r),
                  location: loc ? { label: loc } : null, measurement:null };
       }).filter(f => f.plainSentence && f.certainty)   // drop empty + Tier-D (certainty resolves to null)
         .sort((a,b)=>CERTAINTY_RANK[a.certainty]-CERTAINTY_RANK[b.certainty]);
