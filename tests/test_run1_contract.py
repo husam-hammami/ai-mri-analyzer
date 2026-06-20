@@ -124,6 +124,58 @@ def test_persisted_report_reloads_with_recent_studies_contract():
     assert recent[0]["clinical_pdf_available"] is True
 
 
+def test_status_route_returns_status_json_for_persisted_complete_job_with_pdfs():
+    job = _make_completed_job()
+    mika_app._persist_report(job)
+    mika_app.JOBS.clear()
+
+    status = asyncio.run(mika_app.get_status(job.job_id))
+
+    assert status.job_id == job.job_id
+    assert status.status == "complete"
+    assert status.progress == 100
+    assert status.progress_phase == "complete"
+    assert not hasattr(status, "media_type")
+
+
+def test_loaded_report_repairs_empty_findings_and_recent_title():
+    job = _make_completed_job()
+    mika_app._persist_report(job)
+
+    report_path = mika_app.DATA_DIR / job.job_id / "report.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    payload["findings"] = []
+    payload["study"] = {
+        "body_part": "",
+        "modality": "",
+        "date": "",
+        "comparison": "",
+        "description": "",
+        "detected_anatomy": "",
+        "anatomy_subregion": "",
+        "calibration_status": "",
+    }
+    payload["patient"]["findings"] = []
+    payload["clinician"]["findings"] = []
+    report_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    meta_path = mika_app.DATA_DIR / job.job_id / "meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta["title"] = ""
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    mika_app.JOBS.clear()
+
+    report = asyncio.run(mika_app.get_report(job.job_id))
+    recent = asyncio.run(mika_app.list_reports())["reports"]
+
+    assert report["study"]["body_part"] == "Lower-back spine"
+    assert report["study"]["description"] == "Lumbar spine MRI"
+    assert len(report["findings"]) == 2
+    assert report["patient"]["findings"]
+    assert report["clinician"]["findings"]
+    assert recent[0]["title"] == "Lumbar spine MRI"
+
+
 def test_auth_error_is_cleared_after_successful_preflight_rerun(monkeypatch):
     job = mika_app.AnalysisJob(job_id="fedcba98", dicom_dir=str(mika_app.DATA_DIR / "fedcba98" / "dicom"))
     mika_app.JOBS[job.job_id] = job

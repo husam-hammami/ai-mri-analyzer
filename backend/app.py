@@ -202,8 +202,13 @@ async def _csrf_origin_guard(request, call_next):
             except Exception:
                 same_origin = False
             if not same_origin and origin not in ALLOWED_ORIGINS:
-                return JSONResponse({"detail": "Cross-origin request blocked"}, status_code=403)
-    return await call_next(request)
+                response = JSONResponse({"detail": "Cross-origin request blocked"}, status_code=403)
+                response.headers["Cache-Control"] = "no-store"
+                return response
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # ── In-Memory Job Store ──
@@ -365,6 +370,20 @@ def _coerce_dict(v) -> dict:
     return v if isinstance(v, dict) else {}
 
 
+def _fill_missing_dict_values(base, fallback: dict) -> dict:
+    out = dict(base) if isinstance(base, dict) else {}
+    for key, value in fallback.items():
+        if out.get(key) in (None, "", [], {}):
+            out[key] = value
+    return out
+
+
+def _normalized_progress_phase(status: str, phase: Optional[str]) -> str:
+    if not phase or (phase == "pending" and status != "pending"):
+        return status
+    return phase
+
+
 def _summary_for_job(job: "AnalysisJob") -> dict:
     raw = ((job.agent or {}).get("summary")
            or ((job.measurements or {}).get("agent_summary") if job.measurements else None)
@@ -389,6 +408,54 @@ def _interpretation_from_summary(summary: dict) -> dict:
     }
 
 
+def _normalized_findings_from_summary(summary: dict) -> list[dict]:
+    patient_block = _coerce_dict(summary.get("patient"))
+    patient_findings = _coerce_list(patient_block.get("findings"))
+    technical_findings = _coerce_list(summary.get("findings"))
+
+    findings = []
+    for idx, finding in enumerate(patient_findings, start=1):
+        if isinstance(finding, dict):
+            findings.append({
+                "id": f"patient-{idx}",
+                "audience": "patient",
+                "plain": finding.get("plain") or finding.get("text") or "",
+                "certainty": finding.get("certainty", ""),
+                "figure": finding.get("figure"),
+                "caption": finding.get("caption", ""),
+            })
+        elif isinstance(finding, str) and finding.strip():
+            findings.append({
+                "id": f"patient-{idx}",
+                "audience": "patient",
+                "plain": finding.strip(),
+                "certainty": "",
+                "figure": None,
+                "caption": "",
+            })
+
+    for idx, finding in enumerate(technical_findings, start=1):
+        if isinstance(finding, dict):
+            findings.append({
+                "id": f"clinician-{idx}",
+                "audience": "clinician",
+                "text": finding.get("text") or finding.get("plain") or "",
+                "tier": finding.get("tier") or finding.get("confidence_tier"),
+                "figure": finding.get("figure"),
+                "caption": finding.get("caption", ""),
+            })
+        elif isinstance(finding, str) and finding.strip():
+            findings.append({
+                "id": f"clinician-{idx}",
+                "audience": "clinician",
+                "text": finding.strip(),
+                "tier": None,
+                "figure": None,
+                "caption": "",
+            })
+    return findings
+
+
 def _normalized_report_sections(
     *,
     job: "AnalysisJob",
@@ -407,28 +474,7 @@ def _normalized_report_sections(
     patient_demographics = _coerce_dict(patient_block.get("patient")) or m.get("demographics", {})
     technical_findings = _coerce_list(summary.get("findings"))
     patient_findings = _coerce_list(patient_block.get("findings"))
-
-    findings = []
-    for idx, finding in enumerate(patient_findings, start=1):
-        if isinstance(finding, dict):
-            findings.append({
-                "id": f"patient-{idx}",
-                "audience": "patient",
-                "plain": finding.get("plain", ""),
-                "certainty": finding.get("certainty", ""),
-                "figure": finding.get("figure"),
-                "caption": finding.get("caption", ""),
-            })
-    for idx, finding in enumerate(technical_findings, start=1):
-        if isinstance(finding, dict):
-            findings.append({
-                "id": f"clinician-{idx}",
-                "audience": "clinician",
-                "text": finding.get("text") or finding.get("plain") or "",
-                "tier": finding.get("tier") or finding.get("confidence_tier"),
-                "figure": finding.get("figure"),
-                "caption": finding.get("caption", ""),
-            })
+    findings = _normalized_findings_from_summary(summary)
 
     confidence = _coerce_dict(patient_block.get("confidence"))
     if not confidence:
@@ -437,9 +483,7 @@ def _normalized_report_sections(
             "score": None,
             "note": interpretation_dict.get("confidence_summary", ""),
         }
-    progress_phase = getattr(job, "progress_phase", None) or job.status
-    if progress_phase == "pending" and job.status != "pending":
-        progress_phase = job.status
+    progress_phase = _normalized_progress_phase(job.status, getattr(job, "progress_phase", None))
 
     study = {
         "body_part": patient_study.get("body_part") or detected_anatomy,
@@ -499,6 +543,13 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
          or (out.get("measurements") or {}).get("agent_summary")
          or {})
     )
+    m = out.get("measurements") or {}
+    patient_block = _coerce_dict(summary.get("patient"))
+    patient_study = _coerce_dict(patient_block.get("study"))
+    patient_findings = _coerce_list(patient_block.get("findings"))
+    technical_findings = _coerce_list(summary.get("findings"))
+    confidence = _coerce_dict(patient_block.get("confidence"))
+    normalized_findings = _normalized_findings_from_summary(summary)
     patient_pdf = _find_patient_pdf(job_id)
     clinical_pdf = _find_clinical_pdf(job_id)
     out["pdf_available"] = bool(out.get("pdf_available") or patient_pdf)
@@ -506,17 +557,52 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
     out.setdefault("error_code", None)
     out.setdefault("error_message", out.get("error"))
     out.setdefault("auth_state", None)
-    out.setdefault("progress_phase", out.get("status", "complete"))
+    out["progress_phase"] = _normalized_progress_phase(out.get("status", "complete"), out.get("progress_phase"))
     if "interpretation" not in out or not out.get("interpretation"):
         out["interpretation"] = _interpretation_from_summary(summary)
     if all(k in out for k in ("study", "patient", "clinician", "findings", "confidence", "assets")):
+        out["study"] = _fill_missing_dict_values(out.get("study"), {
+            "body_part": patient_study.get("body_part") or out.get("detected_anatomy") or m.get("detected_anatomy", "unknown"),
+            "modality": patient_study.get("modality") or m.get("modality", ""),
+            "date": patient_study.get("date", ""),
+            "comparison": patient_study.get("comparison", ""),
+            "description": out.get("study_description", "") or m.get("study_description", "") or summary.get("study_description", ""),
+            "detected_anatomy": out.get("detected_anatomy") or m.get("detected_anatomy", "unknown"),
+            "anatomy_subregion": out.get("anatomy_subregion") or m.get("anatomy_subregion", ""),
+            "calibration_status": out.get("calibration_status") or m.get("calibration_status", "unknown"),
+        })
+        out["patient"] = _fill_missing_dict_values(out.get("patient"), {
+            "demographics": _coerce_dict(patient_block.get("patient")) or out.get("demographics", {}),
+            "bottom_line": patient_block.get("bottom_line", ""),
+            "key_points": _coerce_list(patient_block.get("key_points")),
+            "findings": patient_findings,
+            "confidence": confidence,
+            "change_over_time": _coerce_dict(patient_block.get("change_over_time")),
+            "what_it_means": _coerce_list(patient_block.get("what_it_means")),
+            "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
+            "disclaimer": patient_block.get("disclaimer") or out.get("disclaimer") or REPORT_DISCLAIMER,
+        })
+        out["clinician"] = _fill_missing_dict_values(out.get("clinician"), {
+            "findings": technical_findings,
+            "impression": _coerce_list(summary.get("impression")) or _coerce_list((out.get("interpretation") or {}).get("impression")),
+            "incidentals": _coerce_list(summary.get("incidentals")),
+            "discrepancies": _coerce_list(summary.get("discrepancies")),
+            "confidence_summary": summary.get("confidence_summary") or (out.get("interpretation") or {}).get("confidence_summary", ""),
+            "calibration_status": out.get("calibration_status") or m.get("calibration_status", "unknown"),
+        })
+        if not out.get("findings") and normalized_findings:
+            out["findings"] = normalized_findings
+        if not out.get("confidence") and confidence:
+            out["confidence"] = confidence
+        assets = dict(out.get("assets") or {})
+        pdf_assets = dict(assets.get("pdf") or {})
+        pdf_assets["patient_available"] = bool(pdf_assets.get("patient_available") or out["pdf_available"])
+        pdf_assets["clinical_available"] = bool(pdf_assets.get("clinical_available") or out["clinical_pdf_available"])
+        assets["pdf"] = pdf_assets
+        out["assets"] = assets
         return out
 
-    m = out.get("measurements") or {}
-    patient_block = _coerce_dict(summary.get("patient"))
-    patient_study = _coerce_dict(patient_block.get("study"))
-    confidence = _coerce_dict(patient_block.get("confidence"))
-    out.setdefault("study", {
+    out["study"] = _fill_missing_dict_values(out.get("study"), {
         "body_part": patient_study.get("body_part") or out.get("detected_anatomy", "unknown"),
         "modality": patient_study.get("modality") or m.get("modality", ""),
         "date": patient_study.get("date", ""),
@@ -526,26 +612,27 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         "anatomy_subregion": out.get("anatomy_subregion", ""),
         "calibration_status": out.get("calibration_status", "unknown"),
     })
-    out.setdefault("patient", {
+    out["patient"] = _fill_missing_dict_values(out.get("patient"), {
         "demographics": _coerce_dict(patient_block.get("patient")) or out.get("demographics", {}),
         "bottom_line": patient_block.get("bottom_line", ""),
         "key_points": _coerce_list(patient_block.get("key_points")),
-        "findings": _coerce_list(patient_block.get("findings")),
+        "findings": patient_findings,
         "confidence": confidence,
         "change_over_time": _coerce_dict(patient_block.get("change_over_time")),
         "what_it_means": _coerce_list(patient_block.get("what_it_means")),
         "worth_flagging": _coerce_list(patient_block.get("worth_flagging")),
         "disclaimer": patient_block.get("disclaimer") or out.get("disclaimer") or REPORT_DISCLAIMER,
     })
-    out.setdefault("clinician", {
-        "findings": _coerce_list(summary.get("findings")),
+    out["clinician"] = _fill_missing_dict_values(out.get("clinician"), {
+        "findings": technical_findings,
         "impression": _coerce_list(summary.get("impression")) or _coerce_list((out.get("interpretation") or {}).get("impression")),
         "incidentals": _coerce_list(summary.get("incidentals")),
         "discrepancies": _coerce_list(summary.get("discrepancies")),
         "confidence_summary": summary.get("confidence_summary") or (out.get("interpretation") or {}).get("confidence_summary", ""),
         "calibration_status": out.get("calibration_status", "unknown"),
     })
-    out.setdefault("findings", [])
+    if not out.get("findings"):
+        out["findings"] = normalized_findings
     out.setdefault("confidence", confidence)
     out.setdefault("assets", {
         "figures": out.get("figures", []),
@@ -572,6 +659,7 @@ def _persist_report(job: "AnalysisJob") -> None:
         # Cover thumbnail for the Recent list: prefer a real study slice, else the first figure.
         thumb = next((n for n in images if n.startswith("seqthumb")), None) or next(iter(images), None)
         m = job.measurements or {}
+        progress_phase = _normalized_progress_phase(job.status, getattr(job, "progress_phase", None))
         meta = {
             "job_id": job.job_id,
             "status": job.status,
@@ -597,7 +685,7 @@ def _persist_report(job: "AnalysisJob") -> None:
             "error_code": getattr(job, "error_code", None),
             "error_message": getattr(job, "error", None),
             "auth_state": getattr(job, "auth_state", None),
-            "progress_phase": getattr(job, "progress_phase", job.status),
+            "progress_phase": progress_phase,
             "truncated": bool(getattr(job, "truncated", False)),
         }
         (jd / "meta.json").write_text(json.dumps(meta, default=str), encoding="utf-8")
@@ -636,12 +724,13 @@ def _list_reports() -> list[dict]:
             meta = _load_meta(d.name)
             if not meta:
                 continue
-            report = _load_report(d.name) or {}
+            raw_report = _load_report(d.name) or {}
+            report = _normalize_loaded_report(d.name, raw_report) if raw_report else {}
             study = report.get("study") or {}
             out.append({
                 "job_id": meta.get("job_id", d.name),
                 "status": meta.get("status", "complete"),
-                "title": meta.get("title") or study.get("description") or study.get("body_part") or "",
+                "title": meta.get("title") or study.get("description") or study.get("body_part") or report.get("study_description") or "",
                 "detected_anatomy": meta.get("detected_anatomy") or study.get("detected_anatomy") or "unknown",
                 "anatomy_subregion": meta.get("anatomy_subregion") or study.get("anatomy_subregion") or "",
                 "modality": meta.get("modality") or study.get("modality") or "",
@@ -653,7 +742,7 @@ def _list_reports() -> list[dict]:
                 "error_code": meta.get("error_code"),
                 "error_message": meta.get("error_message"),
                 "auth_state": meta.get("auth_state"),
-                "progress_phase": meta.get("progress_phase", meta.get("status", "complete")),
+                "progress_phase": _normalized_progress_phase(meta.get("status", "complete"), meta.get("progress_phase")),
             })
     except Exception as e:
         logger.warning(f"Could not list reports: {e}")
@@ -754,7 +843,7 @@ def _write_status_file(
             "job_id": job_id, "status": status, "progress": progress,
             "message": message, "heartbeat_ts": heartbeat_ts, "truncated": truncated,
             "error_code": error_code, "auth_state": auth_state,
-            "progress_phase": progress_phase or status,
+            "progress_phase": _normalized_progress_phase(status, progress_phase),
         }), encoding="utf-8")
     except Exception as e:
         logger.debug(f"status.json write failed for {job_id}: {e}")
@@ -1207,12 +1296,6 @@ async def get_status(job_id: str):
     """Get current analysis status (poll or SSE)."""
     _validate_job_id(job_id)
     job = JOBS.get(job_id)
-    if job and job.status != "complete":
-        raise HTTPException(400, f"Analysis not complete (status: {job.status})")
-    patient_pdf = _find_patient_pdf(job_id, job)
-    if patient_pdf:
-        return FileResponse(str(patient_pdf), media_type="application/pdf", filename="mika_report.pdf")
-    raise HTTPException(404, "No PDF report available for this job")
     if not job:
         # No live run. First bring the on-disk job to an honest terminal state (Fix 1): salvage a
         # finished-but-unpersisted report, or mark an interrupted one as error.
@@ -1227,7 +1310,7 @@ async def get_status(job_id: str):
                 error_code=meta.get("error_code"),
                 error_message=meta.get("error_message") or meta.get("error"),
                 auth_state=meta.get("auth_state"),
-                progress_phase=meta.get("progress_phase") or st,
+                progress_phase=_normalized_progress_phase(st, meta.get("progress_phase")),
                 truncated=bool(meta.get("truncated")),
             )
         disk = _load_status(job_id)
@@ -1240,7 +1323,7 @@ async def get_status(job_id: str):
                 error_code=disk.get("error_code"),
                 error_message=disk.get("message") if st == "error" else None,
                 auth_state=disk.get("auth_state"),
-                progress_phase=disk.get("progress_phase") or st,
+                progress_phase=_normalized_progress_phase(st, disk.get("progress_phase")),
                 truncated=bool(disk.get("truncated")),
             )
         raise HTTPException(404, f"Job {job_id} not found")
@@ -1256,7 +1339,7 @@ async def get_status(job_id: str):
         error_code=getattr(job, "error_code", None),
         error_message=job.error,
         auth_state=getattr(job, "auth_state", None),
-        progress_phase=getattr(job, "progress_phase", job.status),
+        progress_phase=_normalized_progress_phase(job.status, getattr(job, "progress_phase", None)),
         eta_seconds=job.eta_seconds,
         est_total_seconds=job.est_total_seconds,
         active_sequence=job.active_sequence,
@@ -1283,7 +1366,7 @@ async def stream_status(job_id: str):
                        "error_code": meta.get("error_code"),
                        "error_message": meta.get("error_message") or meta.get("error"),
                        "auth_state": meta.get("auth_state"),
-                       "progress_phase": meta.get("progress_phase") or st,
+                       "progress_phase": _normalized_progress_phase(st, meta.get("progress_phase")),
                        "truncated": bool(meta.get("truncated"))}
         else:
             disk = _load_status(job_id)
@@ -1295,7 +1378,7 @@ async def stream_status(job_id: str):
                            "error_code": disk.get("error_code"),
                            "error_message": disk.get("message") if st == "error" else None,
                            "auth_state": disk.get("auth_state"),
-                           "progress_phase": disk.get("progress_phase") or st,
+                           "progress_phase": _normalized_progress_phase(st, disk.get("progress_phase")),
                            "truncated": bool(disk.get("truncated"))}
         if payload is not None:
             async def _one():
@@ -1318,7 +1401,7 @@ async def stream_status(job_id: str):
                     "error_code": getattr(job, "error_code", None),
                     "error_message": job.error,
                     "auth_state": getattr(job, "auth_state", None),
-                    "progress_phase": getattr(job, "progress_phase", job.status),
+                    "progress_phase": _normalized_progress_phase(job.status, getattr(job, "progress_phase", None)),
                     "eta_seconds": job.eta_seconds,
                     "est_total_seconds": job.est_total_seconds,
                     "active_sequence": job.active_sequence,
@@ -2342,6 +2425,7 @@ _CSP = (
 )
 _SECURITY_HEADERS = {
     "Content-Security-Policy": _CSP,
+    "Cache-Control": "no-store",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "no-referrer",

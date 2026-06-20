@@ -956,19 +956,19 @@
     }
 
     const api = {
-      availability: () => fetch(`${API_BASE}/api/agent/availability`).then(r => r.json()),
-      preflight: () => fetch(`${API_BASE}/api/agent/preflight`).then(r => r.json()),
+      availability: () => fetch(`${API_BASE}/api/agent/availability`, { cache:'no-store' }).then(r => r.json()),
+      preflight: () => fetch(`${API_BASE}/api/agent/preflight`, { cache:'no-store' }).then(r => r.json()),
       connect: (body={ mode:'browser' }) => fetch(`${API_BASE}/api/connect`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r => r.json()),
-      authStatus: (id) => fetch(`${API_BASE}/api/connect/${id}`).then(r => r.json()),
+      authStatus: (id) => fetch(`${API_BASE}/api/connect/${id}`, { cache:'no-store' }).then(r => r.json()),
       authRetry: (id, body={ mode:'browser' }) => fetch(`${API_BASE}/api/connect/${id}/retry`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r => r.json()),
       authCancel: (id) => fetch(`${API_BASE}/api/connect/${id}/cancel`, { method:'POST' }).then(r => r.json()),
       authCode: (id, code) => fetch(`${API_BASE}/api/connect/${id}/code`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ code }) }).then(r => r.json()),
       upload: (fd) => fetch(`${API_BASE}/api/upload`, { method:'POST', body:fd }).then(r => r.json()),
       analyze: (body) => fetch(`${API_BASE}/api/analyze`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) }).then(r => r.json()),
-      status: (id) => fetch(`${API_BASE}/api/status/${id}`),
-      report: (id) => fetch(`${API_BASE}/api/report/${id}`),
-      reports: () => fetch(`${API_BASE}/api/reports`).then(r => r.ok ? r.json() : { reports:[] }).catch(() => ({ reports:[] })),
-      sequences: (id) => fetch(`${API_BASE}/api/study/${id}/sequences`).then(r => r.ok ? r.json() : { sequences:[] }).catch(() => ({ sequences:[] })),
+      status: (id) => fetch(`${API_BASE}/api/status/${id}`, { cache:'no-store' }),
+      report: (id) => fetch(`${API_BASE}/api/report/${id}`, { cache:'no-store' }),
+      reports: () => fetch(`${API_BASE}/api/reports`, { cache:'no-store' }).then(r => r.ok ? r.json() : { reports:[] }).catch(() => ({ reports:[] })),
+      sequences: (id) => fetch(`${API_BASE}/api/study/${id}/sequences`, { cache:'no-store' }).then(r => r.ok ? r.json() : { sequences:[] }).catch(() => ({ sequences:[] })),
     };
 
     function proofUrl(jobId, figureFilename) {
@@ -2083,12 +2083,18 @@
 
     /* ═══════════════ App (state + screenFor switch) ═══════════════ */
     const EMPTY_JOB = { id:null, status:'pending', mode:null, progress:0, message:'', eta_seconds:null, est_total_seconds:null, error:null, active_sequence:null, active_region:null };
+    function initialJobFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const jobId = params.get('job_id') || DEEP_LINK_JOB;
+      if (params.get('demo') || !jobId) return EMPTY_JOB;
+      return { ...EMPTY_JOB, id:jobId, status:'loading', progress:0, message:'Opening saved read...' };
+    }
 
     function App() {
       const reduced = useReducedMotion();
       const { toasts, addToast } = useToast();
       const [connection, setConnection] = useState(null);
-      const [job, setJob] = useState(EMPTY_JOB);
+      const [job, setJob] = useState(initialJobFromUrl);
       const [ready, setReady] = useState(null);            // upload response (file_count, input_format)
       const [history, setHistory] = useState('');
       const [report, setReport] = useState(null);
@@ -2314,20 +2320,43 @@
       // resume deep-link (§7.7) — verify the job actually exists before assuming it's mid-run, so an
       // expired/gone link shows a clear message instead of stranding the user on a frozen Wait. (sm-01)
       useEffect(() => {
-        if (DEMO || !DEEP_LINK_JOB) return stopStream;
+        const params = new URLSearchParams(window.location.search);
+        const deepLinkJob = params.get('job_id') || DEEP_LINK_JOB;
+        if (params.get('demo') || !deepLinkJob) return stopStream;
         (async () => {
           try {
-            const r = await api.status(DEEP_LINK_JOB);
-            if (!r.ok) { addToast('That scan link has expired or was not found — please upload again.', 'error'); return; }
+            const r = await api.status(deepLinkJob);
+            if (!r.ok) {
+              addToast('That scan link has expired or was not found — please upload again.', 'error');
+              setJob(EMPTY_JOB);
+              return;
+            }
             const s = await r.json();
-            if (s.status === 'complete') { setJob(j=>({...j, id:DEEP_LINK_JOB, status:'complete', progress:100})); fetchReport(DEEP_LINK_JOB); return; }
-            if (s.status === 'error') { setJob(j=>({...j, id:DEEP_LINK_JOB, status:'error', error:s.error||'Analysis failed'})); addToast(`Analysis stopped: ${s.error||'unknown error'}`, 'error'); return; }
-            setJob(j=>({...j, id:DEEP_LINK_JOB, status:s.status||'interpreting', progress:s.progress ?? 8}));
-            watch(DEEP_LINK_JOB);
-          } catch (_) { addToast('Could not reach the app service to resume your scan.', 'error'); }
+            if (s.status === 'complete') {
+              const rr = await api.report(deepLinkJob);
+              if (!rr.ok) throw new Error('report not available');
+              const data = await rr.json();
+              setReport(data);
+              setRoute(null);
+              setJob(j=>({...j, id:deepLinkJob, status:'complete', progress:100}));
+              try {
+                const tmp = buildViewModel(data);
+                const label = (tmp && tmp.study && tmp.study.body_part) || data.detected_anatomy || 'Scan';
+                pushRecent({ jobId: deepLinkJob, label, anatomy: data.detected_anatomy || '', date: new Date().toISOString() });
+              } catch (_) {}
+              return;
+            }
+            if (s.status === 'error') { setJob(j=>({...j, id:deepLinkJob, status:'error', error:s.error||'Analysis failed'})); addToast(`Analysis stopped: ${s.error||'unknown error'}`, 'error'); return; }
+            setJob(j=>({...j, id:deepLinkJob, status:s.status||'interpreting', progress:s.progress ?? 8}));
+            watch(deepLinkJob);
+          } catch (e) {
+            console.error('MIKA resume failed', e);
+            setJob(EMPTY_JOB);
+            addToast('Could not reach the app service to resume your scan.', 'error');
+          }
         })();
         return stopStream;
-      }, []);  // eslint-disable-line
+      }, [addToast, fetchReport, stopStream, watch]);
 
       // Mirror (route, job) into the URL as real history entries so the browser Back/Forward buttons
       // move between Home → Recent → a Read like any web app, with no dead-ends. A refresh restores the
@@ -2341,6 +2370,7 @@
         if (popping.current) { popping.current = false; return; }
         try {
           const u = new URL(window.location.href);
+          if (!job.id && job.status === 'pending' && u.searchParams.get('job_id')) return;
           if (job.id && job.status !== 'pending') u.searchParams.set('job_id', job.id);
           else u.searchParams.delete('job_id');
           if (route) u.searchParams.set('route', route); else u.searchParams.delete('route');
