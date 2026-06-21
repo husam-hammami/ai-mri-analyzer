@@ -196,6 +196,23 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
             block.append(Spacer(1, 8))
             flow.append(KeepTogether(block))
 
+    # 3a. FOCUSED EVIDENCE REVIEW
+    focused = patient.get("cv_supported_explanations", [])
+    if isinstance(focused, dict):
+        focused = [focused]
+    elif not isinstance(focused, list):
+        focused = []
+    if focused:
+        flow.append(Paragraph("Focused evidence review", SECTION))
+        for item in focused:
+            if isinstance(item, dict):
+                text = item.get("plain") or item.get("explanation") or ""
+            else:
+                text = str(item or "")
+            if text:
+                flow.append(Paragraph(escape(str(text)), BODY))
+        flow.append(Spacer(1, 4))
+
     # 3b. REFERENCE-ASSISTED REVIEW
     ref_review = patient.get("reference_reconciliation") or patient.get("reconciliation")
     if isinstance(ref_review, dict) and (ref_review.get("summary") or ref_review.get("items")):

@@ -20,6 +20,7 @@ from xml.sax.saxutils import escape
 
 AGREEMENT_STATUSES = {
     "confirmed",
+    "supported_by_focused_evidence",
     "partially_supported",
     "not_independently_seen",
     "conflicts_with_reference",
@@ -565,6 +566,7 @@ def _row_evidence_refs(row: Optional[dict[str, Any]], evidence_manifest: Optiona
 def _patient_status_label(status: str) -> str:
     return {
         "confirmed": "MIKA also saw this",
+        "supported_by_focused_evidence": "Supported by focused review",
         "partially_supported": "MIKA saw part of this",
         "not_independently_seen": "MIKA did not independently see this report finding",
         "conflicts_with_reference": "MIKA's independent read differs from the uploaded report",
@@ -592,6 +594,8 @@ def _patient_reference_phrase(item: dict[str, Any]) -> str:
 
 def _patient_mika_phrase(item: dict[str, Any]) -> str:
     status = item.get("agreement_status")
+    if status == "supported_by_focused_evidence":
+        return "MIKA's focused image review supported the same area, while the exact cause still needs clinician review."
     if status == "confirmed":
         return "MIKA's independent image read also supported this report finding."
     if status == "partially_supported":
@@ -681,7 +685,7 @@ def build_clinical_reconciliation_report(summary: dict[str, Any], reconciliation
 
     story: list[Any] = [
         Paragraph("MIKA Clinical Report", h1),
-        Paragraph("Blind image read plus separate reference-assisted reconciliation.", small),
+        Paragraph("Blind image read plus separate focused-evidence and reference-assisted sections.", small),
         Spacer(1, 8),
         Paragraph("Blind image read", h2),
         Paragraph(
@@ -705,6 +709,44 @@ def build_clinical_reconciliation_report(summary: dict[str, Any], reconciliation
     if len(rows) == 1:
         rows.append([Paragraph("", body), Paragraph("No structured blind findings available.", body), Paragraph("", body)])
     story.append(_table(rows, [0.6 * inch, 4.7 * inch, 1.5 * inch]))
+
+    cv_rows_data = summary.get("cv_supported_findings") or []
+    if isinstance(cv_rows_data, dict):
+        cv_rows_data = [cv_rows_data]
+    if cv_rows_data:
+        story.extend([
+            Spacer(1, 8),
+            Paragraph("CV-supported focused evidence", h2),
+            Paragraph(
+                "Rows below are CV-localized, Claude-supported evidence. They are not deterministic diagnoses "
+                "and do not create body-map markers or proof overlays unless trust gates pass.",
+                body,
+            ),
+        ])
+        cv_rows = [[
+            Paragraph("<b>Candidate</b>", small),
+            Paragraph("<b>Location</b>", small),
+            Paragraph("<b>Status / refs</b>", small),
+            Paragraph("<b>Limitations</b>", small),
+        ]]
+        for item in cv_rows_data[:20]:
+            if not isinstance(item, dict):
+                continue
+            location = " ".join(str(x) for x in (item.get("side"), item.get("level")) if x)
+            confidence = (
+                f"geometry={item.get('geometry_confidence', 'n/a')}; "
+                f"registration={item.get('registration_confidence', 'n/a')}"
+            )
+            refs = ", ".join(str(x) for x in (item.get("evidence_refs") or []))
+            limitations = "; ".join(str(x) for x in (item.get("limitations") or []))
+            cv_rows.append([
+                Paragraph(escape(str(item.get("candidate_id") or "")), body),
+                Paragraph(escape(location), body),
+                Paragraph(escape(f"{item.get('status', '')}; refs: {refs}; {confidence}"), body),
+                Paragraph(escape(limitations), body),
+            ])
+        if len(cv_rows) > 1:
+            story.append(_table(cv_rows, [1.45 * inch, 1.0 * inch, 2.0 * inch, 2.35 * inch]))
 
     story.extend([
         Spacer(1, 8),

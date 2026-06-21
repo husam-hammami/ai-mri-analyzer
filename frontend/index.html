@@ -1107,6 +1107,7 @@
     function referenceStatusLabel(status) {
       return ({
         confirmed: 'Confirmed by blind read',
+        supported_by_focused_evidence: 'Supported by focused evidence',
         partially_supported: 'Partly supported',
         not_independently_seen: 'Not independently seen',
         conflicts_with_reference: 'Disagrees with reference',
@@ -1121,6 +1122,18 @@
         cannot_assess: 'Cannot assess',
         localization_wrong: 'Localization wrong',
       })[status] || 'Needs review';
+    }
+
+    function normalizeCvSupportedReview(report) {
+      if (!report) return null;
+      const patientRows = Array.isArray((report.patient || {}).cv_supported_explanations)
+        ? report.patient.cv_supported_explanations
+        : [];
+      const clinicianRows = Array.isArray((report.clinician || {}).cv_supported_findings)
+        ? report.clinician.cv_supported_findings
+        : (((report.assets || {}).cv_supported_findings) || []);
+      if (!patientRows.length && !clinicianRows.length) return null;
+      return { patientRows, clinicianRows };
     }
 
     function normalizeCvCandidateReview(report) {
@@ -1141,6 +1154,7 @@
     function patientReferenceStatusLabel(status) {
       return ({
         confirmed: 'MIKA also saw this',
+        supported_by_focused_evidence: 'Supported by focused review',
         partially_supported: 'MIKA saw part of this',
         not_independently_seen: 'MIKA did not independently see this report finding',
         conflicts_with_reference: "MIKA's independent read differs from the uploaded report",
@@ -1155,6 +1169,7 @@
       const anatomy = figureAnatomy(report.detected_anatomy || 'unknown', report.anatomy_subregion || '');
       const patient = (report.agent && report.agent.summary && report.agent.summary.patient) || null;
       const referenceReview = normalizeReferenceReview(report);
+      const cvSupportedReview = normalizeCvSupportedReview(report);
       const cvCandidateReview = normalizeCvCandidateReview(report);
       const disclaimer = (patient && patient.disclaimer) || report.disclaimer || 'MIKA is an AI assistant and does not replace a doctor. All findings should be reviewed by a qualified clinician.';
 
@@ -1192,6 +1207,7 @@
           pdfAvailable: !!report.pdf_available,
           clinicalPdfAvailable: !!report.clinical_pdf_available,
           referenceReview,
+          cvSupportedReview,
           cvCandidateReview,
           disclaimer,
         };
@@ -1249,6 +1265,7 @@
         pdfAvailable: !!report.pdf_available,
         clinicalPdfAvailable: !!report.clinical_pdf_available,
         referenceReview,
+        cvSupportedReview,
         cvCandidateReview,
         disclaimer,
       };
@@ -2048,6 +2065,24 @@
       );
     }
 
+    function FocusedEvidencePanel({ review }) {
+      if (!review || !review.patientRows || !review.patientRows.length) return null;
+      return (
+        <div className="ref-review">
+          <div className="ref-head">
+            <span className="ref-kicker">Focused evidence review</span>
+            <span className="ref-status ok">Reviewed</span>
+          </div>
+          {review.patientRows.map((item, i) => (
+            <div className="ref-item" key={item.candidate_id || i}>
+              <div className="ref-chip s-supported">Focused review</div>
+              <div className="ref-copy">{stripTier(item.plain || item.explanation || '')}</div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     function ClinicianReferenceReview({ review }) {
       if (!review || !review.used) return null;
       const items = review.clinicianItems || [];
@@ -2069,6 +2104,39 @@
               </div>
             </div>
           )) : <div className="clin-notes">No structured reconciliation rows were available.</div>}
+        </div>
+      );
+    }
+
+    function ClinicianCvSupportedFindings({ review }) {
+      if (!review || !review.clinicianRows || !review.clinicianRows.length) return null;
+      return (
+        <div className="clin-card">
+          <div className="clin-h">CV-supported focused evidence</div>
+          <div className="clin-notes">Rows are CV-localized, Claude-supported evidence. They do not mutate blind findings or create markers by themselves.</div>
+          {review.clinicianRows.map((item, i) => {
+            const trust = item.artifact_trust || {};
+            return (
+              <div className="ref-tech-row" key={item.candidate_id || i}>
+                <span className="ref-chip s-supported">Supported</span>
+                <div className="ref-tech-body">
+                  <div className="ref-line"><b>Candidate:</b> {item.candidate_id || 'candidate'}</div>
+                  {(item.level || item.side) && <div className="ref-line"><b>Location:</b> {[item.side, item.level].filter(Boolean).join(' ')}</div>}
+                  {item.candidate_type && <div className="ref-line"><b>Type:</b> {item.candidate_type}</div>}
+                  <div className="ref-line"><b>Status:</b> CV-localized, Claude-supported evidence</div>
+                  {(item.geometry_confidence !== undefined || item.registration_confidence !== undefined) && (
+                    <div className="ref-line"><b>Confidence:</b> geometry {item.geometry_confidence ?? 'n/a'}, registration {item.registration_confidence ?? 'n/a'}</div>
+                  )}
+                  {item.evidence_refs && item.evidence_refs.length > 0 && <div className="ref-line"><b>Evidence refs:</b> {item.evidence_refs.join(', ')}</div>}
+                  {item.series_ids && item.series_ids.length > 0 && <div className="ref-line"><b>Series:</b> {item.series_ids.join(', ')}</div>}
+                  {item.slice_ids && item.slice_ids.length > 0 && <div className="ref-line"><b>Slices:</b> {item.slice_ids.join(', ')}</div>}
+                  {item.clinician_explanation && <div className="ref-line"><b>Note:</b> {item.clinician_explanation}</div>}
+                  {item.limitations && item.limitations.length > 0 && <div className="ref-line"><b>Limitations:</b> {item.limitations.join('; ')}</div>}
+                  <div className="ref-line"><b>Marker trust:</b> body {String(!!trust.body_marker)}, proof {String(!!trust.proof_overlay)}, pinpoint {String(!!trust.pinpoint_marker)}</div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       );
     }
@@ -2158,6 +2226,7 @@
               );
             }) : <div className="clin-notes">Limited clinician detail for this run.</div>}
           </div>
+          <ClinicianCvSupportedFindings review={vm.cvSupportedReview} />
           <ClinicianCvCandidateReview review={vm.cvCandidateReview} />
           <ClinicianReferenceReview review={vm.referenceReview} />
           {(v.corrections && v.corrections.length>0) && (
@@ -2199,6 +2268,7 @@
           </div>
           {!clinician && <CompareReportPanel jobId={jobId} review={vm.referenceReview} state={compareState}
             setState={setCompareState} onCompare={onCompareReport} onCancel={onCancelCompare} />}
+          {!clinician && <FocusedEvidencePanel review={vm.cvSupportedReview} />}
           {!clinician && <ReferenceReviewPanel review={vm.referenceReview} />}
         </div>
       );
@@ -2324,6 +2394,7 @@
                         <>
                           <CompareReportPanel jobId={jobId} review={vm.referenceReview} state={compareState}
                             setState={setCompareState} onCompare={onCompareReport} onCancel={onCancelCompare} />
+                          <FocusedEvidencePanel review={vm.cvSupportedReview} />
                           <ReferenceReviewPanel review={vm.referenceReview} />
                           {(vm.worthFlagging && vm.worthFlagging.length>0) && (
                             <div className="sec-block"><h3>Ask your doctor about</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
