@@ -13,9 +13,14 @@ import copy
 import re
 from typing import Any, Optional
 
+try:
+    from services.cv_adjudication import adjudication_by_candidate
+except ImportError:  # pragma: no cover
+    from backend.services.cv_adjudication import adjudication_by_candidate
+
 
 SUPPORTED_RECON_STATUS = "supported_by_focused_evidence"
-CV_REVIEW_STATUSES = {"supported", "not_supported", "cannot_assess", "localization_wrong"}
+CV_REVIEW_STATUSES = {"supported", "not_supported", "cannot_assess", "localization_wrong", "unstable"}
 
 
 def synthesize_cv_candidate_reviews(
@@ -23,6 +28,7 @@ def synthesize_cv_candidate_reviews(
     blind_report: Optional[dict[str, Any]] = None,
     cv_candidates: Optional[list[dict[str, Any]]] = None,
     cv_candidate_reviews: Optional[list[dict[str, Any]]] = None,
+    cv_candidate_adjudication: Optional[list[dict[str, Any]]] = None,
     verifier_result: Optional[dict[str, Any]] = None,
     cv_candidate_policy: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
@@ -39,9 +45,11 @@ def synthesize_cv_candidate_reviews(
         if isinstance(c, dict) and c.get("candidate_id")
     }
     verifier_status = _verifier_status_by_candidate(verifier_result)
+    adjudication = adjudication_by_candidate(cv_candidate_adjudication)
     policy = dict(cv_candidate_policy or {})
     policy.setdefault("deterministic_cv_does_not_create_findings", True)
     policy.setdefault("supported_review_required", True)
+    policy.setdefault("adjudicated_supported_required", True)
     policy.setdefault("marker_thresholds_still_apply", True)
 
     clinician_rows: list[dict[str, Any]] = []
@@ -56,6 +64,9 @@ def synthesize_cv_candidate_reviews(
         if status not in CV_REVIEW_STATUSES:
             status = "cannot_assess"
         if status != "supported":
+            continue
+        adjudicated_row = adjudication.get(candidate_id)
+        if adjudicated_row and str(adjudicated_row.get("final_status") or "").lower() != "supported":
             continue
         verifier_status_for_candidate = verifier_status.get(candidate_id)
         if verifier_status_for_candidate and verifier_status_for_candidate != "supported":
@@ -99,6 +110,7 @@ def synthesize_cv_candidate_reviews(
             "patient_explanation": patient_text,
             "clinician_explanation": clinician_text,
             "concepts": concepts,
+            "adjudication": adjudicated_row or {},
         }
         clinician_rows.append(row)
         patient_rows.append({
@@ -172,6 +184,46 @@ def upgrade_reconciliation_with_cv_supported_findings(
     return rec
 
 
+def annotate_reconciliation_with_cv_adjudication(
+    reconciliation: Optional[dict[str, Any]],
+    cv_candidate_adjudication: Optional[list[dict[str, Any]]],
+) -> dict[str, Any]:
+    """Attach focused-review adjudication context without upgrading conflicts.
+
+    Supported adjudication is handled by upgrade_reconciliation_with_cv_supported_findings().
+    This function documents non-supported or unstable focused review states so the
+    reference discrepancy remains visible instead of being silently ignored.
+    """
+    rec = copy.deepcopy(reconciliation or {})
+    adjudications = [a for a in (cv_candidate_adjudication or []) if isinstance(a, dict)]
+    if not rec or not adjudications or not rec.get("items"):
+        return rec
+
+    targets = rec.get("targets") or []
+    updated_items: list[dict[str, Any]] = []
+    for idx, raw_item in enumerate(rec.get("items") or []):
+        if not isinstance(raw_item, dict):
+            continue
+        item = dict(raw_item)
+        target = targets[idx] if idx < len(targets) and isinstance(targets[idx], dict) else item
+        match = _match_adjudication(target, adjudications)
+        if match:
+            final_status = str(match.get("final_status") or "cannot_assess")
+            item["focused_review_final_status"] = final_status
+            item["focused_review_candidate_id"] = match.get("candidate_id", "")
+            item["focused_review_statuses"] = match.get("statuses", [])
+            item["focused_review_disagreement"] = bool(match.get("disagreement"))
+            item["focused_review_note"] = _focused_adjudication_note(match)
+            if final_status != "supported":
+                item["patient_explanation"] = _adjudication_patient_reconciliation_explanation(item, match)
+                item["clinician_explanation"] = _adjudication_clinician_reconciliation_explanation(item, match)
+        updated_items.append(item)
+
+    rec["items"] = updated_items
+    _refresh_reconciliation_sections(rec)
+    return rec
+
+
 def _verifier_status_by_candidate(verifier_result: Optional[dict[str, Any]]) -> dict[str, str]:
     out: dict[str, str] = {}
     if not isinstance(verifier_result, dict):
@@ -188,7 +240,13 @@ def _verifier_status_by_candidate(verifier_result: Optional[dict[str, Any]]) -> 
 
 
 def _evidence_refs(review: dict[str, Any], candidate: dict[str, Any]) -> list[str]:
-    refs = review.get("evidence_refs_used") or review.get("evidence_refs") or candidate.get("evidence_refs") or []
+    refs = (
+        review.get("evidence_refs_used")
+        or review.get("evidence_refs")
+        or candidate.get("selected_evidence_refs")
+        or candidate.get("evidence_refs")
+        or []
+    )
     return _string_list(refs)
 
 
@@ -262,6 +320,19 @@ def _match_focused_finding(target: dict[str, Any], findings: list[dict[str, Any]
     return None
 
 
+def _match_adjudication(target: dict[str, Any], adjudications: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+    target_level = _normalize_level(target.get("level", ""))
+    target_side = _clean(target.get("side")).lower()
+    for row in adjudications:
+        if _normalize_level(row.get("level", "")) != target_level:
+            continue
+        row_side = _clean(row.get("side")).lower()
+        if target_side and row_side and target_side != row_side:
+            continue
+        return row
+    return None
+
+
 def _focused_reconciliation_status(target: dict[str, Any], finding: dict[str, Any]) -> str:
     target_concepts = set(target.get("concepts") or [])
     focused_concepts = set(finding.get("concepts") or [])
@@ -269,6 +340,61 @@ def _focused_reconciliation_status(target: dict[str, Any], finding: dict[str, An
     if unresolved & {"scar_or_residual_recurrent_disc", "nerve_root", "foraminal"}:
         return "partially_supported"
     return SUPPORTED_RECON_STATUS
+
+
+def _focused_adjudication_note(row: dict[str, Any]) -> str:
+    final_status = str(row.get("final_status") or "cannot_assess")
+    statuses = ", ".join(str(x) for x in (row.get("statuses") or []))
+    reasons = _clean(row.get("reasons_summary"))
+    return (
+        f"Focused CV-localized repeated review final_status={final_status}; "
+        f"statuses=[{statuses}]; reason summary: {reasons or 'not provided'}."
+    )
+
+
+def _adjudication_patient_reconciliation_explanation(
+    item: dict[str, Any],
+    adjudication: dict[str, Any],
+) -> str:
+    location = " ".join(x for x in (adjudication.get("side"), adjudication.get("level")) if x).strip() or "the reported area"
+    final_status = str(adjudication.get("final_status") or "cannot_assess")
+    if final_status in {"unstable", "discordant"} or adjudication.get("disagreement"):
+        return (
+            f"MIKA's independent read still differs from the uploaded report. A focused review of "
+            f"{location} was repeated, but the focused reviews did not agree with each other. "
+            "The uploaded report may describe a clinically important item, so this should be "
+            "reviewed with a radiologist or spine clinician."
+        )
+    if final_status == "localization_wrong":
+        return (
+            f"MIKA's independent read still differs from the uploaded report. The focused review "
+            f"could not trust the automated location for {location}, so MIKA did not use it as "
+            "supporting evidence. Review with a radiologist or spine clinician."
+        )
+    if final_status == "not_supported":
+        return (
+            f"MIKA's independent read still differs from the uploaded report. A focused review of "
+            f"{location} did not independently support the uploaded-report item. The difference "
+            "should still be reviewed with a radiologist or spine clinician."
+        )
+    return (
+        f"MIKA could not reliably assess the focused area at {location}. The uploaded report may "
+        "contain clinically important details that need clinician or radiologist review."
+    )
+
+
+def _adjudication_clinician_reconciliation_explanation(
+    item: dict[str, Any],
+    adjudication: dict[str, Any],
+) -> str:
+    return (
+        f"{item.get('clinician_explanation', '')} Focused CV candidate adjudication did not support "
+        f"upgrade: final_status={adjudication.get('final_status')}; "
+        f"statuses={adjudication.get('statuses')}; "
+        f"candidate_id={adjudication.get('candidate_id')}; "
+        f"reason_summary={adjudication.get('reasons_summary')}. Preserve blind-read/reference "
+        "separation and do not synthesize a confirmed finding from this candidate."
+    ).strip()
 
 
 def _focused_patient_reconciliation_explanation(
@@ -322,6 +448,7 @@ def _refresh_reconciliation_sections(rec: dict[str, Any]) -> None:
         "counts": counts,
         "has_discrepancy": has_discrepancy,
         "focused_evidence_used": any(item.get("focused_evidence_status") == "supported" for item in items),
+        "focused_review_adjudicated": any(item.get("focused_review_final_status") for item in items),
     })
     rec["summary"] = summary
     rec["patient"] = {
@@ -356,6 +483,11 @@ def _clinician_item(item: dict[str, Any]) -> dict[str, Any]:
         "evidence_refs": item.get("evidence_refs", []),
         "focused_evidence_refs": item.get("focused_evidence_refs", []),
         "focused_evidence_candidate_id": item.get("focused_evidence_candidate_id", ""),
+        "focused_review_final_status": item.get("focused_review_final_status", ""),
+        "focused_review_statuses": item.get("focused_review_statuses", []),
+        "focused_review_candidate_id": item.get("focused_review_candidate_id", ""),
+        "focused_review_disagreement": item.get("focused_review_disagreement", False),
+        "focused_review_note": item.get("focused_review_note", ""),
         "modality_sequence_needed": item.get("modality_sequence_needed", ""),
         "explanation": item.get("clinician_explanation", ""),
     }
@@ -378,6 +510,12 @@ def _patient_summary(items: list[dict[str, Any]]) -> str:
             "MIKA compared the uploaded report with its independent image read and a focused "
             "image review. Some focused evidence may support the reported area, but the exact "
             "meaning still needs clinician or radiologist review."
+        )
+    if any(item.get("focused_review_disagreement") for item in items):
+        return (
+            "MIKA compared the uploaded report with its independent image read and repeated a "
+            "focused review. The focused reviews did not fully agree, so the difference should "
+            "be reviewed with a radiologist or clinician."
         )
     if any(item.get("agreement_status") in {"conflicts_with_reference", "not_independently_seen"} for item in items):
         return (

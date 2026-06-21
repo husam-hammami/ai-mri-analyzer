@@ -710,6 +710,44 @@ def build_clinical_reconciliation_report(summary: dict[str, Any], reconciliation
         rows.append([Paragraph("", body), Paragraph("No structured blind findings available.", body), Paragraph("", body)])
     story.append(_table(rows, [0.6 * inch, 4.7 * inch, 1.5 * inch]))
 
+    adjudication_rows_data = summary.get("cv_candidate_adjudication") or []
+    if isinstance(adjudication_rows_data, dict):
+        adjudication_rows_data = [adjudication_rows_data]
+    if adjudication_rows_data:
+        story.extend([
+            Spacer(1, 8),
+            Paragraph("CV candidate adjudication", h2),
+            Paragraph(
+                "Rows below combine repeated focused candidate reviews. Only final_status=supported "
+                "is eligible for focused-evidence synthesis.",
+                body,
+            ),
+        ])
+        adj_rows = [[
+            Paragraph("<b>Candidate</b>", small),
+            Paragraph("<b>Reviews</b>", small),
+            Paragraph("<b>Final status</b>", small),
+            Paragraph("<b>Reason summary / limitations</b>", small),
+        ]]
+        for item in adjudication_rows_data[:20]:
+            if not isinstance(item, dict):
+                continue
+            status_text = (
+                f"majority={item.get('majority_status') or 'none'}; "
+                f"final={item.get('final_status') or 'cannot_assess'}; "
+                f"disagreement={bool(item.get('disagreement'))}"
+            )
+            reasons = str(item.get("reasons_summary") or "")
+            limitations = "; ".join(str(x) for x in (item.get("limitations") or []))
+            adj_rows.append([
+                Paragraph(escape(str(item.get("candidate_id") or "")), body),
+                Paragraph(escape(f"{item.get('review_count', 0)}; statuses={item.get('statuses') or []}"), body),
+                Paragraph(escape(status_text), body),
+                Paragraph(escape("; ".join(x for x in (reasons, limitations) if x)), body),
+            ])
+        if len(adj_rows) > 1:
+            story.append(_table(adj_rows, [1.45 * inch, 1.4 * inch, 1.4 * inch, 2.55 * inch]))
+
     cv_rows_data = summary.get("cv_supported_findings") or []
     if isinstance(cv_rows_data, dict):
         cv_rows_data = [cv_rows_data]

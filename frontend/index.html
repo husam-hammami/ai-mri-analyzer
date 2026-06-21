@@ -593,6 +593,13 @@
     .ref-chip { display:inline-flex; align-items:center; width:max-content; max-width:100%; font-size:11px; font-weight:800; padding:3px 8px; border-radius:var(--r-sm); margin-bottom:6px; background:var(--surface-2); color:var(--slate); box-shadow:inset 0 0 0 1px var(--line); }
     .ref-chip.s-confirmed { color:var(--accent-strong); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line); }
     .ref-chip.s-partially_supported { color:#854d0e; background:#fef3c7; box-shadow:inset 0 0 0 1px #fde68a; }
+    .ref-chip.s-supported,
+    .ref-chip.s-supported_by_focused_evidence { color:var(--accent-strong); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line); }
+    .ref-chip.s-unstable,
+    .ref-chip.s-discordant,
+    .ref-chip.s-cannot_assess { color:#854d0e; background:#fef3c7; box-shadow:inset 0 0 0 1px #fde68a; }
+    .ref-chip.s-not_supported,
+    .ref-chip.s-localization_wrong { color:#9a3412; background:#ffedd5; box-shadow:inset 0 0 0 1px #fed7aa; }
     .ref-chip.s-not_independently_seen,
     .ref-chip.s-conflicts_with_reference { color:#9a3412; background:#ffedd5; box-shadow:inset 0 0 0 1px #fed7aa; }
     .ref-tech-row { display:flex; gap:10px; padding:10px 0; border-top:1px solid var(--line-soft); }
@@ -1121,6 +1128,8 @@
         not_supported: 'Not supported',
         cannot_assess: 'Cannot assess',
         localization_wrong: 'Localization wrong',
+        unstable: 'Unstable',
+        discordant: 'Discordant',
       })[status] || 'Needs review';
     }
 
@@ -1151,6 +1160,15 @@
       return { candidates, rows };
     }
 
+    function normalizeCvAdjudication(report) {
+      if (!report) return null;
+      const rows = Array.isArray(report.cv_candidate_adjudication)
+        ? report.cv_candidate_adjudication
+        : (((report.clinician || {}).cv_candidate_adjudication) || ((report.assets || {}).cv_candidate_adjudication) || []);
+      if (!rows.length) return null;
+      return { rows };
+    }
+
     function patientReferenceStatusLabel(status) {
       return ({
         confirmed: 'MIKA also saw this',
@@ -1171,6 +1189,7 @@
       const referenceReview = normalizeReferenceReview(report);
       const cvSupportedReview = normalizeCvSupportedReview(report);
       const cvCandidateReview = normalizeCvCandidateReview(report);
+      const cvAdjudication = normalizeCvAdjudication(report);
       const disclaimer = (patient && patient.disclaimer) || report.disclaimer || 'MIKA is an AI assistant and does not replace a doctor. All findings should be reviewed by a qualified clinician.';
 
       // Tier letters (A/B/C/D) must NEVER reach the patient view (locked non-negotiable #1). The agent
@@ -1209,6 +1228,7 @@
           referenceReview,
           cvSupportedReview,
           cvCandidateReview,
+          cvAdjudication,
           disclaimer,
         };
       }
@@ -1267,6 +1287,7 @@
         referenceReview,
         cvSupportedReview,
         cvCandidateReview,
+        cvAdjudication,
         disclaimer,
       };
     }
@@ -2141,6 +2162,31 @@
       );
     }
 
+    function ClinicianCvAdjudication({ review }) {
+      if (!review || !review.rows || !review.rows.length) return null;
+      return (
+        <div className="clin-card">
+          <div className="clin-h">CV candidate adjudication</div>
+          <div className="clin-notes">Repeated focused reviews are combined here. Only adjudicated supported candidates can feed focused-evidence synthesis.</div>
+          {review.rows.map((item, i) => (
+            <div className="ref-tech-row" key={item.candidate_id || i}>
+              <span className={`ref-chip s-${item.final_status || 'unknown'}`}>{cvCandidateStatusLabel(item.final_status)}</span>
+              <div className="ref-tech-body">
+                <div className="ref-line"><b>Candidate:</b> {item.candidate_id || 'candidate'}</div>
+                {(item.level || item.side) && <div className="ref-line"><b>Location:</b> {[item.side, item.level].filter(Boolean).join(' ')}</div>}
+                <div className="ref-line"><b>Reviews:</b> {item.review_count || 0} ({(item.statuses || []).join(', ') || 'none'})</div>
+                <div className="ref-line"><b>Majority:</b> {item.majority_status || 'none'}; <b>final:</b> {item.final_status || 'cannot_assess'}; <b>disagreement:</b> {String(!!item.disagreement)}</div>
+                {item.evidence_bundle_id && <div className="ref-line"><b>Evidence bundle:</b> {item.evidence_bundle_id}</div>}
+                {item.evidence_refs && item.evidence_refs.length > 0 && <div className="ref-line"><b>Evidence refs:</b> {item.evidence_refs.join(', ')}</div>}
+                {item.reasons_summary && <div className="ref-line"><b>Reason summary:</b> {item.reasons_summary}</div>}
+                {item.limitations && item.limitations.length > 0 && <div className="ref-line"><b>Limitations:</b> {item.limitations.join('; ')}</div>}
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     function ClinicianCvCandidateReview({ review }) {
       if (!review || (!review.rows.length && !review.candidates.length)) return null;
       const rows = review.rows.length ? review.rows : review.candidates;
@@ -2227,6 +2273,7 @@
             }) : <div className="clin-notes">Limited clinician detail for this run.</div>}
           </div>
           <ClinicianCvSupportedFindings review={vm.cvSupportedReview} />
+          <ClinicianCvAdjudication review={vm.cvAdjudication} />
           <ClinicianCvCandidateReview review={vm.cvCandidateReview} />
           <ClinicianReferenceReview review={vm.referenceReview} />
           {(v.corrections && v.corrections.length>0) && (

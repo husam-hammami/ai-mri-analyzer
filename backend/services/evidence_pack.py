@@ -116,9 +116,29 @@ def is_localizer_name(name: str) -> bool:
     return any(term in low for term in LOCALIZER_TERMS)
 
 
+def _series_descriptor(series_id: str) -> str:
+    """Drop generated series numbering so StudyGraph and EvidencePack IDs can align."""
+    return re.sub(r"^s\d+_", "", str(series_id or "").lower()).strip()
+
+
+def _selected_evidence_for_candidate(candidate: dict, pack: EvidencePack) -> list[str]:
+    candidate_series = {
+        _series_descriptor(series_id)
+        for series_id in (candidate.get("series_ids") or [])
+        if _series_descriptor(series_id)
+    }
+    if not candidate_series:
+        return []
+    refs: list[str] = []
+    for image in pack.selected_images:
+        if _series_descriptor(image.series_id) in candidate_series and image.evidence_id not in refs:
+            refs.append(image.evidence_id)
+    return refs
+
+
 def _default_cv_candidate_policy() -> dict:
     verifier = candidate_verifier_contract() if candidate_verifier_contract else {
-        "allowed_statuses": ["supported", "not_supported", "cannot_assess", "localization_wrong"]
+        "allowed_statuses": ["supported", "not_supported", "cannot_assess", "localization_wrong", "unstable"]
     }
     return {
         "source": "deterministic_cv_geometry",
@@ -127,7 +147,7 @@ def _default_cv_candidate_policy() -> dict:
         "rules": [
             "CV candidates do not overwrite blind findings.",
             "CV candidates do not create final visual claims without Claude/verifier support.",
-            "CV candidates must be reviewed with one status: supported, not_supported, cannot_assess, or localization_wrong.",
+            "CV candidates must be reviewed with one status: supported, not_supported, cannot_assess, localization_wrong, or unstable.",
             "Candidate-only evidence must not create body-map markers, pinpoint markers, or proof overlays unless trust gates pass.",
             "Image exports stay uncalibrated and cannot receive precise geometry-derived claims.",
         ],
@@ -282,6 +302,9 @@ class EvidencePackBuilder:
             pack.cv_candidate_limitations.extend(candidate_payload.get("limitations") or [])
             for candidate in candidate_set.candidates:
                 item = candidate.to_dict()
+                selected_refs = _selected_evidence_for_candidate(item, pack)
+                if selected_refs:
+                    item["selected_evidence_refs"] = selected_refs
                 item["artifact_trust"] = {
                     "body_marker": bool(candidate_allows_body_marker and candidate_allows_body_marker(candidate)),
                     "proof_overlay": bool(candidate_allows_proof_overlay and candidate_allows_proof_overlay(candidate)),
@@ -734,6 +757,7 @@ def cv_candidate_text_summary(manifest: dict) -> str:
                 f"  series_ids: {', '.join(c.get('series_ids') or [])}",
                 f"  slice_ids: {', '.join((c.get('slice_ids') or [])[:12])}{' ...' if len(c.get('slice_ids') or []) > 12 else ''}",
                 f"  evidence_refs: {', '.join((c.get('evidence_refs') or [])[:12])}{' ...' if len(c.get('evidence_refs') or []) > 12 else ''}",
+                f"  selected_evidence_refs: {', '.join((c.get('selected_evidence_refs') or [])[:20])}{' ...' if len(c.get('selected_evidence_refs') or []) > 20 else ''}",
                 f"  ROI: unit={roi.get('unit')} x={roi.get('x')} y={roi.get('y')} width={roi.get('width')} height={roi.get('height')} target={roi.get('target')}",
                 f"  calibration_state: {c.get('calibration_state')}; geometry_confidence={c.get('geometry_confidence')}; registration_confidence={c.get('registration_confidence')}",
                 f"  artifact_trust: body_marker={trust.get('body_marker')} proof_overlay={trust.get('proof_overlay')} pinpoint_marker={trust.get('pinpoint_marker')}",

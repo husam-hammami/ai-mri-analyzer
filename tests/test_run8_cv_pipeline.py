@@ -159,6 +159,8 @@ def test_candidate_manifest_included_in_evidence_pack(tmp_path):
     assert candidate["level"] == "L5-S1"
     assert candidate["side"] == "left"
     assert candidate["roi"]["unit"] == "normalized_image_fraction"
+    assert candidate["selected_evidence_refs"]
+    assert all(ref.startswith("ev") for ref in candidate["selected_evidence_refs"])
     assert candidate["geometry_confidence"] < 0.80
     assert candidate["artifact_trust"]["body_marker"] is False
     assert candidate["artifact_trust"]["proof_overlay"] is False

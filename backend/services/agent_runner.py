@@ -495,7 +495,7 @@ def _as_dict(v) -> dict:
     return v if isinstance(v, dict) else {}
 
 
-CV_CANDIDATE_STATUSES = {"supported", "not_supported", "cannot_assess", "localization_wrong"}
+CV_CANDIDATE_STATUSES = {"supported", "not_supported", "cannot_assess", "localization_wrong", "unstable"}
 
 
 def _normalize_cv_candidate_reviews(value) -> list[dict]:
@@ -519,6 +519,9 @@ def _normalize_cv_candidate_reviews(value) -> list[dict]:
             "short_reason": str(row.get("short_reason") or row.get("reason") or "").strip(),
             "patient_wording": _plain_patient_string(row.get("patient_wording") or ""),
             "clinician_wording": str(row.get("clinician_wording") or "").strip(),
+            "pre_post_enhancement_support": str(row.get("pre_post_enhancement_support") or "").strip(),
+            "level_side_localization": str(row.get("level_side_localization") or "").strip(),
+            "visible_evidence_reason": str(row.get("visible_evidence_reason") or "").strip(),
         })
     return rows
 
@@ -849,15 +852,24 @@ Rules for CV candidates:
   - Review each candidate separately from the blind findings and write a top-level
     summary.json field named cv_candidate_reviews.
   - For every candidate, output exactly one status from:
-    supported, not_supported, cannot_assess, localization_wrong.
+    supported, not_supported, cannot_assess, localization_wrong, unstable.
   - Required fields per row:
-    candidate_id, status, evidence_refs_used, short_reason, patient_wording, clinician_wording.
-  - supported means the candidate localization/ROI is visually supported by the images you reviewed.
+    candidate_id, status, evidence_refs_used, short_reason, patient_wording, clinician_wording,
+    pre_post_enhancement_support, level_side_localization, visible_evidence_reason.
+  - supported means the candidate localization/ROI is visually supported by the specific images
+    you reviewed and the cited refs. For pre/post contrast candidates, state whether the same-level
+    pre/post comparison visibly supports enhancement or difference in pre_post_enhancement_support.
     It does NOT by itself confirm scar, recurrent disc, nerve-root encasement, or any diagnosis.
   - not_supported means you reviewed the candidate region and did not see supporting visual evidence.
   - cannot_assess means the sequence, registration, slices, image quality, or evidence set is insufficient.
   - localization_wrong means the candidate level, side, slice, or ROI is wrong.
+  - unstable means the candidate has mixed/borderline visual support or your repeated checks disagree.
+  - Tie short_reason and visible_evidence_reason to visible image evidence, not general impressions.
+  - State in level_side_localization whether the cited refs support the candidate level and side.
   - If a candidate is rejected or cannot be assessed, explain why in short_reason.
+  - Do not make broad negative statements such as "no abnormality" or "no enhancement" from a bounded
+    candidate review. If the bounded region is not supported, say only that the candidate is not supported
+    or cannot be assessed from the reviewed evidence.
   - Do not upgrade a CV candidate into a confirmed finding unless the actual images independently
     support that finding and you cite image evidence. Preserve the blind read separately.
   - If artifact_trust says body_marker/proof_overlay/pinpoint_marker is false, do not create
@@ -963,9 +975,12 @@ Produce:
      intensities, NO audit trail, NO calibration/DICOM jargon:
      If CV evidence candidates were provided, summary.json MUST also include:
      "cv_candidate_reviews": [
-       {{"candidate_id": "<candidate_id>", "status": "supported|not_supported|cannot_assess|localization_wrong",
+       {{"candidate_id": "<candidate_id>", "status": "supported|not_supported|cannot_assess|localization_wrong|unstable",
          "evidence_refs_used": ["<series/slice or evidence refs used>", ...],
          "short_reason": "why the candidate was accepted, rejected, cannot be assessed, or judged wrong",
+         "pre_post_enhancement_support": "same-level pre/post comparison support or limitation",
+         "level_side_localization": "why level and side are acceptable, wrong, or cannot be verified",
+         "visible_evidence_reason": "specific visible evidence basis for this status",
          "patient_wording": "plain-language sentence if useful; no jargon",
          "clinician_wording": "technical localization/pathology review note"}}
      ]

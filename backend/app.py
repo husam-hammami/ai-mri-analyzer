@@ -57,8 +57,13 @@ from services.reconciliation import (
     read_reference_report_bytes,
 )
 from services.cv_synthesis import (
+    annotate_reconciliation_with_cv_adjudication,
     synthesize_cv_candidate_reviews,
     upgrade_reconciliation_with_cv_supported_findings,
+)
+from services.cv_adjudication import (
+    adjudicate_cv_candidate_reviews,
+    normalize_cv_review_status,
 )
 from services.agent_runner import (
     AgentRunner,
@@ -511,12 +516,23 @@ def _normalized_report_sections(
     )
     cv_candidates = _cv_candidates_from_manifest(job.evidence_manifest)
     cv_candidate_reviews = _cv_candidate_reviews_for_report(summary, job.verification or {}, cv_candidates)
+    cv_candidate_adjudication = _cv_candidate_adjudication_for_report(
+        summary=summary,
+        cv_candidates=cv_candidates,
+        cv_candidate_reviews=cv_candidate_reviews,
+        evidence_manifest=job.evidence_manifest or {},
+    )
     cv_synthesis = _cv_synthesis_for_report(
         summary=summary,
         verification=job.verification or {},
         cv_candidates=cv_candidates,
         cv_candidate_reviews=cv_candidate_reviews,
+        cv_candidate_adjudication=cv_candidate_adjudication,
         evidence_manifest=job.evidence_manifest or {},
+    )
+    reconciliation = annotate_reconciliation_with_cv_adjudication(
+        reconciliation,
+        cv_candidate_adjudication,
     )
     reconciliation = upgrade_reconciliation_with_cv_supported_findings(
         reconciliation,
@@ -573,11 +589,13 @@ def _normalized_report_sections(
             "calibration_status": calibration_status,
             "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")),
             "cv_candidate_reviews": cv_candidate_reviews,
+            "cv_candidate_adjudication": cv_candidate_adjudication,
             "cv_supported_findings": cv_synthesis.get("clinician_findings") or _coerce_list(summary.get("cv_supported_findings")),
         },
         "findings": findings,
         "cv_candidates": cv_candidates,
         "cv_candidate_reviews": cv_candidate_reviews,
+        "cv_candidate_adjudication": cv_candidate_adjudication,
         "confidence": confidence,
         "assets": {
             "figures": figures,
@@ -589,6 +607,7 @@ def _normalized_report_sections(
             "evidence": job.evidence_manifest or {},
             "cv_candidates": cv_candidates,
             "cv_candidate_reviews": cv_candidate_reviews,
+            "cv_candidate_adjudication": cv_candidate_adjudication,
             "cv_supported_findings": cv_synthesis.get("clinician_findings") or [],
             "artifacts": job.artifact_registry or {},
             "artifact_qa": job.artifact_qa or {},
@@ -631,6 +650,13 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         _coerce_dict(out.get("verification")),
         cv_candidates,
     ) or _normalize_cv_candidate_reviews(out.get("cv_candidate_reviews"), cv_candidates)
+    cv_candidate_adjudication = _cv_candidate_adjudication_for_report(
+        summary=summary,
+        report_payload=out,
+        cv_candidates=cv_candidates,
+        cv_candidate_reviews=cv_candidate_reviews,
+        evidence_manifest=evidence or (out.get("assets") or {}).get("evidence") or {},
+    )
     reconciliation = (
         _coerce_dict(out.get("reconciliation"))
         or _coerce_dict(summary.get("reconciliation"))
@@ -642,7 +668,12 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             verification=_coerce_dict(out.get("verification")),
             cv_candidates=cv_candidates,
             cv_candidate_reviews=cv_candidate_reviews,
+            cv_candidate_adjudication=cv_candidate_adjudication,
             evidence_manifest=evidence or (out.get("assets") or {}).get("evidence") or {},
+        )
+        reconciliation = annotate_reconciliation_with_cv_adjudication(
+            reconciliation,
+            cv_candidate_adjudication,
         )
         reconciliation = upgrade_reconciliation_with_cv_supported_findings(
             reconciliation,
@@ -660,17 +691,20 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             verification=_coerce_dict(out.get("verification")),
             cv_candidates=cv_candidates,
             cv_candidate_reviews=cv_candidate_reviews,
+            cv_candidate_adjudication=cv_candidate_adjudication,
             evidence_manifest=evidence or (out.get("assets") or {}).get("evidence") or {},
         )
+    allow_legacy_cv_supported = not cv_candidate_adjudication
     patient_block["cv_supported_explanations"] = (
         cv_synthesis.get("patient_explanations")
-        or _coerce_list(patient_block.get("cv_supported_explanations"))
+        or (_coerce_list(patient_block.get("cv_supported_explanations")) if allow_legacy_cv_supported else [])
     )
     summary["cv_supported_findings"] = (
         cv_synthesis.get("clinician_findings")
-        or _coerce_list(summary.get("cv_supported_findings"))
-        or _coerce_list(out.get("cv_supported_findings"))
+        or (_coerce_list(summary.get("cv_supported_findings")) if allow_legacy_cv_supported else [])
+        or (_coerce_list(out.get("cv_supported_findings")) if allow_legacy_cv_supported else [])
     )
+    summary["cv_candidate_adjudication"] = cv_candidate_adjudication
     confidence = dict(confidence or {})
     confidence["cv_candidate_policy"] = (
         cv_synthesis.get("policy")
@@ -719,6 +753,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
             "calibration_status": out.get("calibration_status") or m.get("calibration_status", "unknown"),
             "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")) if reconciliation else {},
             "cv_candidate_reviews": cv_candidate_reviews,
+            "cv_candidate_adjudication": cv_candidate_adjudication,
             "cv_supported_findings": _coerce_list(summary.get("cv_supported_findings")),
         })
         if not out.get("findings") and normalized_findings:
@@ -736,6 +771,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         assets.setdefault("evidence", evidence)
         assets.setdefault("cv_candidates", cv_candidates)
         assets.setdefault("cv_candidate_reviews", cv_candidate_reviews)
+        assets.setdefault("cv_candidate_adjudication", cv_candidate_adjudication)
         assets.setdefault("cv_supported_findings", _coerce_list(summary.get("cv_supported_findings")))
         assets.setdefault("artifacts", artifact_registry)
         assets.setdefault("artifact_qa", artifact_qa)
@@ -743,6 +779,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         out["assets"] = assets
         out["cv_candidates"] = cv_candidates
         out["cv_candidate_reviews"] = cv_candidate_reviews
+        out["cv_candidate_adjudication"] = cv_candidate_adjudication
         out["cv_supported_findings"] = _coerce_list(summary.get("cv_supported_findings"))
         return out
 
@@ -779,6 +816,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         "calibration_status": out.get("calibration_status", "unknown"),
         "reference_reconciliation": _coerce_dict(reconciliation.get("clinician")) if reconciliation else {},
         "cv_candidate_reviews": cv_candidate_reviews,
+        "cv_candidate_adjudication": cv_candidate_adjudication,
         "cv_supported_findings": _coerce_list(summary.get("cv_supported_findings")),
     })
     if not out.get("findings"):
@@ -795,6 +833,7 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
         "evidence": evidence,
         "cv_candidates": cv_candidates,
         "cv_candidate_reviews": cv_candidate_reviews,
+        "cv_candidate_adjudication": cv_candidate_adjudication,
         "cv_supported_findings": _coerce_list(summary.get("cv_supported_findings")),
         "artifacts": artifact_registry,
         "artifact_qa": artifact_qa,
@@ -803,12 +842,14 @@ def _normalize_loaded_report(job_id: str, payload: dict) -> dict:
     out["assets"].setdefault("evidence", evidence)
     out["assets"].setdefault("cv_candidates", cv_candidates)
     out["assets"].setdefault("cv_candidate_reviews", cv_candidate_reviews)
+    out["assets"].setdefault("cv_candidate_adjudication", cv_candidate_adjudication)
     out["assets"].setdefault("cv_supported_findings", _coerce_list(summary.get("cv_supported_findings")))
     out["assets"].setdefault("artifacts", artifact_registry)
     out["assets"].setdefault("artifact_qa", artifact_qa)
     out["assets"].setdefault("reconciliation", reconciliation)
     out["cv_candidates"] = cv_candidates
     out["cv_candidate_reviews"] = cv_candidate_reviews
+    out["cv_candidate_adjudication"] = cv_candidate_adjudication
     out["cv_supported_findings"] = _coerce_list(summary.get("cv_supported_findings"))
     return out
 
@@ -902,7 +943,7 @@ def _finding_evidence_refs(finding: dict) -> list[str]:
     return []
 
 
-CV_CANDIDATE_STATUSES = {"supported", "not_supported", "cannot_assess", "localization_wrong"}
+CV_CANDIDATE_STATUSES = {"supported", "not_supported", "cannot_assess", "localization_wrong", "unstable"}
 
 
 def _cv_candidates_from_manifest(manifest: Optional[dict]) -> list[dict]:
@@ -922,9 +963,7 @@ def _normalize_cv_candidate_reviews(value, candidates: Optional[list[dict]] = No
         candidate_id = str(row.get("candidate_id") or "").strip()
         if not candidate_id:
             continue
-        status = str(row.get("status") or "").strip().lower()
-        if status not in CV_CANDIDATE_STATUSES:
-            status = "cannot_assess"
+        status = normalize_cv_review_status(row.get("status"))
         refs = row.get("evidence_refs_used") or row.get("evidence_refs") or []
         if isinstance(refs, str):
             refs = [refs] if refs.strip() else []
@@ -938,6 +977,9 @@ def _normalize_cv_candidate_reviews(value, candidates: Optional[list[dict]] = No
             "short_reason": str(row.get("short_reason") or row.get("reason") or "").strip(),
             "patient_wording": str(row.get("patient_wording") or "").strip(),
             "clinician_wording": str(row.get("clinician_wording") or "").strip(),
+            "pre_post_enhancement_support": str(row.get("pre_post_enhancement_support") or "").strip(),
+            "level_side_localization": str(row.get("level_side_localization") or "").strip(),
+            "visible_evidence_reason": str(row.get("visible_evidence_reason") or "").strip(),
             "level": row.get("level") or candidate.get("level", ""),
             "side": row.get("side") or candidate.get("side", ""),
             "candidate_type": row.get("candidate_type") or candidate.get("candidate_type", ""),
@@ -964,22 +1006,55 @@ def _cv_candidate_policy_from_manifest(manifest: Optional[dict]) -> dict:
     return _coerce_dict((manifest or {}).get("cv_candidate_policy"))
 
 
+def _cv_candidate_adjudication_for_report(
+    *,
+    summary: dict,
+    report_payload: Optional[dict] = None,
+    cv_candidates: list[dict],
+    cv_candidate_reviews: list[dict],
+    evidence_manifest: Optional[dict],
+) -> list[dict]:
+    existing = []
+    if isinstance(summary, dict):
+        existing = _coerce_list(summary.get("cv_candidate_adjudication"))
+    if not existing and isinstance(report_payload, dict):
+        existing = _coerce_list(report_payload.get("cv_candidate_adjudication"))
+        if not existing:
+            existing = _coerce_list((_coerce_dict(report_payload.get("assets"))).get("cv_candidate_adjudication"))
+    evidence_bundle_id = str((evidence_manifest or {}).get("manifest_path") or (evidence_manifest or {}).get("manifest_version") or "")
+    return adjudicate_cv_candidate_reviews(
+        cv_candidates=cv_candidates,
+        cv_candidate_reviews=cv_candidate_reviews,
+        existing_adjudication=existing,
+        evidence_bundle_id=evidence_bundle_id,
+    )
+
+
 def _cv_synthesis_for_report(
     *,
     summary: dict,
     verification: dict,
     cv_candidates: list[dict],
     cv_candidate_reviews: list[dict],
+    cv_candidate_adjudication: Optional[list[dict]] = None,
     evidence_manifest: Optional[dict],
 ) -> dict:
+    if cv_candidate_adjudication is None:
+        cv_candidate_adjudication = _cv_candidate_adjudication_for_report(
+            summary=summary,
+            cv_candidates=cv_candidates,
+            cv_candidate_reviews=cv_candidate_reviews,
+            evidence_manifest=evidence_manifest,
+        )
     synthesis = synthesize_cv_candidate_reviews(
         blind_report=summary,
         cv_candidates=cv_candidates,
         cv_candidate_reviews=cv_candidate_reviews,
+        cv_candidate_adjudication=cv_candidate_adjudication,
         verifier_result=verification or {},
         cv_candidate_policy=_cv_candidate_policy_from_manifest(evidence_manifest),
     )
-    if not synthesis.get("used") and isinstance(summary, dict):
+    if not synthesis.get("used") and isinstance(summary, dict) and not cv_candidate_adjudication:
         existing_patient = _coerce_list((_coerce_dict(summary.get("patient"))).get("cv_supported_explanations"))
         existing_clinician = _coerce_list(summary.get("cv_supported_findings"))
         if existing_patient or existing_clinician:
@@ -998,12 +1073,24 @@ def _summary_with_cv_synthesis(job: "AnalysisJob", summary: dict) -> tuple[dict,
         verification=job.verification or {},
         cv_candidates=cv_candidates,
         cv_candidate_reviews=cv_candidate_reviews,
+        cv_candidate_adjudication=_cv_candidate_adjudication_for_report(
+            summary=summary,
+            cv_candidates=cv_candidates,
+            cv_candidate_reviews=cv_candidate_reviews,
+            evidence_manifest=job.evidence_manifest or {},
+        ),
         evidence_manifest=job.evidence_manifest or {},
     )
     patient = dict(summary.get("patient") or {})
     patient["cv_supported_explanations"] = synthesis.get("patient_explanations") or []
     summary["patient"] = patient
     summary["cv_candidate_reviews"] = cv_candidate_reviews
+    summary["cv_candidate_adjudication"] = _cv_candidate_adjudication_for_report(
+        summary=summary,
+        cv_candidates=cv_candidates,
+        cv_candidate_reviews=cv_candidate_reviews,
+        evidence_manifest=job.evidence_manifest or {},
+    )
     summary["cv_supported_findings"] = synthesis.get("clinician_findings") or []
     return summary, synthesis
 
@@ -1073,12 +1160,17 @@ def _rewrite_agent_summary_and_patient_pdf(job: "AnalysisJob", summary: dict) ->
     if not summary:
         return
     summary, cv_synthesis = _summary_with_cv_synthesis(job, summary)
+    cv_candidate_adjudication = _coerce_list(summary.get("cv_candidate_adjudication"))
     reconciliation = (
         _coerce_dict(getattr(job, "reconciliation", {}))
         or _coerce_dict(summary.get("reconciliation"))
         or _coerce_dict((job.agent or {}).get("reconciliation") if getattr(job, "agent", None) else {})
     )
     if reconciliation:
+        reconciliation = annotate_reconciliation_with_cv_adjudication(
+            reconciliation,
+            cv_candidate_adjudication,
+        )
         reconciliation = upgrade_reconciliation_with_cv_supported_findings(
             reconciliation,
             cv_synthesis.get("clinician_findings") or [],
@@ -1130,11 +1222,16 @@ def _apply_reference_reconciliation(
     if not (reference_report_path or reference_report_text):
         return {}
     summary, cv_synthesis = _summary_with_cv_synthesis(job, _summary_for_job(job))
+    cv_candidate_adjudication = _coerce_list(summary.get("cv_candidate_adjudication"))
     reconciliation = build_reference_reconciliation(
         blind_summary=summary,
         reference_text=reference_report_text,
         reference_path=reference_report_path,
         evidence_manifest=job.evidence_manifest or {},
+    )
+    reconciliation = annotate_reconciliation_with_cv_adjudication(
+        reconciliation,
+        cv_candidate_adjudication,
     )
     reconciliation = upgrade_reconciliation_with_cv_supported_findings(
         reconciliation,

@@ -119,9 +119,9 @@ figure inventory. Run the 12-item audit and fix any item that fails.
   where a correction is warranted.
 - CV evidence candidates are localization/measurement evidence only. Verify each candidate
   separately in "cv_candidate_reviews" using exactly one of: supported, not_supported,
-  cannot_assess, localization_wrong. Reject wrong level, side, slice, or ROI with
+  cannot_assess, localization_wrong, unstable. Reject wrong level, side, slice, or ROI with
   localization_wrong. Do not convert a candidate into a final finding unless the images
-  independently support it.
+  independently support it. Use unstable when repeated checks or visible evidence are mixed.
 
 {spine_block}
 
@@ -140,9 +140,12 @@ figure inventory. Run the 12-item audit and fix any item that fails.
     "cv_candidate_reviews": [
         {{
             "candidate_id": "candidate id",
-            "status": "supported | not_supported | cannot_assess | localization_wrong",
+            "status": "supported | not_supported | cannot_assess | localization_wrong | unstable",
             "evidence_refs_used": ["refs reviewed"],
             "short_reason": "brief localization/pathology review reason",
+            "pre_post_enhancement_support": "same-level pre/post comparison support or limitation",
+            "level_side_localization": "why level and side are acceptable, wrong, or cannot be verified",
+            "visible_evidence_reason": "specific visible evidence basis for this status",
             "patient_wording": "plain-language wording if useful",
             "clinician_wording": "technical review wording"
         }}
@@ -328,7 +331,7 @@ class VerificationPass:
 
     @staticmethod
     def _normalize_cv_candidate_reviews(value) -> list:
-        allowed = {"supported", "not_supported", "cannot_assess", "localization_wrong"}
+        allowed = {"supported", "not_supported", "cannot_assess", "localization_wrong", "unstable"}
         if not isinstance(value, list):
             return []
         out = []
@@ -350,5 +353,8 @@ class VerificationPass:
                 "short_reason": str(row.get("short_reason") or row.get("reason") or ""),
                 "patient_wording": str(row.get("patient_wording") or ""),
                 "clinician_wording": str(row.get("clinician_wording") or ""),
+                "pre_post_enhancement_support": str(row.get("pre_post_enhancement_support") or ""),
+                "level_side_localization": str(row.get("level_side_localization") or ""),
+                "visible_evidence_reason": str(row.get("visible_evidence_reason") or ""),
             })
         return out
