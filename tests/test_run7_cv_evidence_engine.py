@@ -28,6 +28,8 @@ def _write_dicom(
     pixel_spacing: bool = True,
     rows: int = 64,
     cols: int = 80,
+    pixel_shift: tuple[int, int] = (0, 0),
+    bright_rows: tuple[int, ...] = (),
 ) -> None:
     pydicom = pytest.importorskip("pydicom")
     from pydicom.dataset import FileDataset
@@ -70,12 +72,42 @@ def _write_dicom(
     ds.AcquisitionTime = f"120{instance_number:03d}"
     if pixel_spacing:
         ds.PixelSpacing = [0.7, 0.7]
-    arr = (np.arange(rows * cols, dtype=np.uint16).reshape(rows, cols) + instance_number) % 4096
+    if bright_rows:
+        arr = np.full((rows, cols), 80, dtype=np.uint16)
+        x0 = max(0, int(round(cols * 0.28)))
+        x1 = min(cols, int(round(cols * 0.65)))
+        for row in bright_rows:
+            y0 = max(0, row - 2)
+            y1 = min(rows, row + 3)
+            arr[y0:y1, x0:x1] = 2000
+        arr += instance_number
+    else:
+        arr = (np.arange(rows * cols, dtype=np.uint16).reshape(rows, cols) + instance_number) % 4096
+    dy, dx = pixel_shift
+    if dy or dx:
+        shifted = np.zeros_like(arr)
+        src_y0 = max(0, -dy)
+        src_y1 = rows - max(0, dy)
+        src_x0 = max(0, -dx)
+        src_x1 = cols - max(0, dx)
+        dst_y0 = max(0, dy)
+        dst_x0 = max(0, dx)
+        if src_y1 > src_y0 and src_x1 > src_x0:
+            shifted[dst_y0:dst_y0 + (src_y1 - src_y0), dst_x0:dst_x0 + (src_x1 - src_x0)] = arr[src_y0:src_y1, src_x0:src_x1]
+        arr = shifted
     ds.PixelData = arr.tobytes()
     ds.save_as(str(path))
 
 
-def _make_lumbar_contrast_study(tmp_path: Path, *, post_orientation=None, pixel_spacing: bool = True) -> Path:
+def _make_lumbar_contrast_study(
+    tmp_path: Path,
+    *,
+    post_orientation=None,
+    pixel_spacing: bool = True,
+    post_z_offset_mm: float = 0.0,
+    post_pixel_shift: tuple[int, int] = (0, 0),
+    sagittal_l5s1_row: int | None = None,
+) -> Path:
     pydicom = pytest.importorskip("pydicom")
     study = tmp_path / "lumbar"
     study_uid = pydicom.uid.generate_uid()
@@ -97,6 +129,7 @@ def _make_lumbar_contrast_study(tmp_path: Path, *, post_orientation=None, pixel_
             image_orientation=sagittal_orientation,
             image_position=[float(i), 0.0, 50.0],
             pixel_spacing=pixel_spacing,
+            bright_rows=(sagittal_l5s1_row,) if sagittal_l5s1_row is not None else (),
         )
     for i in range(1, 21):
         z = 120.0 - (i - 1) * 4.0
@@ -119,8 +152,9 @@ def _make_lumbar_contrast_study(tmp_path: Path, *, post_orientation=None, pixel_
             series_description="t1_vibe_fs_tra-CONT",
             instance_number=i,
             image_orientation=post_orientation,
-            image_position=[0.0, 0.0, z],
+            image_position=[0.0, 0.0, z + post_z_offset_mm],
             pixel_spacing=pixel_spacing,
+            pixel_shift=post_pixel_shift,
         )
     return study
 
@@ -190,6 +224,21 @@ def test_sagittal_to_axial_mapping_surfaces_l5_s1_range(tmp_path):
     assert ranges["L5-S1"].confidence < 0.80
 
 
+def test_sagittal_projection_prevents_terminal_tail_l5_s1_selection(tmp_path):
+    study = _make_lumbar_contrast_study(tmp_path, sagittal_l5s1_row=42)
+    graph = StudyGraphBuilder(study).build()
+    module = LumbarSpineEvidenceModule()
+    sag = next(s for s in graph.series if s.plane == "sagittal")
+    post = next(s for s in graph.series if s.description.endswith("CONT"))
+
+    ranges = module.map_sagittal_disc_levels_to_axial_ranges(sag, post)
+    l5s1 = ranges["L5-S1"]
+
+    assert any(slice_id.endswith("_sl011") for slice_id in l5s1.slice_ids)
+    assert not any(slice_id.endswith(("_sl018", "_sl019", "_sl020")) for slice_id in l5s1.slice_ids)
+    assert "projected from a central sagittal disc-band estimate" in " ".join(l5s1.limitations)
+
+
 def test_registration_qc_pass_and_fail(tmp_path):
     good_study = _make_lumbar_contrast_study(tmp_path)
     graph = StudyGraphBuilder(good_study).build()
@@ -201,6 +250,9 @@ def test_registration_qc_pass_and_fail(tmp_path):
     passed = module.registration_qc(pre, post, target)
     assert passed.passed is True
     assert passed.confidence >= 0.90
+    assert passed.difference_map_allowed is True
+    assert passed.max_pair_distance_mm == 0.0
+    assert all(metric["accepted"] for metric in passed.pair_metrics)
 
     bad_study = _make_lumbar_contrast_study(tmp_path / "bad", post_orientation=[1, 0, 0, 0, -1, 0])
     bad_graph = StudyGraphBuilder(bad_study).build()
@@ -209,7 +261,50 @@ def test_registration_qc_pass_and_fail(tmp_path):
     failed = module.registration_qc(bad_pre, bad_post, [sl.slice_id for sl in bad_post.slices[-4:]])
 
     assert failed.passed is False
+    assert failed.difference_map_allowed is False
     assert any("ImageOrientationPatient" in note for note in failed.limitations)
+
+
+def test_physical_slice_pairing_distance_threshold_and_deterministic_order(tmp_path):
+    good_study = _make_lumbar_contrast_study(tmp_path, post_z_offset_mm=2.0)
+    graph = StudyGraphBuilder(good_study).build()
+    module = LumbarSpineEvidenceModule()
+    pre = next(s for s in graph.series if s.description == "t1_vibe_fs_tra")
+    post = next(s for s in graph.series if s.description.endswith("CONT"))
+    target = [sl.slice_id for sl in reversed(post.slices[-4:])]
+
+    first = module.registration_qc(pre, post, target)
+    second = module.registration_qc(pre, post, list(reversed(target)))
+
+    assert first.passed is True
+    assert first.max_pair_distance_mm == 2.0
+    assert [m["post_slice_id"] for m in first.pair_metrics] == [m["post_slice_id"] for m in second.pair_metrics]
+
+    far_study = _make_lumbar_contrast_study(tmp_path / "far", post_z_offset_mm=100.0)
+    far_graph = StudyGraphBuilder(far_study).build()
+    far_pre = next(s for s in far_graph.series if s.description == "t1_vibe_fs_tra")
+    far_post = next(s for s in far_graph.series if s.description.endswith("CONT"))
+    failed = module.registration_qc(far_pre, far_post, [sl.slice_id for sl in far_post.slices[-4:]])
+
+    assert failed.passed is False
+    assert failed.difference_map_allowed is False
+    assert any(m["accepted"] is False for m in failed.pair_metrics)
+    assert "physical distance threshold" in " ".join(failed.limitations).lower()
+
+
+def test_translation_registration_qc_records_shift(tmp_path):
+    study = _make_lumbar_contrast_study(tmp_path, post_pixel_shift=(2, -1))
+    graph = StudyGraphBuilder(study).build()
+    module = LumbarSpineEvidenceModule()
+    pre = next(s for s in graph.series if s.description == "t1_vibe_fs_tra")
+    post = next(s for s in graph.series if s.description.endswith("CONT"))
+
+    qc = module.registration_qc(pre, post, [sl.slice_id for sl in post.slices[-4:]])
+
+    assert qc.passed is True
+    assert qc.registration_metrics
+    assert any(metric["translation_pixels"] != [0, 0] for metric in qc.registration_metrics)
+    assert all(metric["passed"] for metric in qc.registration_metrics)
 
 
 def test_candidate_contract_serialization_and_no_cv_confirmation(tmp_path):
@@ -234,6 +329,12 @@ def test_candidate_contract_serialization_and_no_cv_confirmation(tmp_path):
         "registration_confidence",
         "limitations",
         "evidence_refs",
+        "physical_pair_distances",
+        "registration_qc",
+        "adjacent_slice_refs",
+        "proof_bundle",
+        "contrast_timing",
+        "bounded_question",
     ):
         assert key in candidate
     assert candidate["level"] == "L5-S1"
@@ -242,6 +343,27 @@ def test_candidate_contract_serialization_and_no_cv_confirmation(tmp_path):
     assert candidate["cv_claim_scope"] == "localization_only"
     assert "confirmed" not in str(payload).lower()
     assert "supported" in payload["verifier_contract"]["allowed_statuses"]
+    assert "unstable" in payload["verifier_contract"]["allowed_statuses"]
+
+
+def test_candidate_payload_includes_internal_proof_bundle_refs(tmp_path):
+    study = _make_lumbar_contrast_study(tmp_path)
+    graph = StudyGraphBuilder(study).build()
+
+    candidate_set = LumbarSpineEvidenceModule(
+        proof_bundle_dir=tmp_path / "work" / "evidence" / "cv_proof",
+        proof_relative_prefix="evidence/cv_proof",
+    ).analyze(graph)
+    candidate = candidate_set.to_dict()["candidates"][0]
+    proof = candidate["proof_bundle"]
+
+    assert proof["status"] == "generated"
+    assert proof["visibility"] == "internal_candidate_review_only"
+    assert proof["trusted_for_patient_ui"] is False
+    assert any(image["kind"] == "registered_difference" for image in proof["images"])
+    assert all(str(image["relative_path"]).startswith("evidence/cv_proof/") for image in proof["images"])
+    assert candidate["registration_qc"]["difference_map_allowed"] is True
+    assert candidate["adjacent_slice_refs"]
 
 
 def test_uncalibrated_jpg_study_is_gated_from_precise_geometry(tmp_path):
@@ -261,7 +383,7 @@ def test_uncalibrated_jpg_study_is_gated_from_precise_geometry(tmp_path):
 def test_no_cv_only_confirmed_finding_or_forced_verifier_status():
     contract = candidate_verifier_contract()
 
-    assert contract["allowed_statuses"] == ["supported", "not_supported", "cannot_assess", "localization_wrong"]
+    assert contract["allowed_statuses"] == ["supported", "not_supported", "cannot_assess", "localization_wrong", "unstable"]
     assert "confirmed" not in str(contract).lower()
     assert any("CV localization" in rule for rule in contract["rules"])
 

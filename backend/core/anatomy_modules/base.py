@@ -15,7 +15,7 @@ from typing import Any
 from core.study_graph import StudyGraph
 
 
-VERIFIER_STATUSES = ("supported", "not_supported", "cannot_assess", "localization_wrong")
+VERIFIER_STATUSES = ("supported", "not_supported", "cannot_assess", "localization_wrong", "unstable")
 TRUSTED_GEOMETRY_CONFIDENCE = 0.80
 TRUSTED_REGISTRATION_CONFIDENCE = 0.80
 
@@ -35,6 +35,13 @@ class EvidenceCandidate:
     registration_confidence: float
     limitations: list[str] = field(default_factory=list)
     evidence_refs: list[str] = field(default_factory=list)
+    selected_evidence_refs: list[str] = field(default_factory=list)
+    physical_pair_distances: list[dict[str, Any]] = field(default_factory=list)
+    registration_qc: dict[str, Any] = field(default_factory=dict)
+    adjacent_slice_refs: list[str] = field(default_factory=list)
+    proof_bundle: dict[str, Any] = field(default_factory=dict)
+    contrast_timing: dict[str, Any] = field(default_factory=dict)
+    bounded_question: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -83,6 +90,9 @@ def candidate_verifier_contract() -> dict[str, Any]:
             "status",
             "evidence_refs_used",
             "short_reason",
+            "pre_post_enhancement_support",
+            "level_side_localization",
+            "visible_evidence_reason",
             "patient_wording",
             "clinician_wording",
         ],
@@ -90,8 +100,10 @@ def candidate_verifier_contract() -> dict[str, Any]:
             "Classify only whether the candidate ROI supports the described localization target.",
             "Use localization_wrong when the level, side, series, or slice does not match.",
             "Use cannot_assess when images, registration, sequence, or metadata are insufficient.",
+            "Use unstable when repeated focused checks or visible evidence are mixed.",
             "Do not treat CV localization as a diagnosis or as independent confirmation of pathology.",
             "Do not classify scar versus recurrent disc or nerve-root encasement from CV metadata alone.",
+            "Do not make broad negative statements from a bounded candidate review.",
         ],
     }
 

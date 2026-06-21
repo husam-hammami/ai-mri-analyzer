@@ -297,7 +297,10 @@ class EvidencePackBuilder:
             return
         try:
             graph = StudyGraphBuilder(self.study_dir).build()
-            candidate_set = LumbarSpineEvidenceModule().analyze(graph)
+            candidate_set = LumbarSpineEvidenceModule(
+                proof_bundle_dir=self.out_dir / "cv_proof",
+                proof_relative_prefix="evidence/cv_proof",
+            ).analyze(graph)
             candidate_payload = candidate_set.to_dict()
             pack.cv_candidate_limitations.extend(candidate_payload.get("limitations") or [])
             for candidate in candidate_set.candidates:
@@ -754,14 +757,40 @@ def cv_candidate_text_summary(manifest: dict) -> str:
             lines.extend([
                 f"- candidate_id: {c.get('candidate_id')}",
                 f"  target: {c.get('side') or 'unknown side'} {c.get('level') or 'unknown level'} {c.get('candidate_type')}",
+                f"  bounded_question: {c.get('bounded_question') or 'Does this focused evidence support the candidate localization target?'}",
                 f"  series_ids: {', '.join(c.get('series_ids') or [])}",
                 f"  slice_ids: {', '.join((c.get('slice_ids') or [])[:12])}{' ...' if len(c.get('slice_ids') or []) > 12 else ''}",
                 f"  evidence_refs: {', '.join((c.get('evidence_refs') or [])[:12])}{' ...' if len(c.get('evidence_refs') or []) > 12 else ''}",
                 f"  selected_evidence_refs: {', '.join((c.get('selected_evidence_refs') or [])[:20])}{' ...' if len(c.get('selected_evidence_refs') or []) > 20 else ''}",
+                f"  adjacent_slice_refs: {', '.join((c.get('adjacent_slice_refs') or [])[:12])}{' ...' if len(c.get('adjacent_slice_refs') or []) > 12 else ''}",
                 f"  ROI: unit={roi.get('unit')} x={roi.get('x')} y={roi.get('y')} width={roi.get('width')} height={roi.get('height')} target={roi.get('target')}",
                 f"  calibration_state: {c.get('calibration_state')}; geometry_confidence={c.get('geometry_confidence')}; registration_confidence={c.get('registration_confidence')}",
+                f"  registration_qc: difference_map_allowed={(c.get('registration_qc') or {}).get('difference_map_allowed')} mean_pair_distance_mm={(c.get('registration_qc') or {}).get('mean_pair_distance_mm')} max_pair_distance_mm={(c.get('registration_qc') or {}).get('max_pair_distance_mm')}",
                 f"  artifact_trust: body_marker={trust.get('body_marker')} proof_overlay={trust.get('proof_overlay')} pinpoint_marker={trust.get('pinpoint_marker')}",
             ])
+            pair_metrics = c.get("physical_pair_distances") or []
+            if pair_metrics:
+                lines.append("  physical_pair_distances:")
+                for metric in pair_metrics[:8]:
+                    lines.append(
+                        f"    - pre={metric.get('pre_evidence_ref')} post={metric.get('post_evidence_ref')} "
+                        f"distance_mm={metric.get('distance_mm')} accepted={metric.get('accepted')}"
+                    )
+                if len(pair_metrics) > 8:
+                    lines.append(f"    - ... {len(pair_metrics) - 8} additional pair metrics omitted")
+            proof = c.get("proof_bundle") or {}
+            if proof:
+                lines.append(
+                    f"  proof_bundle: {proof.get('bundle_id')} status={proof.get('status')} "
+                    f"visibility={proof.get('visibility')} trusted_for_patient_ui={proof.get('trusted_for_patient_ui')}"
+                )
+                for image in (proof.get("images") or [])[:10]:
+                    lines.append(
+                        f"    - {image.get('kind')}: {image.get('relative_path')} ref={image.get('evidence_ref')} "
+                        f"label={image.get('label')}"
+                    )
+                if len(proof.get("images") or []) > 10:
+                    lines.append(f"    - ... {len(proof.get('images') or []) - 10} additional proof images omitted")
             if c.get("limitations"):
                 lines.append("  limitations:")
                 lines.extend(f"    - {note}" for note in c.get("limitations") or [])

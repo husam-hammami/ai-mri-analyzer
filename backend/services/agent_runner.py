@@ -860,6 +860,10 @@ Rules for CV candidates:
     you reviewed and the cited refs. For pre/post contrast candidates, state whether the same-level
     pre/post comparison visibly supports enhancement or difference in pre_post_enhancement_support.
     It does NOT by itself confirm scar, recurrent disc, nerve-root encasement, or any diagnosis.
+  - If a candidate includes proof_bundle images, review those internal proof images first, then
+    verify against selected_evidence_refs or evidence_refs when needed. The proof bundle is a
+    localization candidate only and is not patient-facing proof.
+  - Answer the candidate's bounded_question directly; do not broaden it into a full radiology read.
   - not_supported means you reviewed the candidate region and did not see supporting visual evidence.
   - cannot_assess means the sequence, registration, slices, image quality, or evidence set is insufficient.
   - localization_wrong means the candidate level, side, slice, or ROI is wrong.
