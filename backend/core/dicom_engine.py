@@ -718,6 +718,29 @@ class DICOMEngine:
             return best[0], best[1], round(best[2], 1), "repositioned"
         return col, row, round(val, 1), "failed"
 
+    def _draw_region_band(self, draw, center, label, color, side, font, scale: int = 2) -> None:
+        """Fallback visual when a precise tip cannot be verified: draw a labelled REGION BOX at the
+        computed location (approximate, not a pinpoint) so the finding still has a visible marker
+        instead of being silently dropped. The corner ticks read as 'approximate region'."""
+        cx, cy = int(center[0]), int(center[1])
+        half = 16 * scale
+        box = [cx - half, cy - half, cx + half, cy + half]
+        draw.rectangle(box, outline=color, width=2)
+        t = 6
+        for x, sx in ((box[0], 1), (box[2], -1)):
+            for y, sy in ((box[1], 1), (box[3], -1)):
+                draw.line([(x, y), (x + t * sx, y)], fill=color, width=2)
+                draw.line([(x, y), (x, y + t * sy)], fill=color, width=2)
+        try:
+            lw = draw.textbbox((0, 0), label, font=font)[2]
+        except Exception:
+            lw = len(label) * 7
+        lx = box[2] + 6 if side == "right" else box[0] - 6 - lw
+        ly = box[1] - 4
+        bbox = draw.textbbox((lx, ly), label, font=font)
+        draw.rectangle([bbox[0] - 2, bbox[1] - 1, bbox[2] + 2, bbox[3] + 1], fill="black")
+        draw.text((lx, ly), label, fill=color, font=font)
+
     def create_annotated_sagittal(
         self, sag_t2_seq_name: str, midline_slice: int = 8, scale: int = 2
     ) -> str:
@@ -744,8 +767,8 @@ class DICOMEngine:
         img = img.resize((img.width * scale, img.height * scale), Image.LANCZOS)
         draw = ImageDraw.Draw(img)
 
-        font_sm = self._get_font(11)
-        font_title = self._get_font(14)
+        font_sm = self._get_font(13)
+        font_title = self._get_font(15)
 
         # Build candidate targets: (label, col, row, structure_type, color, side)
         # side: 'left' draws the arrow from the left margin, 'right' from the right.
@@ -794,9 +817,17 @@ class DICOMEngine:
             self.annotation_audit.append(audit)
 
             if status == "failed":
-                logger.warning(
-                    f"Annotation '{t['label']}' FAILED 3C verification "
-                    f"(intensity {intensity} not in {audit['expected_range']}) — NOT drawn"
+                # Confidence-forward: do NOT silently drop the finding's visual. Fall back to a
+                # labelled REGION BAND at the computed location (approximate, not a verified
+                # pinpoint) so the reader still sees where the finding is.
+                audit["status"] = "region_band"
+                audit["drawn"] = True
+                rc = (int(t["col"]) * scale, int(t["row"]) * scale)
+                self._draw_region_band(
+                    draw, rc, f"{t['label']} (approx region)", t["color"], t["side"], font_sm, scale
+                )
+                logger.info(
+                    f"Annotation '{t['label']}' tip unverifiable — drawn as region band, not dropped"
                 )
                 continue
 
@@ -821,9 +852,10 @@ class DICOMEngine:
         drawn = sum(1 for a in self.annotation_audit if a["drawn"])
         failed = sum(1 for a in self.annotation_audit if a["status"] == "failed")
         repositioned = sum(1 for a in self.annotation_audit if a["status"] == "repositioned")
+        region = sum(1 for a in self.annotation_audit if a["status"] == "region_band")
         logger.info(
-            f"Annotation 3C verification: {drawn} drawn "
-            f"({repositioned} repositioned), {failed} dropped as unverifiable"
+            f"Annotation 3C: {drawn} drawn ({repositioned} repositioned, {region} region-band), "
+            f"{failed} dropped"
         )
 
         return out_path

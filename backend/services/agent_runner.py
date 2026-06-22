@@ -950,8 +950,9 @@ ORDERING (critical): perform the BLIND READ on the images BEFORE reading the sur
 ANNOTATION PRECISION — every annotation must be pixel-accurate AND informative:
   - Localize each structure by intensity analysis, place the tip, then VERIFY the tip's
     3x3 pixel intensity against the expected range for that structure. If it fails,
-    auto-search the neighborhood and reposition; if none matches, DROP the annotation.
-    Re-read every saved figure and confirm on-target.
+    auto-search the neighborhood and reposition; if none matches, fall back to a labelled
+    REGION BAND (approximate, not a pinpoint) — never ship a wrong pinpoint, and never silently
+    drop the finding's visual. Re-read every saved figure and confirm on-target.
   - {location_rule}
   - {shifting_rule}
   - On UNCALIBRATED (JPG/screenshot) studies, mark with REGION bands, not pinpoint circles.

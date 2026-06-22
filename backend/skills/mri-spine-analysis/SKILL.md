@@ -88,7 +88,7 @@ After placing annotations, verify EVERY arrow tip against the RAW (unannotated) 
 After saving each annotated image, re-read it and confirm: arrow tip physically touches the intended structure; label at the correct vertebral level (cross-ref Figure 0); circle centered on the actual pathology; for axial images left/right laterality correct (patient's right = image left); caption accurate. If any annotation is off-target: delete, recalculate, regenerate, re-verify.
 
 ### Step 3E: Precision & informativeness addendum
-- **Drop, don't fudge:** if a tip cannot be verified to its expected intensity after neighborhood auto-search, DROP it rather than ship a wrong arrow.
+- **Region band, don't fudge or drop:** if a tip cannot be verified to its expected intensity after neighborhood auto-search, fall back to a labelled REGION BAND at the computed location (approximate, not a pinpoint) — never ship a wrong pinpoint, and never silently drop the finding's visual.
 - **Level discipline:** confirm every mark's vertebral level against Figure 0; if unconfirmable, use a labelled region band ("approx Lx-Ly"), never a pinpoint circle.
 - **Plane-shifting structures** (neural foramina, nerve-in-foramen): annotate with a REGION box, not a false-pinpoint arrow.
 - **Uncalibrated (JPG) studies:** region bands only, never pinpoint circles.
