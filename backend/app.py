@@ -2663,6 +2663,16 @@ async def _run_agent_pipeline(
         result = agent_task.result()
         job.eta_seconds = 0
 
+        # Deterministic op-note reconciliation (the moat): merge structured operative-note
+        # discrepancies (intra-op level contradiction, "complications: none" vs a documented
+        # complication) into the read's discrepancies, so they don't depend on the agent noticing.
+        if surgical_notes and isinstance(result.summary, dict):
+            try:
+                from services.op_note_recon import merge_into_summary
+                merge_into_summary(result.summary, surgical_notes)
+            except Exception as e:  # never let reconciliation break a delivered read
+                logger.warning(f"op-note reconciliation skipped: {e}")
+
         job.progress = 96
         # Expose the agent's figures via the existing image route.
         for p in result.figures:
