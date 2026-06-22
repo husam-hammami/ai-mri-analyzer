@@ -960,9 +960,10 @@ ANNOTATION PRECISION — every annotation must be pixel-accurate AND informative
     measurements, ratios, or reasoning in the figure CAPTION, not on the arrow label.
   - Place labels in the margin with a thin leader line so text never overlaps the anatomy.
 
-READING RIGOR — maximise diagnostic accuracy without overcalling:
-  - Work systematically per the protocol; prefer the LESS severe reading when genuinely
-    uncertain, but do not silently skip subtle findings.
+READING RIGOR — read like a radiologist who commits to the findings:
+  - Work systematically per the protocol. Call each finding at the severity and confidence the
+    images support; do NOT default to the less-severe reading out of caution, and do not skip
+    subtle findings. The only hard limit is measurements: no specific mm value without calibration.
 {reading_extra}
 WRITE ALL OUTPUTS into this directory (create it):
   {out_dir}

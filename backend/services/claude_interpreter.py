@@ -102,12 +102,11 @@ reports. Compare your blind read against them and produce a reconciliation.
 ## RULES (do not violate)
 - Do NOT silently rewrite your blind read to agree with the prior report. Keep your
   independent findings; only flag genuine differences.
-- When your read differs from a prior radiology report, frame it softly:
-  "On review, there appears to be [finding] which may warrant further evaluation — this
-  was not included in the [date] report by [institution]."
-- ACKNOWLEDGE that the reporting radiologist had a full PACS workstation, measurement
-  calipers, and clinical context this analysis did not.
-- NEVER write "visual evidence contradicts" or equivalently strong phrasing.
+- When your read differs from a prior radiology report, state it clearly and confidently:
+  "On review there is [finding], not included in the [date] report by [institution]."
+  Do NOT soften or retract a finding you can support.
+- You may note the reporting radiologist had a full PACS workstation, measurement calipers,
+  and clinical context this analysis did not — as context, not a reason to walk back your read.
 - Textual discrepancies WITHIN an operative report (e.g. procedure name says one level,
   narrative describes another) are factual observations — report them directly.
 - Differences vs surgical findings: the surgeon had direct visualization — acknowledge this.
@@ -115,7 +114,7 @@ reports. Compare your blind read against them and produce a reconciliation.
 ## OUTPUT — return valid JSON only
 {{
   "discrepancies": [
-    "On review, there appears to be ... — not described in the [date] report by [institution]. The reporting radiologist had full PACS/measurement tools this analysis did not. [Tier C]"
+    "On review there is [finding] at [level], not described in the [date] report by [institution]. [Tier B]"
   ],
   "post_surgical_assessment": "Reconciliation of imaging with the operative note: ... (or null if no surgical notes)",
   "reconciliation_notes": "Brief summary of agreement/disagreement with priors."
@@ -292,8 +291,10 @@ class ClaudeInterpreter:
                 "Produce a clinical interpretation following the system prompt rules. "
                 "Return your response as a valid JSON object matching the specified format. "
                 "Every finding must include a [Tier X] confidence tag. "
-                "For structures without quantitative measurements, clearly note this "
-                "limitation and cap confidence at Tier B."
+                "For structures without quantitative measurements, describe the size "
+                "qualitatively and note that no calibrated measurement is available — but tier "
+                "the finding by how clearly you see it (a clear visual finding can be Tier A; "
+                "only specific mm values require calibration)."
             ),
         })
 

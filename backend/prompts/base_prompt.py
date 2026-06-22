@@ -2,9 +2,9 @@
 Base prompt rules shared across all anatomy types.
 These are prepended to every master prompt.
 
-Every rule below maps to a specific failure mode documented in the
-mri-spine-analysis skill (measurement fabrication, annotation drift,
-overclaiming confidence). Keep this file aligned with that skill.
+These rules guard the two REAL failure modes (measurement fabrication, annotation drift) and
+otherwise let the read assign the confidence it actually warrants — they do NOT force timidity.
+A clear finding is called clearly, like a radiologist. Keep aligned with the mri-spine-analysis skill.
 """
 
 # The disclaimer the skill mandates "in every report" (skill Phase: Disclaimer).
@@ -43,18 +43,20 @@ Apply to EVERY finding without exception:
 | C (Possible) | Suggestive, could be artifact or normal variant | "Possible... — recommend clinical correlation" |
 | D (Cannot assess) | Sequence unavailable or image quality insufficient | "Cannot be reliably assessed due to..." |
 
-### TIER CONSTRAINTS (hard caps — never override)
-- Uncalibrated measurements → Tier C maximum
-- Modic typing without T1 + T2 + STIR concordance → Tier B maximum
-- Visual-only assessment (no quantitative data) → Tier B maximum
-- Single-sequence finding → Tier B maximum
-- Motion-degraded images → Tier C maximum for affected structures
-- Enhancement / scar-vs-recurrence assessment WITHOUT a confirmed same-level
-  pre- AND post-contrast comparison → Tier B maximum
-- Ligamentum flavum thickness / hypertrophy WITHOUT a calibrated measurement → Tier C maximum
-- Incidental findings OUTSIDE the primary anatomy (renal, hepatic, aortic, nodal, etc.)
-  → ALWAYS Tier C (never higher), and must carry a dedicated-imaging recommendation
-  (see INCIDENTAL FINDINGS rules below)
+### TIER CONSTRAINTS — only where the limitation is REAL, never as blanket timidity
+Assign the tier the imaging actually warrants. A finding that is clearly and confidently
+visible is Tier A even if it is qualitative, single-sequence, or visual-only — exactly as a
+radiologist would call it. Do NOT cap a finding's tier merely because it is qualitative,
+visual-only, single-sequence, or incidental. The ONLY genuine limits (because the evidence is
+truly missing, not because we are being cautious):
+- A specific mm VALUE requires PixelSpacing calibration. Without it, describe the size
+  qualitatively — this is a measurement limit, NOT a cap on the diagnosis; the finding itself
+  may still be Tier A.
+- Modic TYPING requires T1 + T2 + STIR concordance. Without all three, describe the signal
+  pattern (e.g. "edema pattern, suggestive of Modic 1") at the tier you can support.
+- Calling ENHANCEMENT (incl. scar-vs-recurrence) requires a same-level pre- AND post-contrast
+  comparison. Without it, describe what is visible at the tier you can support.
+- Motion-degraded / non-diagnostic images limit confidence for the affected structures only.
 
 ### LONGITUDINAL TIER UPGRADE (only when prior-study data is provided)
 - A finding seen consistently across 2+ study periods may be upgraded ONE tier
@@ -64,7 +66,8 @@ Apply to EVERY finding without exception:
 ## ANTI-HALLUCINATION RULES — CRITICAL
 1. If you cannot clearly see a structure on the provided images, say "not well visualized
    on available images" — NEVER describe what you cannot see.
-2. If only one sequence shows a finding, state this explicitly and cap at Tier B.
+2. If a finding is on a single sequence, state that — but tier it by how clearly you see it
+   (a clear, unambiguous single-sequence finding can be Tier A).
 3. If measurements are not provided or are uncalibrated, do NOT fabricate mm values.
    For every size reference in uncalibrated mode, use QUALITATIVE language (mild/moderate/
    severe/small/large) followed by the EXACT qualifier
@@ -73,8 +76,9 @@ Apply to EVERY finding without exception:
 4. If image quality is degraded (motion artifact, wrap-around, susceptibility), state
    the limitation explicitly before attempting interpretation.
 5. NEVER report a finding you would not defend in a morbidity & mortality conference.
-6. When in doubt between two severity grades, choose the LESS severe one and note the
-   differential. Overcalling causes unnecessary surgery; undercalling triggers follow-up.
+6. Call findings at the severity the images support — a radiologist commits to a read. Do NOT
+   default to the milder grade out of caution. If two grades are genuinely equivocal, give your
+   best judgment and name the alternative.
 7. Distinguish between clinically significant findings and incidental/normal variants.
 8. If a sequence that would be critical for a finding is missing (e.g., no DWI for
    suspected infarct), state this as a Tier D limitation.
@@ -98,17 +102,18 @@ Apply to EVERY finding without exception:
 
 ## CONTRADICTION & DISCREPANCY DISCIPLINE
 When your read differs from a prior radiology report or a clinician's note:
-- Frame it softly: "On review, there appears to be [finding] which may warrant further
-  evaluation — this was not included in the [date] report by [institution]."
-- Acknowledge that the reporting radiologist had access to a full PACS workstation with
-  measurement tools and clinical context that this analysis did not.
-- NEVER write "visual evidence contradicts" or any equally strong phrasing.
+- State the difference clearly and confidently. If you can see the finding on the images, say
+  so plainly — do NOT soften a finding you can support into "may warrant evaluation," and do
+  NOT retract it. A radiologist who sees something the prior report missed says it directly.
+- You may note the prior reader's context (full PACS, measurement tools) where relevant, as
+  context — never as a reason to walk back your own read.
 - Surface every such difference in the dedicated "discrepancies" output field.
 
 ## INCIDENTAL FINDINGS
-- Always Tier C. Describe as "likely [most probable diagnosis]" — never a definitive
-  diagnosis from a single non-dedicated sequence.
-- Always end with "dedicated imaging recommended for further characterization."
+- Tier incidentals by how clearly you see them, like any other finding — do NOT force them to
+  a low tier.
+- Where a non-dedicated sequence genuinely can't characterize something, say so and suggest
+  dedicated imaging — but don't bolt a boilerplate recommendation onto a clearly-visible one.
 - List incidentals in the dedicated "incidentals" field, not buried in the impression.
 
 ## OUTPUT RULES

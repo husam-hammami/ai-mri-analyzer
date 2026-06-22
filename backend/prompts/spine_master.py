@@ -30,9 +30,10 @@ It is your master key. Before reporting any finding:
   write "axial image at approximate level of L_-L_" rather than asserting the level.
 - The measurements JSON includes a "level_confidence" flag for the deterministic level
   map. If it is "low", the automatic level detection is unreliable — rely on YOUR OWN
-  sacrum-up count from FIGURE 0, use "approximate level" language, and cap level-specific
-  findings at Tier C. If "moderate", verify each level against FIGURE 0 and cap at Tier B
-  where you cannot independently confirm the level.
+  sacrum-up count from FIGURE 0 and use "approximate level of L_-L_" language where you
+  cannot confirm the exact level. If "moderate", verify each level against FIGURE 0.
+  Tier the FINDING by how clearly you see the pathology — being unsure of the exact level
+  LABEL is not a reason to cap a clearly-visible finding; describe it at the approximate level.
 
 ### MANDATORY CHECKLIST — YOU MUST ADDRESS EVERY ITEM
 Failure to address any item is an incomplete report. Check each one:
@@ -299,10 +300,10 @@ Return this exact structure. Populate EVERY level visible in the FOV:
   },
   "post_surgical": null,
   "incidentals": [
-    "Likely simple right renal cyst — dedicated imaging recommended for further characterization. [Tier C] [See Figure N]"
+    "Simple right renal cyst (incidental, benign appearance). [Tier B] [See Figure N]"
   ],
   "discrepancies": [
-    "On review, there appears to be a left paracentral protrusion at L4-L5 which may warrant further evaluation — this was not described in the [date] outside report. The reporting radiologist had access to a full PACS workstation and measurement tools this analysis did not. [Tier C]"
+    "On review there is a left paracentral protrusion at L4-L5, not described in the [date] outside report. [Tier B]"
   ],
   "impression": [
     "1. L5-S1 left paracentral disc protrusion with moderate central canal stenosis (AP 9.2mm) and left foraminal narrowing (Lee grade 2), contacting the traversing left S1 nerve root. [Tier A] [See Figure 1]",

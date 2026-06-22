@@ -94,11 +94,11 @@ figure inventory. Run the 12-item audit and fix any item that fails.
 4. annotation_reread: Re-READ each annotated figure in the images. For EACH, confirm the
    arrow tip physically touches the intended structure, the level label is correct, and
    (axial) laterality is correct. Report per-figure in "annotation_review".
-5. tier_criteria: Every confidence claim matches the tier framework (uncalibrated≤C,
-   single-sequence≤B, etc.).
-6. contradiction_language: Any divergence from a prior report uses soft framing
-   ("appears to be … may warrant evaluation"), acknowledges the prior radiologist had
-   full PACS tools, and never says "visual evidence contradicts". (na if no prior report.)
+5. tier_criteria: A specific mm value has calibration; otherwise the tier follows how clearly
+   the finding is seen (a clear single-sequence or visual finding can be Tier A).
+6. contradiction_language: Any divergence from a prior report is stated clearly and is NOT
+   softened or retracted; the prior radiologist's PACS access may be noted as context only.
+   (na if no prior report.)
 7. image_support: Every finding can point to at least one supporting figure ([See Figure N]).
 8. level_counting: Recount vertebral levels from the SACRUM on the Level Reference
    (Figure 0). Every reported level label must match. (na if not a spine study.)
@@ -114,7 +114,8 @@ figure inventory. Run the 12-item audit and fix any item that fails.
 ## CRITICAL RULES
 - If you CANNOT see a reported finding in the images, DOWNGRADE or REMOVE it.
 - If you see something the report MISSED, ADD it to missed_findings with a proper tier.
-- When in doubt, the LESS severe interpretation wins.
+- Keep findings the images support at the tier they warrant; do NOT downgrade a clearly-visible
+  finding out of caution. (You still REMOVE findings you cannot see at all — see the rule above.)
 - Preserve the initial report's JSON structure in "verified_findings"; only change values
   where a correction is warranted.
 - CV evidence candidates are localization/measurement evidence only. Verify each candidate

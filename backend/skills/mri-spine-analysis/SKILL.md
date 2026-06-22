@@ -13,7 +13,7 @@ Analyzing MRI images as an AI has unique failure modes that differ from a human 
 
 1. **Measurement fabrication** — stating specific mm values from uncalibrated image exports. This looks authoritative but is unverifiable and potentially wrong.
 2. **Annotation drift** — arrows and circles that land on the wrong structure or wrong vertebral level, which actively misleads rather than helps.
-3. **Overclaiming confidence** — presenting tentative visual impressions as definitive findings, especially when contradicting a human radiologist who had full PACS tools.
+3. **Confident error** — asserting a structure you cannot actually see, or a specific mm value you did not calibrate. (Stating clearly and confidently what you DO see is correct radiology — not a failure mode. Do not muzzle a genuine read; a radiologist commits to the findings.)
 
 Every protocol below is built to catch these specific failure modes before they reach the report.
 
@@ -61,7 +61,7 @@ Every finding gets a tier.
 | **C — Possible** | Suggestive, could be artifact or normal variant | "Possible... — recommend correlation" |
 | **D — Cannot assess** | Insufficient image quality or missing sequence | "Cannot be reliably assessed" |
 
-**Tier caps:** uncalibrated measurement → C max; enhancement without confirmed same-level pre/post → B max; Modic needs T1+T2+STIR concordance (STIR alone = "STIR edema suggestive of Modic 1" at B); ligamentum flavum thickness without measurement → C max; incidentals outside primary anatomy → always C with "recommend dedicated imaging"; findings confirmed across 2+ periods gain one tier (B→A).
+**Tier the finding by how clearly you see it** — a clear finding is Tier A even if it is qualitative, single-sequence, or visual-only, exactly as a radiologist would call it. The only genuine limits (evidence truly missing, NOT caution): a specific mm VALUE needs calibration (else describe size qualitatively — the finding itself can still be Tier A); calling ENHANCEMENT needs a same-level pre/post comparison; Modic TYPING needs T1+T2+STIR concordance (STIR alone = "edema suggestive of Modic 1" at the tier you can support). Do NOT cap a finding just for being qualitative, single-sequence, or incidental. Findings confirmed across 2+ periods may gain one tier (B→A).
 
 ### Track per level (L1-L2 → L5-S1)
 Disc height, T2 signal (Pfirrmann), contour/herniation, canal morphology, foraminal patency, facets, endplate (Modic with supporting sequences), post-surgical changes, enhancement pattern (if contrast).
@@ -104,8 +104,8 @@ Concise bulleted radiology report (default), as a document: (1) demographics tab
 
 ### Language Discipline
 Calibrated → state mm with [Tier A]. Uncalibrated → NEVER a specific mm value; qualitative + "(visual estimate — no calibrated measurement available)" + [Tier C].
-Contradicting another radiologist → "On review, there appears to be [finding] which may warrant further evaluation — not included in the [date] report by [institution]"; acknowledge they had full PACS/measurement tools; do NOT write "visual evidence contradicts".
-Incidental findings → always Tier C, "likely [diagnosis]", always "dedicated imaging recommended for further characterization".
+Differing from another radiologist → state it clearly and confidently ("On review there is [finding], not included in the [date] report by [institution]"). You may note they had full PACS/measurement tools as context; do NOT soften or retract a finding you can support.
+Incidental findings → tier by how clearly you see them; suggest dedicated imaging only where a non-dedicated sequence genuinely can't characterize the finding.
 
 ---
 
@@ -117,7 +117,7 @@ Only after completing Phases 1-4, ingest surgical reports and prior radiology re
 
 ## Phase 6: Final Self-Audit (MANDATORY)
 
-Before delivering, verify every item: (1) every mm is calibrated or qualified as visual estimate; (2) every annotation coordinate came from 3A intensity analysis; (3) every annotation passed 3C intensity verification; (4) every annotation visually re-read (3D); (5) every confidence claim matches tier criteria; (6) every contradiction appropriately qualified; (7) every finding points to a supporting image; (8) level identification counted from the sacrum; (9) axial laterality confirmed; (10) incidentals qualified with "recommend dedicated imaging"; (11) Modic concordance T1+T2+STIR or capped; (12) enhancement compared pre/post at confirmed same level. Fix any failed item before delivery. An honest "cannot assess" beats a confident wrong answer.
+Before delivering, verify every item: (1) every mm is calibrated or qualified as visual estimate; (2) every annotation coordinate came from 3A intensity analysis; (3) every annotation passed 3C intensity verification; (4) every annotation visually re-read (3D); (5) every confidence claim matches tier criteria; (6) every contradiction appropriately qualified; (7) every finding points to a supporting image; (8) level identification counted from the sacrum; (9) axial laterality confirmed; (10) incidentals tiered by what is visible; (11) Modic typing has T1+T2+STIR or is described as a signal pattern; (12) enhancement compared pre/post at a confirmed same level. Fix any failed item before delivery. Do not assert what you cannot see or measure — but state clearly and confidently what you DO see.
 
 ---
 
