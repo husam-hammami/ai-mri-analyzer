@@ -83,6 +83,47 @@ NEGATION_TERMS = (
     "no definite",
     "no evidence of",
 )
+TEMPORAL_IMPROVED_TERMS = (
+    "improved",
+    "decreased",
+    "less",
+    "resolved",
+    "decompressed",
+    "removed",
+    "relieved",
+    "widely patent",
+)
+TEMPORAL_PROGRESS_TERMS = (
+    "worse",
+    "worsened",
+    "progressed",
+    "progression",
+    "increased",
+    "larger",
+    "new",
+    "severe",
+    "marked",
+)
+TEMPORAL_ABNORMAL_TERMS = (
+    "stenosis",
+    "narrowing",
+    "compression",
+    "impingement",
+    "encasement",
+    "contact",
+    "disc",
+    "disk",
+    "herniation",
+    "protrusion",
+    "extrusion",
+    "scar",
+    "fibrosis",
+    "enhancement",
+    "occupied",
+    "effacement",
+    "lateral recess",
+    "foraminal",
+)
 
 
 class ReferenceInputError(ValueError):
@@ -372,6 +413,189 @@ def _sequence_need_for_level(level: str) -> str:
     if level.startswith(("L", "T", "C")):
         return "Cross-sectional spine MRI sequences matched to the reported level and side"
     return "Relevant diagnostic imaging sequences for the reported anatomy"
+
+
+def _iter_report_text(value: Any) -> Iterable[str]:
+    if isinstance(value, dict):
+        for key in (
+            "findings",
+            "findings_by_level",
+            "findings_by_region",
+            "impression",
+            "incidentals",
+            "discrepancies",
+            "post_surgical_assessment",
+            "bottom_line",
+            "key_points",
+            "what_it_means",
+        ):
+            yield from _iter_report_text(value.get(key))
+        patient = value.get("patient")
+        if isinstance(patient, dict):
+            yield from _iter_report_text(patient)
+        for key in ("text", "plain", "caption", "finding", "description", "summary"):
+            text = value.get(key)
+            if isinstance(text, str) and text.strip():
+                yield text
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_report_text(item)
+    elif isinstance(value, str) and value.strip():
+        yield value
+
+
+def _temporal_state(text: str) -> str:
+    low = text.lower()
+    negated = _contains_any(low, NEGATION_TERMS)
+    if _contains_any(low, TEMPORAL_IMPROVED_TERMS):
+        return "improved"
+    if negated and _contains_any(low, TEMPORAL_ABNORMAL_TERMS):
+        return "absent"
+    if _contains_any(low, TEMPORAL_PROGRESS_TERMS):
+        return "progressed"
+    if _contains_any(low, TEMPORAL_ABNORMAL_TERMS):
+        return "abnormal"
+    return "mentioned"
+
+
+def extract_temporal_findings(source: Any, *, source_label: str = "") -> list[dict[str, Any]]:
+    """Extract PHI-safe level/side finding rows for longitudinal comparison."""
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for text in _iter_report_text(source):
+        for sentence in _sentence_window(text):
+            level_match = LEVEL_RE.search(sentence)
+            if not level_match:
+                continue
+            low = sentence.lower()
+            if not (
+                _contains_any(low, TEMPORAL_ABNORMAL_TERMS)
+                or _contains_any(low, TEMPORAL_IMPROVED_TERMS)
+                or _contains_any(low, TEMPORAL_PROGRESS_TERMS)
+            ):
+                continue
+            level = _normalize_level(level_match.group(1))
+            side_match = SIDE_RE.search(sentence)
+            side = side_match.group(1).lower() if side_match else ""
+            concepts = _concepts_for_text(low)
+            state = _temporal_state(sentence)
+            key = (level, side, ",".join(concepts), state)
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "level": level,
+                "side": side,
+                "key": f"{level}|{side or 'unspecified'}",
+                "concepts": concepts,
+                "state": state,
+                "source_label": source_label,
+                "text": sentence,
+            })
+    return rows
+
+
+def _temporal_status(prior_state: str, current_state: str) -> Optional[str]:
+    prior_abnormal = prior_state in {"abnormal", "progressed", "mentioned"}
+    current_abnormal = current_state in {"abnormal", "progressed", "mentioned"}
+    if prior_abnormal and current_state in {"absent", "improved"}:
+        return "resolved"
+    if prior_state in {"absent", "improved"} and current_abnormal:
+        return "new"
+    if prior_abnormal and current_state == "progressed":
+        return "progressed"
+    if prior_state == "abnormal" and current_state == "abnormal":
+        return None
+    return None
+
+
+def build_structured_change_over_time(
+    *,
+    current_summary: dict[str, Any],
+    prior_reports: Optional[str] = None,
+    prior_summaries: Optional[list[dict[str, Any]]] = None,
+    prior_label: str = "prior",
+    current_label: str = "current",
+) -> dict[str, Any]:
+    """Compare prior and current spine findings by level+side.
+
+    The function is intentionally conservative: it only emits new/resolved/progressed
+    rows when both timepoints contain a level-keyed finding. It does not read or copy
+    prior images, and it never edits the blind read.
+    """
+    prior_rows: list[dict[str, Any]] = []
+    if prior_reports:
+        prior_rows.extend(extract_temporal_findings(prior_reports, source_label=prior_label))
+    for idx, summary in enumerate(prior_summaries or []):
+        prior_rows.extend(extract_temporal_findings(summary, source_label=f"{prior_label} {idx + 1}"))
+    current_rows = extract_temporal_findings(current_summary or {}, source_label=current_label)
+    if not prior_rows or not current_rows:
+        return {"used": bool(prior_rows or current_rows), "items": [], "points": [], "source": "deterministic_temporal_delta"}
+
+    by_prior: dict[str, list[dict[str, Any]]] = {}
+    by_current: dict[str, list[dict[str, Any]]] = {}
+    for row in prior_rows:
+        by_prior.setdefault(row["key"], []).append(row)
+    for row in current_rows:
+        by_current.setdefault(row["key"], []).append(row)
+
+    items: list[dict[str, Any]] = []
+    for key in sorted(set(by_prior) & set(by_current)):
+        for prior in by_prior[key]:
+            current = max(
+                by_current[key],
+                key=lambda row: len(set(row.get("concepts") or []) & set(prior.get("concepts") or [])),
+            )
+            status = _temporal_status(prior.get("state", ""), current.get("state", ""))
+            if not status:
+                continue
+            side = f"{prior.get('side')} " if prior.get("side") else ""
+            point = (
+                f"{prior.get('level')} {side}".strip()
+                + f": {prior.get('state')} on prior comparison -> {current.get('state')} now ({status})."
+            )
+            items.append({
+                "status": status,
+                "level": prior.get("level", ""),
+                "side": prior.get("side", ""),
+                "key": key,
+                "prior_state": prior.get("state", ""),
+                "current_state": current.get("state", ""),
+                "prior_text": prior.get("text", ""),
+                "current_text": current.get("text", ""),
+                "point": point,
+            })
+
+    return {
+        "used": bool(items),
+        "source": "deterministic_temporal_delta",
+        "items": items,
+        "points": [item["point"] for item in items],
+    }
+
+
+def merge_change_over_time(summary: dict[str, Any], change: dict[str, Any]) -> dict[str, Any]:
+    """Merge deterministic temporal rows into the patient change_over_time block."""
+    if not isinstance(summary, dict) or not change or not change.get("items"):
+        return summary
+    patient = dict(summary.get("patient") or {})
+    existing = patient.get("change_over_time")
+    if not isinstance(existing, dict):
+        existing = {}
+    points = list(existing.get("points") or [])
+    seen = {str(p).strip().lower() for p in points}
+    for point in change.get("points") or []:
+        key = str(point).strip().lower()
+        if key and key not in seen:
+            points.append(str(point))
+            seen.add(key)
+    existing["points"] = points
+    existing["items"] = change.get("items") or []
+    existing["source"] = change.get("source")
+    patient["change_over_time"] = existing
+    summary["patient"] = patient
+    summary["change_over_time"] = change
+    return summary
 
 
 def build_reference_reconciliation(

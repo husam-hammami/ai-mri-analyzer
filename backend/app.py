@@ -54,6 +54,8 @@ from services.reconciliation import (
     MAX_REFERENCE_REPORT_BYTES,
     build_clinical_reconciliation_report,
     build_reference_reconciliation,
+    build_structured_change_over_time,
+    merge_change_over_time,
     read_reference_report_bytes,
 )
 from services.cv_synthesis import (
@@ -1346,6 +1348,59 @@ def _load_report(job_id: str) -> Optional[dict]:
     return None
 
 
+def _load_prior_study_summaries(prior_studies: Optional[list]) -> list[dict]:
+    """Best-effort PHI-local lookup for prior completed summaries.
+
+    Accepts a persisted MIKA job id, a directory containing report.json, or a directory/file
+    containing summary.json. Nothing is copied; the returned summaries are used only for
+    deterministic temporal-delta extraction during the active run.
+    """
+    out: list[dict] = []
+    for ref in prior_studies or []:
+        token = str(ref or "").strip()
+        if not token:
+            continue
+        candidates: list[Path] = []
+        if JOB_ID_RE.match(token):
+            raw = _load_report(token)
+            if raw:
+                summary = (
+                    ((raw.get("agent") or {}).get("summary"))
+                    or ((raw.get("measurements") or {}).get("agent_summary"))
+                    or raw
+                )
+                out.append(_normalize_summary(summary))
+                continue
+        try:
+            p = Path(token).expanduser()
+        except Exception:
+            continue
+        if p.is_file():
+            candidates.append(p)
+        elif p.is_dir():
+            candidates.extend([
+                p / "report.json",
+                p / "summary.json",
+                p / "report" / "summary.json",
+                p / "work" / "report" / "summary.json",
+            ])
+        for candidate in candidates:
+            if not candidate.exists() or not candidate.is_file():
+                continue
+            try:
+                payload = json.loads(candidate.read_text(encoding="utf-8-sig"))
+            except Exception:
+                continue
+            summary = (
+                ((payload.get("agent") or {}).get("summary"))
+                or ((payload.get("measurements") or {}).get("agent_summary"))
+                or payload
+            )
+            out.append(_normalize_summary(summary))
+            break
+    return out
+
+
 def _list_reports() -> list[dict]:
     """Index every completed study on disk for the Recent list (durable, not browser-only)."""
     out = []
@@ -1663,6 +1718,7 @@ class AnalyzeRequest(BaseModel):
     clinical_history: Optional[str] = None
     surgical_notes: Optional[str] = None
     prior_reports: Optional[str] = None
+    prior_studies: Optional[list[str]] = None
     reference_report_path: Optional[str] = None
     reference_report_text: Optional[str] = None
     notify_email: Optional[str] = None   # §7.7: opt-in "we'll email you when it's ready" (survives tab close)
@@ -1932,6 +1988,7 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
             clinical_history=request.clinical_history,
             surgical_notes=request.surgical_notes,
             prior_reports=request.prior_reports,
+            prior_studies=request.prior_studies,
             reference_report_path=request.reference_report_path,
             reference_report_text=request.reference_report_text,
             notify_email=request.notify_email,
@@ -2547,6 +2604,7 @@ async def _run_agent_pipeline(
     clinical_history: Optional[str] = None,
     surgical_notes: Optional[str] = None,
     prior_reports: Optional[str] = None,
+    prior_studies: Optional[list[str]] = None,
     reference_report_path: Optional[str] = None,
     reference_report_text: Optional[str] = None,
     notify_email: Optional[str] = None,
@@ -2625,6 +2683,7 @@ async def _run_agent_pipeline(
             clinical_history=clinical_history,
             surgical_notes=surgical_notes,
             prior_reports=prior_reports,
+            prior_studies=prior_studies,
             evidence_manifest_path=_evidence_manifest_path(job),
         ))
         start = time.monotonic()
@@ -2663,13 +2722,34 @@ async def _run_agent_pipeline(
         result = agent_task.result()
         job.eta_seconds = 0
 
+        # Deterministic temporal reconciliation: when prior report text or a prior
+        # persisted MIKA job/report summary is available, compute level+side deltas
+        # as structured rows the patient report can render. This augments, but never
+        # edits, the blind image read.
+        if isinstance(result.summary, dict) and (prior_reports or prior_studies):
+            try:
+                change = build_structured_change_over_time(
+                    current_summary=result.summary,
+                    prior_reports=prior_reports,
+                    prior_summaries=_load_prior_study_summaries(prior_studies),
+                )
+                merge_change_over_time(result.summary, change)
+            except Exception as e:
+                logger.warning(f"temporal reconciliation skipped: {e}")
+
         # Deterministic op-note reconciliation (the moat): merge structured operative-note
         # discrepancies (intra-op level contradiction, "complications: none" vs a documented
         # complication) into the read's discrepancies, so they don't depend on the agent noticing.
         if surgical_notes and isinstance(result.summary, dict):
             try:
-                from services.op_note_recon import merge_into_summary
-                merge_into_summary(result.summary, surgical_notes)
+                from services.op_note_recon import extract_read_surgical_level_side, merge_into_summary
+                read_levels, read_sides = extract_read_surgical_level_side(result.summary)
+                merge_into_summary(
+                    result.summary,
+                    surgical_notes,
+                    read_levels=read_levels,
+                    read_sides=read_sides,
+                )
             except Exception as e:  # never let reconciliation break a delivered read
                 logger.warning(f"op-note reconciliation skipped: {e}")
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Iterable, Optional
 
 from services.reconciliation import LEVEL_RE, SIDE_RE  # reuse the shared patterns
 
@@ -31,6 +31,25 @@ COMPLICATION_TERMS = (
     "pseudomeningocele", "nerve root injury", "nerve injury", "hemorrhage", "hematoma", "infection",
 )
 COMPLICATIONS_NONE_RE = re.compile(r"complications?\s*[:\-]?\s*(none|nil|no\b|without\b)", re.I)
+READ_SURGICAL_TERMS = (
+    "postoperative",
+    "post-operative",
+    "post surgical",
+    "postsurgical",
+    "post-surgical",
+    "operative",
+    "surgery",
+    "surgical",
+    "laminectomy",
+    "hemilaminectomy",
+    "laminotomy",
+    "discectomy",
+    "diskectomy",
+    "microdiscectomy",
+    "decompression",
+    "foraminotomy",
+    "fusion",
+)
 
 
 def _norm_level(s: str) -> str:
@@ -70,6 +89,57 @@ def parse_operative_note(text: str) -> OpNoteFacts:
         complications_stated_none=bool(COMPLICATIONS_NONE_RE.search(t)),
         complications_found=comps,
     )
+
+
+def _iter_summary_text(summary: Any) -> Iterable[str]:
+    if isinstance(summary, dict):
+        for key in (
+            "findings",
+            "findings_by_level",
+            "findings_by_region",
+            "impression",
+            "discrepancies",
+            "post_surgical_assessment",
+        ):
+            yield from _iter_summary_text(summary.get(key))
+        patient = summary.get("patient")
+        if isinstance(patient, dict):
+            yield from _iter_summary_text(patient.get("findings"))
+            yield from _iter_summary_text(patient.get("bottom_line"))
+            yield from _iter_summary_text(patient.get("key_points"))
+        for key in ("text", "plain", "caption", "finding", "description"):
+            value = summary.get(key)
+            if isinstance(value, str) and value.strip():
+                yield value
+    elif isinstance(summary, list):
+        for item in summary:
+            yield from _iter_summary_text(item)
+    elif isinstance(summary, str) and summary.strip():
+        yield summary
+
+
+def extract_read_surgical_level_side(summary: Any) -> tuple[list[str], list[str]]:
+    """Extract the read's post-surgical level/side facts for op-note comparison.
+
+    Only rows that mention surgery/postoperative anatomy are treated as surgical-level
+    evidence. This keeps an unrelated degenerative finding elsewhere from triggering an
+    op-vs-read mismatch.
+    """
+    levels: list[str] = []
+    sides: list[str] = []
+    for text in _iter_summary_text(summary):
+        low = text.lower()
+        if not any(term in low for term in READ_SURGICAL_TERMS):
+            continue
+        for match in LEVEL_RE.finditer(text):
+            level = _norm_level(match.group(1))
+            if level not in levels:
+                levels.append(level)
+        for match in SIDE_RE.finditer(text):
+            side = match.group(1).lower()
+            if side not in sides:
+                sides.append(side)
+    return levels, sides
 
 
 def _procedure_line_level(text: str):
