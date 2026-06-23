@@ -43,7 +43,7 @@ if str(BACKEND) not in sys.path:
     sys.path.insert(0, str(BACKEND))
 
 from core.dicom_engine import DICOMEngine  # noqa: E402
-from core.format_converter import FormatConverter  # noqa: E402
+from core.format_converter import FormatConverter, choose_slice_axis  # noqa: E402
 from services.agent_runner import AgentRunner, detect_study_modality  # noqa: E402
 from validation import validate  # noqa: E402
 
@@ -306,7 +306,17 @@ def discover_spider_cases(root: Path, limit: int = 0) -> list[SpineCase]:
     return cases
 
 
-def _convert_mha_to_dicom(mha_path: Path, out_dir: Path) -> Path:
+def _convert_mha_to_dicom(mha_path: Path, out_dir: Path) -> dict[str, Any]:
+    """Convert one SPIDER .mha into a DICOM series, iterating the TRUE through-plane axis.
+
+    SimpleITK ``GetArrayFromImage`` returns the volume as (z, y, x) but ``GetSpacing()``
+    is (x, y, z) — so we reverse spacing to align it with the array before choosing the
+    slice axis. The old code blindly iterated array axis 0, which for a sagittal study
+    (slices on the LR axis) produced ~578 thin "slices" and mislabelled every disc level.
+
+    Returns ``{series, slice_axis, n_slices, axis_confidence, warning}`` so the caller can
+    record what axis was actually used per sequence.
+    """
     try:
         import SimpleITK as sitk  # type: ignore
     except Exception as exc:  # pragma: no cover - optional dependency
@@ -314,8 +324,12 @@ def _convert_mha_to_dicom(mha_path: Path, out_dir: Path) -> Path:
 
     image = sitk.ReadImage(str(mha_path))
     arr = sitk.GetArrayFromImage(image)  # z, y, x
-    spacing = image.GetSpacing() or (1.0, 1.0, 1.0)
-    has_spacing = len(spacing) >= 2 and float(spacing[0]) > 0 and float(spacing[1]) > 0
+    spacing_xyz = image.GetSpacing() or (1.0, 1.0, 1.0)
+    # Align spacing to the array's (z, y, x) axis order before choosing the slice axis.
+    spacing = [float(s) for s in spacing_xyz[::-1]]
+    while len(spacing) < 3:
+        spacing.append(0.0)
+
     converter = FormatConverter(str(mha_path.parent), str(out_dir))
     out_dir.mkdir(parents=True, exist_ok=True)
     data = arr.astype("float32")
@@ -323,28 +337,51 @@ def _convert_mha_to_dicom(mha_path: Path, out_dir: Path) -> Path:
         data = ((data - data.min()) / (data.max() - data.min()) * 255).astype("uint8")
     else:
         data = data.astype("uint8")
+
+    slice_axis, axis_warning = choose_slice_axis(data.shape, spacing[:3])
+    in_plane = [a for a in range(3) if a != slice_axis]
+    row_axis, col_axis = in_plane[0], in_plane[1]
+    pixdim_row = spacing[row_axis]
+    pixdim_col = spacing[col_axis]
+    slice_thickness = spacing[slice_axis] if spacing[slice_axis] > 0 else 1.0
+    has_spacing = pixdim_row > 0 and pixdim_col > 0
+
+    # Move the slice axis to the front, keeping the two in-plane axes in their original
+    # order (so pixdim_row/col and rows/cols below stay aligned). Use the array method to
+    # avoid importing numpy into this harness.
+    data_t = data.transpose(slice_axis, row_axis, col_axis)
     series = re.sub(r"[^A-Za-z0-9_-]+", "_", mha_path.stem) or "spider"
-    for idx in range(data.shape[0]):
+    for idx in range(data_t.shape[0]):
         converter._create_synthetic_dicom(  # noqa: SLF001 - validation adapter, not app path
-            pixel_data=data[idx],
+            pixel_data=data_t[idx],
             output_path=out_dir / f"{series}_Img{idx + 1:04d}.dcm",
             series_description=series,
             instance_number=idx + 1,
-            slice_location=float(idx) * (float(spacing[2]) if len(spacing) > 2 else 1.0),
-            pixel_spacing=[float(spacing[1]), float(spacing[0])] if has_spacing else [1.0, 1.0],
-            slice_thickness=float(spacing[2]) if len(spacing) > 2 else 1.0,
-            rows=int(data.shape[1]),
-            cols=int(data.shape[2]),
+            slice_location=float(idx) * slice_thickness,
+            pixel_spacing=[pixdim_row, pixdim_col] if has_spacing else [1.0, 1.0],
+            slice_thickness=slice_thickness,
+            rows=int(data_t.shape[1]),
+            cols=int(data_t.shape[2]),
             study_description=f"Lumbar spine MRI (SPIDER) — {series}",
             is_calibrated=has_spacing,
             modality="MR",
         )
-    return out_dir
+    return {
+        "series": series,
+        "slice_axis": int(slice_axis),
+        "n_slices": int(data_t.shape[0]),
+        "axis_confidence": "low" if axis_warning else "high",
+        "warning": axis_warning,
+    }
 
 
-def prepare_case(case: SpineCase, work: Path) -> Path:
+def prepare_case(case: SpineCase, work: Path) -> tuple[Path, list[dict[str, Any]]]:
     """Convert ALL of a subject's sequence files into one DICOM study dir (each .mha -> its own
-    series) so the read sees the full multi-sequence study, not single sequences in isolation."""
+    series) so the read sees the full multi-sequence study, not single sequences in isolation.
+
+    Returns ``(dicom_dir, conversions)`` where ``conversions`` is the per-.mha slice-axis info
+    (slice_axis / n_slices / axis_confidence / warning) so the harness can record what axis each
+    sequence was actually iterated on."""
     dicom_dir = work / "dicom"
     dicom_dir.mkdir(parents=True, exist_ok=True)
     # Same-stem files convert to identical DICOM filenames and silently overwrite each other in the
@@ -358,16 +395,17 @@ def prepare_case(case: SpineCase, work: Path) -> Path:
             "check the dataset layout (e.g. masks mixed with images)"
         )
     converted = False
+    conversions: list[dict[str, Any]] = []
     for image_path in case.image_paths:
         if image_path.suffix.lower() in {".mha", ".mhd"}:
-            _convert_mha_to_dicom(image_path, dicom_dir)
+            conversions.append(_convert_mha_to_dicom(image_path, dicom_dir))
             converted = True
         elif image_path.is_file():
             (dicom_dir / image_path.name).write_bytes(image_path.read_bytes())
             converted = True
     if not converted:
         raise FileNotFoundError(f"no usable images for case {case.case_id}")
-    return dicom_dir
+    return dicom_dir, conversions
 
 
 def score_detection(dicom_dir: Path, work: Path) -> dict[str, Any]:
@@ -530,10 +568,17 @@ def write_markdown(path: Path, summary: dict[str, Any], rows: list[dict[str, Any
         )
     lines += ["", "## Cases", ""]
     for row in rows:
+        conv = row.get("conversion") or {}
+        conv_note = ""
+        if conv:
+            conv_note = f", slices={conv.get('n_slices', '?')}(axis {conv.get('slice_axis', '?')})"
+            if conv.get("axis_confidence") == "low" or conv.get("warning"):
+                conv_note += " ⚠"
         lines.append(
             f"- {row['case_id']}: anatomy={row.get('detection', {}).get('anatomy', '?')}, "
             f"modality={row.get('detection', {}).get('modality', '?')}, "
             f"read={'cached' if row.get('read_cached') else row.get('read_status', 'not_run')}"
+            f"{conv_note}"
         )
     path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -579,7 +624,15 @@ def main() -> None:
             }
             work = tmp_root / _slug(case.case_id)
             try:
-                dicom_dir = prepare_case(case, work)
+                dicom_dir, conversions = prepare_case(case, work)
+                if conversions:
+                    row["conversion"] = {
+                        "slice_axis": conversions[0].get("slice_axis"),
+                        "n_slices": conversions[0].get("n_slices"),
+                        "axis_confidence": conversions[0].get("axis_confidence"),
+                        "warning": conversions[0].get("warning"),
+                        "per_sequence": conversions,
+                    }
                 row["detection"] = score_detection(dicom_dir, work)
             except Exception as exc:  # noqa: BLE001
                 row["prepare_error"] = str(exc)

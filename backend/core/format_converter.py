@@ -80,6 +80,59 @@ class ConversionResult:
     error: Optional[str] = None
 
 
+def choose_slice_axis(shape, spacing) -> tuple[int, Optional[str]]:
+    """Pick the through-plane (slice) axis of a 3-D volume.
+
+    The through-plane axis is the one with the LARGEST voxel spacing — slices are
+    spaced farther apart than in-plane pixels. This is the fix for the .mha/.nii
+    transpose bug: a ~50-slice sagittal study was being iterated along its 578-row
+    in-plane axis, producing 578 thin "slices" and mislabelling every disc level.
+
+    ``shape`` and ``spacing`` are 3-tuples aligned to the SAME axis order (i.e.
+    spacing[i] is the voxel size along the array's axis i). Returns ``(axis,
+    warning)`` where ``warning`` is ``None`` on a confident pick or a
+    human-readable string when the pick is low-confidence or looks transposed.
+
+    - Anisotropic voxels → ``argmax(spacing)`` (the confident case).
+    - Near-isotropic voxels → fall back to the axis with the FEWEST samples
+      (``argmin(shape)``) and flag low confidence, because spacing can no longer
+      name the slice axis.
+    - 578-signature guard: if the chosen axis still has hundreds of very thin
+      slices it is almost certainly a transpose — warn loudly.
+    """
+    shape = tuple(int(s) for s in shape)
+    spacing = tuple(float(s) for s in spacing)
+    if len(shape) != 3 or len(spacing) != 3:
+        raise ValueError(
+            f"choose_slice_axis expects 3-D shape and spacing, got shape={shape!r} spacing={spacing!r}"
+        )
+
+    warning: Optional[str] = None
+    sp_max = max(spacing)
+    sp_min = min(spacing)
+    # Near-isotropic: the largest spacing is barely larger than the smallest, so
+    # spacing can't reliably distinguish through-plane from in-plane. Most volumes
+    # carry the fewest samples through-plane, so fall back to argmin(shape).
+    near_isotropic = sp_max <= 0 or (sp_min > 0 and (sp_max / sp_min) < 1.5)
+    if near_isotropic:
+        axis = int(np.argmin(shape))
+        warning = (
+            f"near-isotropic voxels {spacing} — slice axis inferred from the smallest "
+            f"dimension (axis {axis}, {shape[axis]} samples); low confidence"
+        )
+    else:
+        axis = int(np.argmax(spacing))
+
+    # 578-signature guard: a through-plane axis with hundreds of sub-2mm slices is
+    # the transpose symptom (a ~50-slice study read as 578 thin slices). Warn loudly.
+    if shape[axis] > 400 and spacing[axis] < 2.0:
+        warning = (
+            f"suspicious slice axis {axis}: {shape[axis]} slices at {spacing[axis]:.2f} mm — "
+            f"looks like a transposed volume (shape={shape}, spacing={spacing}); verify orientation"
+        )
+    return axis, warning
+
+
 class FormatConverter:
     """
     Converts any supported medical imaging format into DICOM files
@@ -241,26 +294,11 @@ class FormatConverter:
                 header = img.header
                 affine = img.affine
 
-                # Extract voxel dimensions (mm). Only treat the study as calibrated when
-                # the header actually carries usable positive spacing — otherwise we would
-                # fabricate authoritative-looking mm values from a 1.0mm fallback, which is
-                # the #1 failure mode the spine skill exists to prevent.
+                # Per-axis voxel dimensions (mm). The slice axis is chosen below from
+                # these (largest spacing = through-plane); we deliberately do NOT assume
+                # axis 2 is through-plane — that assumption transposed sagittal studies
+                # into hundreds of thin slices and mislabelled every disc level.
                 voxel_dims = header.get_zooms()
-                has_spacing = (
-                    len(voxel_dims) >= 2
-                    and float(voxel_dims[0]) > 0
-                    and float(voxel_dims[1]) > 0
-                )
-                pixdim_row = float(voxel_dims[0]) if has_spacing else 1.0
-                pixdim_col = float(voxel_dims[1]) if has_spacing else 1.0
-                slice_thickness = (
-                    float(voxel_dims[2]) if len(voxel_dims) > 2 and float(voxel_dims[2]) > 0 else 1.0
-                )
-                if not has_spacing:
-                    warnings.append(
-                        f"{nii_path.name}: no usable voxel spacing in header — "
-                        "treating as UNCALIBRATED (no mm measurements will be reported)"
-                    )
 
                 # Derive sequence name from filename
                 seq_name = nii_path.stem
@@ -291,6 +329,30 @@ class FormatConverter:
                     warnings.append(f"{nii_path.name}: Expected 3D volume, got {data.ndim}D — skipping")
                     continue
 
+                # Choose the through-plane axis from voxel spacing (largest = slice axis).
+                # in-plane spacing/dims follow the chosen axis rather than fixed positions.
+                axis_spacing = [
+                    float(voxel_dims[i]) if i < len(voxel_dims) else 0.0 for i in range(3)
+                ]
+                slice_axis, axis_warning = choose_slice_axis(data.shape, axis_spacing)
+                if axis_warning:
+                    warnings.append(f"{nii_path.name}: {axis_warning}")
+                in_plane = [a for a in range(3) if a != slice_axis]
+                row_axis, col_axis = in_plane[0], in_plane[1]
+                pixdim_row = axis_spacing[row_axis]
+                pixdim_col = axis_spacing[col_axis]
+                slice_thickness = axis_spacing[slice_axis] if axis_spacing[slice_axis] > 0 else 1.0
+                # Only mark calibrated when both in-plane spacings are real — never fabricate
+                # authoritative mm from a 1.0 fallback (the #1 failure mode the skill prevents).
+                has_spacing = pixdim_row > 0 and pixdim_col > 0
+                if not has_spacing:
+                    pixdim_row = pixdim_row if pixdim_row > 0 else 1.0
+                    pixdim_col = pixdim_col if pixdim_col > 0 else 1.0
+                    warnings.append(
+                        f"{nii_path.name}: no usable voxel spacing in header — "
+                        "treating as UNCALIBRATED (no mm measurements will be reported)"
+                    )
+
                 # Normalize to 0-255
                 d_min, d_max = float(data.min()), float(data.max())
                 if d_max > d_min:
@@ -298,11 +360,13 @@ class FormatConverter:
                 else:
                     data_norm = np.zeros_like(data, dtype=np.uint8)
 
-                num_slices = data_norm.shape[2]
+                # Iterate TRUE through-plane slices (move the slice axis to the front).
+                data_t = np.moveaxis(data_norm, slice_axis, 0)
+                num_slices = data_t.shape[0]
 
                 # Create synthetic DICOM for each slice
                 for s in range(num_slices):
-                    slice_data = data_norm[:, :, s]
+                    slice_data = data_t[s]
                     # Flip so orientation matches typical DICOM display
                     slice_data = np.flipud(slice_data)
 
@@ -327,6 +391,7 @@ class FormatConverter:
                     "source": str(nii_path.name),
                     "dimensions": list(data.shape),
                     "voxel_size_mm": [pixdim_row, pixdim_col, slice_thickness],
+                    "slice_axis": slice_axis,
                     "num_slices": num_slices,
                 }
 
@@ -390,29 +455,26 @@ class FormatConverter:
                 else:
                     modality = guessed_modality
 
-                # Extract spacing from NRRD header. Only mark calibrated when real spacing
-                # is present; otherwise stay UNCALIBRATED rather than fabricate mm values.
-                has_spacing = False
+                # Per-axis spacing from the NRRD header — the norm of each space-direction
+                # row, else the 'spacings' field. The slice axis is chosen below from these
+                # (largest = through-plane); 0.0 marks a missing/unparseable axis. We do NOT
+                # assume axis 2 is through-plane.
+                axis_spacing = [0.0, 0.0, 0.0]
                 space_directions = header.get("space directions", None)
                 if space_directions is not None:
-                    try:
-                        pixdim_row = float(np.linalg.norm(space_directions[0]))
-                        pixdim_col = float(np.linalg.norm(space_directions[1]))
-                        slice_thickness = float(np.linalg.norm(space_directions[2])) if len(space_directions) > 2 else 1.0
-                        has_spacing = pixdim_row > 0 and pixdim_col > 0
-                    except (IndexError, TypeError):
-                        pixdim_row = pixdim_col = slice_thickness = 1.0
-                        warnings.append(f"{nrrd_path.name}: Could not parse space directions — treating as UNCALIBRATED")
+                    for i in range(3):
+                        try:
+                            axis_spacing[i] = float(np.linalg.norm(space_directions[i]))
+                        except (IndexError, TypeError, ValueError):
+                            axis_spacing[i] = 0.0
                 else:
                     spacings = header.get("spacings", None)
-                    if spacings is not None and len(spacings) >= 2:
-                        pixdim_row = float(spacings[0])
-                        pixdim_col = float(spacings[1])
-                        slice_thickness = float(spacings[2]) if len(spacings) > 2 else 1.0
-                        has_spacing = pixdim_row > 0 and pixdim_col > 0
-                    else:
-                        pixdim_row = pixdim_col = slice_thickness = 1.0
-                        warnings.append(f"{nrrd_path.name}: no spacing in header — treating as UNCALIBRATED")
+                    if spacings is not None:
+                        for i in range(min(3, len(spacings))):
+                            try:
+                                axis_spacing[i] = float(spacings[i])
+                            except (TypeError, ValueError):
+                                axis_spacing[i] = 0.0
 
                 # Handle 3D+ data
                 if data.ndim == 4:
@@ -423,6 +485,24 @@ class FormatConverter:
                     warnings.append(f"{nrrd_path.name}: Expected 3D, got {data.ndim}D — skipping")
                     continue
 
+                # Choose the through-plane axis from spacing (largest = slice axis);
+                # in-plane spacing/dims follow the chosen axis rather than fixed positions.
+                slice_axis, axis_warning = choose_slice_axis(data.shape, axis_spacing)
+                if axis_warning:
+                    warnings.append(f"{nrrd_path.name}: {axis_warning}")
+                in_plane = [a for a in range(3) if a != slice_axis]
+                row_axis, col_axis = in_plane[0], in_plane[1]
+                pixdim_row = axis_spacing[row_axis]
+                pixdim_col = axis_spacing[col_axis]
+                slice_thickness = axis_spacing[slice_axis] if axis_spacing[slice_axis] > 0 else 1.0
+                # Only mark calibrated when real spacing is present; otherwise stay
+                # UNCALIBRATED rather than fabricate mm values.
+                has_spacing = pixdim_row > 0 and pixdim_col > 0
+                if not has_spacing:
+                    pixdim_row = pixdim_row if pixdim_row > 0 else 1.0
+                    pixdim_col = pixdim_col if pixdim_col > 0 else 1.0
+                    warnings.append(f"{nrrd_path.name}: no usable spacing in header — treating as UNCALIBRATED")
+
                 # Normalize
                 d_min, d_max = float(data.min()), float(data.max())
                 if d_max > d_min:
@@ -430,10 +510,12 @@ class FormatConverter:
                 else:
                     data_norm = np.zeros_like(data, dtype=np.uint8)
 
-                num_slices = data_norm.shape[2]
+                # Iterate TRUE through-plane slices (move the slice axis to the front).
+                data_t = np.moveaxis(data_norm, slice_axis, 0)
+                num_slices = data_t.shape[0]
 
                 for s in range(num_slices):
-                    slice_data = data_norm[:, :, s]
+                    slice_data = data_t[s]
                     dcm_filename = f"{seq_name}_Img{s+1:04d}.dcm"
                     self._create_synthetic_dicom(
                         pixel_data=slice_data,
@@ -455,6 +537,7 @@ class FormatConverter:
                     "source": str(nrrd_path.name),
                     "dimensions": list(data.shape),
                     "voxel_size_mm": [pixdim_row, pixdim_col, slice_thickness],
+                    "slice_axis": slice_axis,
                     "num_slices": num_slices,
                 }
 
