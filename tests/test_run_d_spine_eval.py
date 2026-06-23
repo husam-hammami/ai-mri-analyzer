@@ -41,6 +41,18 @@ def test_spider_label_parser_aggregates_per_case(tmp_path):
     assert cases[0].labels["disc_herniation"] is True
 
 
+def test_discover_groups_sequences_by_subject(tmp_path):
+    img = tmp_path / "images"
+    img.mkdir()
+    for name in ("100_t1.mha", "100_t2.mha", "101_t2.mha"):
+        (img / name).write_text("x", encoding="utf-8")
+    cases = spine_eval.discover_spider_cases(tmp_path)
+    by_id = {c.case_id: c for c in cases}
+    assert set(by_id) == {"100", "101"}            # grouped by subject, not per file
+    assert len(by_id["100"].image_paths) == 2      # T1 + T2 read as ONE study
+    assert len(by_id["101"].image_paths) == 1
+
+
 def test_metrics_persist_raw_counts_and_kn():
     counts = {finding: {"tp": 0, "fp": 0, "tn": 0, "fn": 0} for finding in spine_eval.FINDINGS}
     spine_eval.update_counts(

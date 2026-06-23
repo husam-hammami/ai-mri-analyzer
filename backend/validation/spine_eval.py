@@ -94,8 +94,8 @@ Return ONLY a JSON object mapping every finding name to 0 or 1.
 
 @dataclass
 class SpineCase:
-    case_id: str
-    image_path: Path
+    case_id: str                                          # subject id — one study per subject
+    image_paths: list = field(default_factory=list)       # all sequence files for the subject (T1, T2, STIR...)
     labels: dict[str, Optional[bool]] = field(default_factory=dict)
     mask_path: Optional[Path] = None
 
@@ -246,6 +246,27 @@ def _labels_for_path(path: Path, label_map: dict[str, dict[str, Optional[bool]]]
     return {finding: None for finding in FINDINGS}
 
 
+_SEQ_SUFFIX_RE = re.compile(r"(.+?)_(?:t1|t2|stir|space|sag|ax|cor|pd|dwi|adc|t1w|t2w)\b.*$", re.I)
+
+
+def _subject_id(stem: str) -> str:
+    """Group key for a SPIDER file: the numeric subject id ('100' from '100_t2'), else the stem
+    before a trailing sequence token, else the whole stem."""
+    m = re.match(r"(\d+)", stem)
+    if m:
+        return m.group(1)
+    m2 = _SEQ_SUFFIX_RE.match(stem)
+    return m2.group(1) if m2 else stem
+
+
+def _labels_for_key(key: str, label_map: dict[str, dict[str, Optional[bool]]]) -> dict[str, Optional[bool]]:
+    k = _slug(key)
+    for lk, labels in label_map.items():
+        if lk and (lk == k or k in lk or lk in k):
+            return dict(labels)
+    return {finding: None for finding in FINDINGS}
+
+
 def discover_spider_cases(root: Path, limit: int = 0) -> list[SpineCase]:
     require_non_onedrive(root)
     if not root.exists():
@@ -257,19 +278,24 @@ def discover_spider_cases(root: Path, limit: int = 0) -> list[SpineCase]:
         and p.suffix.lower() in {".mha", ".mhd", ".dcm", ".ima", ".dicom"}
         and not any(tok in p.name.lower() for tok in ("mask", "seg", "label"))
     ]
-    cases: list[SpineCase] = []
+    # Group every sequence file (e.g. 100_t1, 100_t2) into ONE study per subject, so the read sees
+    # the full multi-sequence study instead of single sequences in isolation (input completeness).
+    groups: dict[str, list[Path]] = {}
     for image in sorted(images):
-        case_id = image.stem
+        groups.setdefault(_subject_id(image.stem), []).append(image)
+    cases: list[SpineCase] = []
+    for subject, paths in sorted(groups.items()):
         mask = next(
             (
-                p for p in image.parent.rglob("*")
+                p for p in paths[0].parent.rglob("*")
                 if p.is_file() and p.suffix.lower() in {".mha", ".mhd", ".nii", ".gz"}
                 and any(tok in p.name.lower() for tok in ("mask", "seg", "label"))
-                and _slug(image.stem) in _slug(p.stem)
+                and _subject_id(p.stem) == subject
             ),
             None,
         )
-        cases.append(SpineCase(case_id=case_id, image_path=image, mask_path=mask, labels=_labels_for_path(image, label_map)))
+        cases.append(SpineCase(case_id=subject, image_paths=paths, mask_path=mask,
+                               labels=_labels_for_key(subject, label_map)))
         if limit and len(cases) >= limit:
             break
     return cases
@@ -304,7 +330,7 @@ def _convert_mha_to_dicom(mha_path: Path, out_dir: Path) -> Path:
             slice_thickness=float(spacing[2]) if len(spacing) > 2 else 1.0,
             rows=int(data.shape[1]),
             cols=int(data.shape[2]),
-            study_description=f"SPIDER import: {mha_path.name}",
+            study_description=f"Lumbar spine MRI (SPIDER) — {series}",
             is_calibrated=has_spacing,
             modality="MR",
         )
@@ -312,13 +338,21 @@ def _convert_mha_to_dicom(mha_path: Path, out_dir: Path) -> Path:
 
 
 def prepare_case(case: SpineCase, work: Path) -> Path:
-    suffix = case.image_path.suffix.lower()
+    """Convert ALL of a subject's sequence files into one DICOM study dir (each .mha -> its own
+    series) so the read sees the full multi-sequence study, not single sequences in isolation."""
     dicom_dir = work / "dicom"
-    if suffix in {".mha", ".mhd"}:
-        return _convert_mha_to_dicom(case.image_path, dicom_dir)
-    if case.image_path.parent.is_dir():
-        return validate.prepare_study(case.image_path.parent, work) or dicom_dir
-    raise FileNotFoundError(case.image_path)
+    dicom_dir.mkdir(parents=True, exist_ok=True)
+    converted = False
+    for image_path in case.image_paths:
+        if image_path.suffix.lower() in {".mha", ".mhd"}:
+            _convert_mha_to_dicom(image_path, dicom_dir)
+            converted = True
+        elif image_path.is_file():
+            (dicom_dir / image_path.name).write_bytes(image_path.read_bytes())
+            converted = True
+    if not converted:
+        raise FileNotFoundError(f"no usable images for case {case.case_id}")
+    return dicom_dir
 
 
 def score_detection(dicom_dir: Path, work: Path) -> dict[str, Any]:
@@ -526,7 +560,7 @@ def main() -> None:
             row: dict[str, Any] = {
                 "case_id": case.case_id,
                 "truth": case.labels,
-                "image_suffix": case.image_path.suffix.lower(),
+                "sequences": [p.name for p in case.image_paths],
             }
             work = tmp_root / _slug(case.case_id)
             try:
