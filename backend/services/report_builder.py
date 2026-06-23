@@ -45,6 +45,13 @@ CERTAINTY_COLOR = {
 }
 CONF_COLOR = {"High": (0.145, 0.388, 0.922), "Moderate": (0.553, 0.604, 0.690), "Low": (0.620, 0.659, 0.722)}
 
+# Brand header (the locked MIKA system: navy base + white reversed mark + #2563EB node).
+NAVY = (0.039, 0.059, 0.114)        # #0A0F1D brand base
+SLATE_LT = (0.580, 0.639, 0.722)    # #94A3B8 — tagline/secondary on navy
+HAIRLINE = (0.85, 0.86, 0.88)
+_BRAND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "assets" / "brand"
+_MARK_WHITE = _BRAND_DIR / "mika-mark-white.png"   # reversed mark for the navy band
+
 
 def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
     from reportlab.lib.pagesizes import LETTER
@@ -100,15 +107,45 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
     pat = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
     study = patient.get("study") if isinstance(patient.get("study"), dict) else {}
 
-    # Header
-    flow.append(Paragraph("MIKA - Imaging analysis report", H1))
-    hdr = []
-    if pat.get("name"): hdr.append(pat["name"])
-    bits = [study.get("body_part"), study.get("modality"), study.get("date")]
-    hdr.append(" - ".join([b for b in bits if b]))
-    if study.get("comparison"): hdr.append(study["comparison"])
-    flow.append(Paragraph("  -  ".join([h for h in hdr if h]), SUB))
-    flow.append(HRFlowable(width="100%", thickness=0.6, color=c((0.85, 0.85, 0.85)), spaceAfter=8))
+    # Branded header lockup — navy band: reversed mark + MIKA wordmark + tagline, report descriptor at right.
+    WORDMARK = ParagraphStyle("WM", parent=styles["Normal"], fontName="Helvetica-Bold",
+                              fontSize=21, leading=23, textColor=colors.white)
+    TAGLINE = ParagraphStyle("TG", parent=styles["Normal"], fontName="Helvetica",
+                             fontSize=7, leading=11, textColor=c(SLATE_LT))
+    DESC = ParagraphStyle("DC", parent=styles["Normal"], fontName="Helvetica",
+                          fontSize=9, leading=12, textColor=c(SLATE_LT), alignment=2)  # right-aligned
+
+    def _spaced(s):                      # letter-track each word; non-breaking spaces so reportlab
+        nbsp = " "                  # doesn't collapse the wider inter-word gap to one space
+        return (nbsp * 3).join(nbsp.join(list(w)) for w in s.split())
+
+    mark_cell = ""
+    if _MARK_WHITE.exists():
+        try:
+            miw, mih = ImageReader(str(_MARK_WHITE)).getSize()
+            mh = 0.5 * inch
+            mark_cell = Image(str(_MARK_WHITE), width=mh * miw / mih, height=mh)
+        except Exception:
+            mark_cell = ""
+    wm_cell = [Paragraph(_spaced("MIKA"), WORDMARK),
+               Paragraph(_spaced("CLINICAL IMAGING INTELLIGENCE"), TAGLINE)]
+    header = Table([[mark_cell, wm_cell, Paragraph("Imaging analysis<br/>report", DESC)]],
+                   colWidths=[0.62 * inch, 3.78 * inch, 2.2 * inch])
+    header.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), c(NAVY)),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (0, 0), 14), ("RIGHTPADDING", (-1, 0), (-1, 0), 16),
+        ("LEFTPADDING", (1, 0), (1, 0), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 12), ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+    ]))
+    flow.append(header)
+    flow.append(Spacer(1, 7))
+    bits = [b for b in (study.get("body_part"), study.get("modality"), study.get("date")) if b]
+    sub = " · ".join(([pat["name"]] if pat.get("name") else []) + bits +
+                     ([study["comparison"]] if study.get("comparison") else []))
+    if sub:
+        flow.append(Paragraph(sub, SUB))
+    flow.append(HRFlowable(width="100%", thickness=1.4, color=c(ACCENT), spaceAfter=10))
 
     # 1. SUMMARY
     flow.append(Paragraph("Summary", SECTION))
@@ -134,7 +171,7 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
         label = conf.get("label", "Moderate")
         score = conf.get("score")
         chip = label + (f"  -  {int(score)}%" if isinstance(score, (int, float)) else "")
-        flow.append(Paragraph("Confidence", SECTION))
+        conf_block = [Paragraph("Confidence", SECTION)]
         chip_tbl = Table([[Paragraph(f'<b>{chip}</b>', BODY), Paragraph(conf.get("note", ""), BODY)]],
                          colWidths=[1.7 * inch, 4.9 * inch])
         chip_tbl.setStyle(TableStyle([
@@ -147,9 +184,10 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
         # White text in the colored cell: re-render label as white paragraph
         chip_white = ParagraphStyle("cw", parent=BODY, textColor=colors.white, fontName="Helvetica-Bold")
         chip_tbl._cellvalues[0][0] = Paragraph(chip, chip_white)
-        flow.append(chip_tbl)
+        conf_block.append(chip_tbl)
+        flow.append(KeepTogether(conf_block))
 
-    def _img(fig_name, max_w=6.4 * inch, max_h=3.4 * inch):
+    def _img(fig_name, max_w=6.6 * inch, max_h=3.7 * inch):
         if not fig_name:
             return None
         p = figures_dir / fig_name
@@ -169,11 +207,14 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
     elif not isinstance(findings, list):
         findings = []
     if findings:
-        flow.append(Paragraph("Findings", SECTION))
+        findings_header_pending = True
         for f in findings:
             if not isinstance(f, dict):   # skip a malformed finding rather than crash
                 continue
             block = []
+            if findings_header_pending:   # keep the section header with its first finding (no orphan)
+                block.append(Paragraph("Findings", SECTION))
+                findings_header_pending = False
             cert = f.get("certainty", "")
             cert_col = CERTAINTY_COLOR.get(cert, MUTED)
             row = Table([[Paragraph(f.get("plain", ""), BULLET, bulletText="•"),
@@ -257,7 +298,7 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
     # 5. WHAT THIS MEANS
     wim = patient.get("what_it_means", [])
     if wim:
-        flow.append(Paragraph("Interpretation", SECTION))
+        flow.append(Paragraph("What this may mean", SECTION))
         flow.extend(bullets(wim))
 
     # 6. WORTH FLAGGING
@@ -273,8 +314,19 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
     flow.append(Spacer(1, 4))
     flow.append(Paragraph("A detailed technical version is available for the referring clinician.", SMALL))
 
+    def _decorate(canvas, doc_):          # branded footer + page number on every page
+        canvas.saveState()
+        w, _h = LETTER
+        canvas.setStrokeColor(c(HAIRLINE)); canvas.setLineWidth(0.6)
+        canvas.line(0.9 * inch, 0.62 * inch, w - 0.9 * inch, 0.62 * inch)
+        canvas.setFont("Helvetica", 7.5); canvas.setFillColor(c(MUTED))
+        canvas.drawString(0.9 * inch, 0.46 * inch, "MIKA  ·  Clinical Imaging Intelligence")
+        canvas.drawRightString(w - 0.9 * inch, 0.46 * inch, f"Page {doc_.page}")
+        canvas.restoreState()
+
     SimpleDocTemplate(out_pdf, pagesize=LETTER,
                       leftMargin=0.9 * inch, rightMargin=0.9 * inch,
-                      topMargin=0.8 * inch, bottomMargin=0.7 * inch,
-                      title="MIKA - Imaging analysis report").build(flow)
+                      topMargin=0.7 * inch, bottomMargin=0.85 * inch,
+                      title="MIKA — Imaging analysis report").build(
+                          flow, onFirstPage=_decorate, onLaterPages=_decorate)
     return out_pdf
