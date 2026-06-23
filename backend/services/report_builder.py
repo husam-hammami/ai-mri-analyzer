@@ -45,12 +45,12 @@ CERTAINTY_COLOR = {
 }
 CONF_COLOR = {"High": (0.145, 0.388, 0.922), "Moderate": (0.553, 0.604, 0.690), "Low": (0.620, 0.659, 0.722)}
 
-# Brand header (the locked MIKA system: navy base + white reversed mark + #2563EB node).
-NAVY = (0.039, 0.059, 0.114)        # #0A0F1D brand base
-SLATE_LT = (0.580, 0.639, 0.722)    # #94A3B8 — tagline/secondary on navy
+# Brand header — the EXACT MIKA lockup asset (cropped from frontend/assets/logo.png), not a re-render.
+LOGO_BG = (0.0, 0.012, 0.055)       # logo.png's own navy, so the asset blends into the band seamlessly
+SLATE_LT = (0.580, 0.639, 0.722)    # #94A3B8 — secondary text on the navy header
 HAIRLINE = (0.85, 0.86, 0.88)
 _BRAND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "assets" / "brand"
-_MARK_WHITE = _BRAND_DIR / "mika-mark-white.png"   # reversed mark for the navy band
+_LOGO = _BRAND_DIR / "mika-header.png"   # exact lockup (mark + wordmark + tagline), real brand pixels
 
 
 def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
@@ -107,36 +107,25 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
     pat = patient.get("patient") if isinstance(patient.get("patient"), dict) else {}
     study = patient.get("study") if isinstance(patient.get("study"), dict) else {}
 
-    # Branded header lockup — navy band: reversed mark + MIKA wordmark + tagline, report descriptor at right.
-    WORDMARK = ParagraphStyle("WM", parent=styles["Normal"], fontName="Helvetica-Bold",
-                              fontSize=21, leading=23, textColor=colors.white)
-    TAGLINE = ParagraphStyle("TG", parent=styles["Normal"], fontName="Helvetica",
-                             fontSize=7, leading=11, textColor=c(SLATE_LT))
+    # Branded header — the EXACT MIKA logo lockup (real asset from frontend/assets/logo.png) on its navy.
     DESC = ParagraphStyle("DC", parent=styles["Normal"], fontName="Helvetica",
                           fontSize=9, leading=12, textColor=c(SLATE_LT), alignment=2)  # right-aligned
-
-    def _spaced(s):                      # letter-track each word; non-breaking spaces so reportlab
-        nbsp = " "                  # doesn't collapse the wider inter-word gap to one space
-        return (nbsp * 3).join(nbsp.join(list(w)) for w in s.split())
-
-    mark_cell = ""
-    if _MARK_WHITE.exists():
+    logo_cell = ""
+    if _LOGO.exists():
         try:
-            miw, mih = ImageReader(str(_MARK_WHITE)).getSize()
-            mh = 0.5 * inch
-            mark_cell = Image(str(_MARK_WHITE), width=mh * miw / mih, height=mh)
+            liw, lih = ImageReader(str(_LOGO)).getSize()
+            lh = 0.8 * inch
+            logo_cell = Image(str(_LOGO), width=lh * liw / lih, height=lh)
         except Exception:
-            mark_cell = ""
-    wm_cell = [Paragraph(_spaced("MIKA"), WORDMARK),
-               Paragraph(_spaced("CLINICAL IMAGING INTELLIGENCE"), TAGLINE)]
-    header = Table([[mark_cell, wm_cell, Paragraph("Imaging analysis<br/>report", DESC)]],
-                   colWidths=[0.62 * inch, 3.78 * inch, 2.2 * inch])
+            logo_cell = ""
+
+    header = Table([[logo_cell, Paragraph("Imaging analysis<br/>report", DESC)]],
+                   colWidths=[4.5 * inch, 2.2 * inch])
     header.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), c(NAVY)),
+        ("BACKGROUND", (0, 0), (-1, -1), c(LOGO_BG)),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (0, 0), 14), ("RIGHTPADDING", (-1, 0), (-1, 0), 16),
-        ("LEFTPADDING", (1, 0), (1, 0), 8),
-        ("TOPPADDING", (0, 0), (-1, -1), 12), ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
     ]))
     flow.append(header)
     flow.append(Spacer(1, 7))
