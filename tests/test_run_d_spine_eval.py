@@ -53,6 +53,35 @@ def test_discover_groups_sequences_by_subject(tmp_path):
     assert len(by_id["101"].image_paths) == 1
 
 
+def test_discover_excludes_mask_directory(tmp_path):
+    # SPIDER ships grayscale images/ and segmentation masks/ with IDENTICAL filenames. The mask
+    # sibling must be excluded by its path component, or it overwrites the grayscale in the study dir.
+    (tmp_path / "images").mkdir()
+    (tmp_path / "masks").mkdir()
+    (tmp_path / "images" / "1_t1.mha").write_text("grayscale", encoding="utf-8")
+    (tmp_path / "masks" / "1_t1.mha").write_text("labelmap", encoding="utf-8")
+    cases = spine_eval.discover_spider_cases(tmp_path)
+    assert len(cases) == 1
+    paths = cases[0].image_paths
+    assert len(paths) == 1                      # the masks/ sibling is excluded
+    assert paths[0].parts[-2] == "images"       # kept the grayscale, not the label map
+
+
+def test_prepare_case_refuses_duplicate_stems(tmp_path):
+    # If two sequence files share a stem they convert to the same DICOM filenames and clobber each
+    # other silently — exactly the masks-over-images bug. prepare_case must fail loud instead.
+    case = spine_eval.SpineCase(
+        case_id="9",
+        image_paths=[tmp_path / "a" / "9_t1.mha", tmp_path / "b" / "9_t1.mha"],
+    )
+    try:
+        spine_eval.prepare_case(case, tmp_path / "work")
+    except ValueError as exc:
+        assert "9_t1" in str(exc)
+    else:
+        raise AssertionError("duplicate sequence stems must fail loud, not silently overwrite")
+
+
 def test_metrics_persist_raw_counts_and_kn():
     counts = {finding: {"tp": 0, "fp": 0, "tn": 0, "fn": 0} for finding in spine_eval.FINDINGS}
     spine_eval.update_counts(

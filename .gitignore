@@ -59,3 +59,7 @@ backend/validation/_mask_cache/
 backend/validation/annotation_overlap_results.json
 backend/validation/cache_chexpert/
 backend/validation/chexpert_results.json
+backend/validation/chexpert_results_*.json
+backend/validation/cache_spine/
+backend/validation/spine_results_*.json
+backend/validation/spine_report_*.md

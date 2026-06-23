@@ -276,7 +276,12 @@ def discover_spider_cases(root: Path, limit: int = 0) -> list[SpineCase]:
         p for p in root.rglob("*")
         if p.is_file()
         and p.suffix.lower() in {".mha", ".mhd", ".dcm", ".ima", ".dicom"}
-        and not any(tok in p.name.lower() for tok in ("mask", "seg", "label"))
+        # Exclude segmentation files by ANY path component, not just the filename: SPIDER's masks live
+        # in a masks/ dir under image-identical names (masks/1_t1.mha), so a filename-only check let
+        # them through and they overwrote the grayscale in the shared study dir.
+        and not any(tok in part.lower()
+                    for part in p.relative_to(root).parts
+                    for tok in ("mask", "seg", "label"))
     ]
     # Group every sequence file (e.g. 100_t1, 100_t2) into ONE study per subject, so the read sees
     # the full multi-sequence study instead of single sequences in isolation (input completeness).
@@ -342,6 +347,16 @@ def prepare_case(case: SpineCase, work: Path) -> Path:
     series) so the read sees the full multi-sequence study, not single sequences in isolation."""
     dicom_dir = work / "dicom"
     dicom_dir.mkdir(parents=True, exist_ok=True)
+    # Same-stem files convert to identical DICOM filenames and silently overwrite each other in the
+    # shared study dir (how masks/1_t1 once clobbered images/1_t1). Refuse rather than corrupt — a
+    # broken study that looks like a valid read is worse than a loud failure.
+    stems = [p.stem for p in case.image_paths]
+    if len(set(stems)) != len(stems):
+        dupes = sorted({s for s in stems if stems.count(s) > 1})
+        raise ValueError(
+            f"case {case.case_id}: duplicate sequence stems {dupes} would overwrite in one study dir; "
+            "check the dataset layout (e.g. masks mixed with images)"
+        )
     converted = False
     for image_path in case.image_paths:
         if image_path.suffix.lower() in {".mha", ".mhd"}:
