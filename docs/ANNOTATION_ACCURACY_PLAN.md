@@ -1,0 +1,68 @@
+# MIKA — Accurate, model-chosen annotations (any anatomy)
+
+## Context
+Annotations are MIKA's weakest, highest-risk layer and the part the founder cares most about (the March report's only real errors were annotation placement/measurement). A ground-truth check on a SPIDER lumbar case proved the current system **mislabels**: every disc level was off by one — the sacrum-up count missed the faint lowest disc, so "L5-S1" was anatomically L4-L5 and the true L5-S1 was unmarked — and tips sat ~4-12 mm off. Two root causes:
+1. The `.mha`→DICOM converter **transposed the volume** (built 578 thin slices from a ~50-slice study; confirmed from the cache: volume was SI=578, AP=448, LR=50).
+2. Annotation verification checks only that a tip is on a "disc-like pixel" (intensity), **never that it is on the CLAIMED level** — so an off-by-one passes silently. The one identity safeguard ("re-read Figure 0") is circular because Figure 0 came from the same wrong count.
+
+Separately, the only visual form is a leader-line arrow (+ region-band fallback), colored by *severity*. The founder wants the **model to choose the clearest form per finding** (circle/arrow/box/…) and wants accuracy to hold for **any anatomy**.
+
+**Decision (confirmed):** build a UNIVERSAL architecture — model-chosen visual forms + a *verify-or-honestly-degrade* gate so no area ever ships a confident wrong pinpoint — and validate true pinpoint accuracy on **spine first** (the only anatomy with ground-truth masks), reporting a measured mm-offset + level-match number. Other anatomies immediately get the clearer visuals + honest fallback; their pinpoint accuracy is validated later, one at a time. (Runs A–D confidence-forward work is already shipped on main; this supersedes it.)
+
+## Goal
+Every annotation is (a) placed on the **right** findings — each significant finding plus a normal reference, nothing that is noise; (b) drawn in the clearest **form** the model picks (arrow/circle/box/caliper/leader); (c) carrying a short, accurate **label + number** (units explicit; mm only when calibrated, qualitative otherwise — never a fabricated measurement); (d) **certainty-colored** with a legend; and (e) a **pinpoint only when an independent signal confirms its position** — otherwise an honest region band at lower certainty. Accuracy is measurable: a SPIDER run reports mean tip mm-offset and level-match rate and flags off-by-one. Renderer + gate are anatomy-agnostic; spine carries the deep anchor/measurement validation first.
+
+## Approach (phased; verify each phase before the next)
+
+### Phase 1 — Converter axis fix (root cause; unblocks everything)
+Through-plane axis = the one with the **largest voxel spacing**. New shared `choose_slice_axis(shape, spacing) -> (axis, warning)` in `format_converter.py`: pick `argmax(spacing)`; near-isotropic → `argmin(shape)` + low-confidence warning; guard the 578-slice signature (`shape[axis] > 400 and spacing[axis] < 2.0`) loudly. `np.moveaxis(data, axis, 0)` so the slice loop iterates true through-plane; set pixel_spacing/thickness from the correct axes.
+- `backend/validation/spine_eval.py` `_convert_mha_to_dicom` (~309-342): sitk `GetArrayFromImage` is (z,y,x) but `GetSpacing()` is (x,y,z) → align via `spacing[::-1]` before choosing; return `{slice_axis, n_slices, axis_confidence, warning}`; `prepare_case`/`main` write it into the run row.
+- `backend/core/format_converter.py` `_convert_nifti` (~284-331, + NRRD branch): `header.get_zooms()` aligns with `data.shape`; replace hardcoded `shape[2]`.
+- Live DICOM path is unaffected (real per-slice positions); this only fixes `.mha`/`.nii` imports.
+
+### Phase 2 — Measure annotation position vs ground truth (proves Phase 1, gates the rest)
+Extend `backend/validation/annotation_overlap.py` (reuse `_parse_seg`, the `compare` numeric block, the registry idiom):
+- `spider_level_ground_truth(mask_path)` — parse the SPIDER multi-label `.mha` into per-disc-level centroids (disc labels ordered by SI, named sacrum-up **from the mask**, which never drops a disc).
+- `compare_spine_levels(gt, annotation_points, calib)` — per level: centroid mm-offset, inside-mask, and **level-match** (nearest mask disc to the annotation point; does the mask's label there equal the claimed level?). Run-level: `mean_mm_offset`, `level_match_rate`, `off_by_one_detected`.
+- Wire into `spine_eval.py`: `case.mask_path` is already discovered but unused — after a read, load GT, pull the model's level points (`work/fig_verify.json` nucleus_points / `level_map`), compare, attach `row["positional_accuracy"]`, add a "Positional accuracy" section to the markdown. A run now reports "level-match 5/6, mean offset 6.4 mm, off-by-one DETECTED" instead of passing silently.
+
+### Phase 3 — Structure-identity verification (kill the off-by-one)
+- Spine anchor check `verify_level_identity()` in `dicom_engine.py` (after `identify_levels` ~466; reuse level_map/body_map/sacrum logic): lowest counted disc must abut the sacrum (gap < ~1.3× median inter-disc spacing); spacings consecutive (reuse regularity math ~445-451); lumbar count 5 (±1 transitional). Returns ok/anchored/consecutive/reasons/identity_confidence; does NOT mutate level_map.
+- Harden the detector: in `identify_levels` (~406-417), re-search the band between the lowest detected disc and the sacrum at lower prominence (the dropped disc is faint by definition); recover it and lower confidence. (The actual fix; the anchor check is the safety net.)
+
+### Phase 4 — Universal verification gate (pinpoint only if independently confirmed)
+New `backend/services/position_verification.py`: `verify_annotation_position(annotation, independent_localizer, anchor_check, tolerance_px) -> {decision: pinpoint|region_band|drop, certainty, agreement, reasons}`.
+- No independent localizer (common for non-spine / non-DICOM) → region_band, moderate. **Never pinpoint on a single source.**
+- Agrees (same level/side, within tolerance) → pinpoint, high.
+- Disagrees (level mismatch / distance) → region_band, low + reason (the off-by-one veto).
+- Spine anchor failed → force region_band, low.
+- Independent-localizer sources (reuse, don't rebuild): CV candidate via `LumbarSpineEvidenceModule`, gated by existing `candidate_allows_pinpoint_marker` (`anatomy_modules/base.py:128`) + `cv_adjudication` `final_status=="supported"` & not `localization_wrong`; fallback = second deterministic pass (`identify_levels` lowest disc vs `_detect_l5s1_sagittal_disc_row` in `anatomy_modules/lumbar_spine.py:694`).
+- Wire into `create_annotated_sagittal` (~804-845): decision overrides "verified ⇒ always pinpoint"; record agreement/certainty/reasons in the audit. Report status (`app.py` ~3194-3216): a position-disagreement region-band sets `issues_flagged` + `position_verification` in `job.verification`. De-circularize SKILL 3D (cross-check the anchor/CV level, not just Figure 0).
+
+### Phase 5 — Model-chosen visual forms + on-mark text/number + color (the clarity ask)
+New `backend/core/annotation_renderer.py` (Pillow-only, deterministic, anatomy-agnostic, unit-testable). The model EMITS an annotation spec; tested code RENDERS it. The spec per mark: `{form, point/center/bbox/p0-p1, label, number, units, certainty, significance, label_side}`.
+- **Form (model picks):** `form ∈ {arrow, circle, ellipse, box, caliper, leader}`, target coord(s) in BASE-image pixels (renderer owns `* scale`), `label_side: auto`. Selection: focal point → circle/arrow; area or fuzzy boundary → box (the honest "approximate"); linear extent/measurement → caliper; level/structure reference → leader. Uncalibrated → box/leader only (no pinpoint).
+- **Text on the mark (label + number):** ONE short line, ~6 words — `structure + finding + certainty word`. The NUMBER goes on a caliper or the label tail with **explicit units**, and **only when calibrated**; uncalibrated → a qualitative phrase, never a fabricated mm (keep the `(visual estimate — no calibrated measurement available)` rule, `base_prompt.py:71`). All reasoning / ratios / comparison / Tier go in the figure CAPTION (rendered in the PDF), not on the image. Labels are margin-placed with a real thin leader line, black background, and de-overlap stacking so text never covers anatomy.
+- **Color = certainty, with a legend:** color encodes CERTAINTY, not severity — Confirmed = full accent (`#2563EB`), Likely = reduced accent, Possible = neutral slate. Reuse `report_builder.CERTAINTY_COLOR` but **move it to a shared `core` palette** so the renderer, the on-image marks, and the report chips are ONE source of truth. Each figure (or the report) carries a small **legend** mapping color → certainty so the reader isn't guessing.
+- **Integration:** agent mode — model writes `annotations.json`; `_finalize_patient_report` (~709) runs `render_all(...)` deterministically before the PDF (host-side fallback so figures always exist even if the model's draw fails). Lite mode — `create_annotated_sagittal` builds specs and delegates to the same renderer. `report_builder` figure embedding unchanged (same filename contract). Keep thin `_draw_arrow`/`_draw_region_band` shims during migration.
+
+### Phase 6 — Annotation intelligence: what to look for and what to mark
+The read already decides what is clinically significant; the annotation layer must mark the RIGHT things — not everything, not nothing.
+- **Driven by the findings, not the pixels.** Every reportable finding in the structured read (the abnormalities driving the impression — Tier A/B/C) gets exactly one visual proof; the report already pairs `findings[].figure`. The model picks the slice where each finding is MAXIMAL (scan the stack, no fixed index — keep the existing rule, `agent_runner.py:959`).
+- **Always add a normal REFERENCE for contrast** where it aids reading (a preserved disc beside degenerate ones; the normal side vs the abnormal side) — colored neutral and labeled "normal for comparison," so severity reads by contrast, not by assertion.
+- **Anatomy-aware salience = the read's search pattern.** WHAT to look for per area already lives in the per-anatomy master prompts and the spine skill (the diagnostic checklist). Annotation selection inherits it: mark what the read hunted for and found. No new per-anatomy salience engine in this pass — the read is the intelligence; the annotation layer renders its conclusions accurately.
+- **De-clutter + no-noise rules:** the spec's `significance` field lets the renderer cap marks per figure (most significant first) and drop the least-significant when a figure is crowded — logged, never silently; never annotate artifacts/incidental noise; merge co-located findings.
+- **Completeness self-audit item:** every reportable finding has a figure, and every drawn mark ties to a stated finding (no orphan marks, no unmarked key finding). Add to the SKILL Phase-6 audit and to the lite-path audit trail.
+
+## Files
+**New:** `backend/core/annotation_renderer.py`, `backend/services/position_verification.py`.
+**Modify:** `backend/core/format_converter.py` (axis), `backend/validation/spine_eval.py` (axis + positional accuracy), `backend/validation/annotation_overlap.py` (SPIDER GT + level-match), `backend/core/dicom_engine.py` (`verify_level_identity`, faint-disc re-search, gate + renderer wiring), `backend/services/agent_runner.py` (annotation block → emit spec, pick form, short label + calibrated-only number, mark the significant findings + a normal reference, host-side render), `backend/skills/mri-spine-analysis/SKILL.md` (Phase 3 rewrite, de-circularize 3D, primitive table, selection/content/legend rules + completeness audit item), `backend/services/report_builder.py` (shared certainty palette + a color→certainty legend; embed unchanged), `backend/app.py` (~3194-3216 position-verification status).
+**Reuse:** CV adjudication gates, `annotation_overlap` parse/compare, `_detect_l5s1_sagittal_disc_row`, the audit-trail + region-band fallback + figure-filename contract.
+
+## Verification
+- **Unit tests:** `choose_slice_axis` (anisotropic→largest-spacing; isotropic→fallback+warn; 578-signature caught); `verify_level_identity` (sacrum-gap catches a dropped lowest disc; consecutive/count); `verify_annotation_position` decision table (agree→pinpoint, disagree/unavailable→region_band); `annotation_renderer` (each primitive draws; coords clamp; bad spec skips not crashes; certainty→color mapping; uncalibrated mark carries NO mm number; label kept short / margin-placed; legend rendered; `significance` cap drops least-significant + logs it); `compare_spine_levels` (`off_by_one_detected` True on the known case; level_match). Keep the suite green (currently 98).
+- **End-to-end (user's env, subscription read):** re-run `spine_eval --limit 1 --read --force` on SPIDER case 1. Expect: volume ~50 slices (not 578); `off_by_one_detected` → False; level-match → 6/6+; mean tip offset drops; the true L5-S1 marked or honestly region-banded. Render the patient PDF and eyeball: correct levels in model-chosen forms; labels short + accurate; numbers only where calibrated (qualitative otherwise); color = certainty with a legend; every reported finding has a figure + a normal reference present; no orphan marks.
+- **Regression:** a second SPIDER subject; confirm no confident pinpoint survives a localizer disagreement.
+
+## Scope discipline
+Universal renderer + gate everywhere; deep anchor/mask validation **spine-first**. Do NOT add per-anatomy accuracy machinery for other areas in this pass (brain/prostate next, one validated at a time). The guarantee that holds for every anatomy now: **never a confident wrong pinpoint** — verified pinpoint, or honest region band + lower certainty.
