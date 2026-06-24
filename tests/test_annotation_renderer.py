@@ -128,13 +128,21 @@ def test_significance_cap_drops_least_significant_and_logs(tmp_path, caplog):
     assert any("de-clutter" in r.message for r in caplog.records)
 
 
-def test_uncalibrated_pinpoint_downgrades_to_region_box():
-    # A flat JPG (calibrated=False) must never get a pinpoint — circle/arrow → region box.
-    c = normalize_spec({"form": "circle", "center": [60, 60], "radius": 12, "calibrated": False}, 120, 120)
-    assert c["form"] == "box" and c["bbox"] is not None
-    a = normalize_spec({"form": "arrow", "point": [50, 50], "calibrated": False}, 120, 120)
-    assert a["form"] == "box"
-    # calibrated (or unspecified) keeps the model's chosen form
+def test_uncalibrated_downgrades_every_form_to_broad_box():
+    # A flat JPG (calibrated=False): EVERY form becomes a generous region box (user call,
+    # 2026-06-24) — an honest broad box beats a precise-but-wrong pinpoint.
+    for spec in [
+        {"form": "circle", "center": [100, 100], "radius": 6, "calibrated": False},
+        {"form": "arrow", "point": [100, 100], "calibrated": False},
+        {"form": "caliper", "p0": [80, 100], "p1": [120, 100], "calibrated": False},
+        {"form": "leader", "center": [100, 100], "calibrated": False},
+        {"form": "box", "bbox": [95, 95, 105, 105], "calibrated": False},   # tight box → broadened
+    ]:
+        c = normalize_spec(spec, 200, 200)
+        assert c is not None and c["form"] == "box" and c["bbox"] is not None, spec["form"]
+        x0, y0, x1, y1 = c["bbox"]
+        assert (x1 - x0) >= 0.30 * 200 and (y1 - y0) >= 0.20 * 200, spec["form"]   # genuinely broad
+    # calibrated (or unspecified) keeps the model's chosen precise form
     assert normalize_spec({"form": "circle", "center": [60, 60], "radius": 12, "calibrated": True}, 120, 120)["form"] == "circle"
     assert normalize_spec({"form": "circle", "center": [60, 60], "radius": 12}, 120, 120)["form"] == "circle"
 

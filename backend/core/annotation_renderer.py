@@ -81,6 +81,14 @@ def _bbox(value, w, h):
     return (x0, y0, x1, y1)
 
 
+# A broad region box's MINIMUM half-extent as a fraction of the image, used on uncalibrated
+# studies. Sized to absorb the model's coordinate error (~one disc level ≈ 11% of height in
+# the studies we measured) so the box honestly covers the finding's region even when the
+# centre is a level off. Full box ≈ 36% wide × 24% tall.
+BROAD_BOX_W_FRAC = 0.18
+BROAD_BOX_H_FRAC = 0.18
+
+
 def normalize_spec(spec: dict, w: int, h: int) -> Optional[dict]:
     """Coerce a model spec into a clean render spec, or None if unrenderable.
 
@@ -99,15 +107,25 @@ def normalize_spec(spec: dict, w: int, h: int) -> Optional[dict]:
     p1 = _pt(spec.get("p1"), w, h)
     radius = _num(spec.get("radius"))
 
-    # Uncalibrated images get region bands, NEVER pinpoints — enforce the skill's rule at
-    # render time, not on the model's good behaviour. A flat JPG/screenshot has no scale or
-    # geometry, so a circle/arrow implies a precision we don't have; degrade it to a box.
-    if spec.get("calibrated") is False and form in ("arrow", "circle", "ellipse"):
-        if bbox is None and center is not None:
-            r = (radius or 16.0) * 1.5 if form == "circle" else 26.0
-            bbox = (_clamp(center[0] - r, 0, w - 1), _clamp(center[1] - r, 0, h - 1),
-                    _clamp(center[0] + r, 0, w - 1), _clamp(center[1] + r, 0, h - 1))
+    # Uncalibrated images get a BROAD region box over the finding's general area, NEVER a
+    # pinpoint. A flat JPG/screenshot has no scale or geometry, so any precise marker (circle,
+    # arrow, tight box, caliper, leader) implies an accuracy we don't have. An honest broad box
+    # beats a precise-but-wrong one (user call, 2026-06-24, after a focused localizer still
+    # missed). Degrade EVERY form to a generous region box centred on the mark.
+    if spec.get("calibrated") is False:
+        cx = cy = hw = hh = None
         if bbox is not None:
+            cx, cy = (bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0
+            hw, hh = abs(bbox[2] - bbox[0]) / 2.0, abs(bbox[3] - bbox[1]) / 2.0
+        elif center is not None:
+            cx, cy, hw, hh = center[0], center[1], 0.0, 0.0
+        elif p0 is not None and p1 is not None:
+            cx, cy, hw, hh = (p0[0] + p1[0]) / 2.0, (p0[1] + p1[1]) / 2.0, 0.0, 0.0
+        if cx is not None:
+            hw = max(hw, BROAD_BOX_W_FRAC * w)
+            hh = max(hh, BROAD_BOX_H_FRAC * h)
+            bbox = (_clamp(cx - hw, 0, w - 1), _clamp(cy - hh, 0, h - 1),
+                    _clamp(cx + hw, 0, w - 1), _clamp(cy + hh, 0, h - 1))
             form = "box"
 
     if form in ("arrow", "leader", "circle"):
