@@ -46,6 +46,10 @@ from core.dicom_engine import DICOMEngine  # noqa: E402
 from core.format_converter import FormatConverter, choose_slice_axis  # noqa: E402
 from services.agent_runner import AgentRunner, detect_study_modality  # noqa: E402
 from validation import validate  # noqa: E402
+from validation.annotation_overlap import (  # noqa: E402
+    compare_spine_levels,
+    spider_level_ground_truth,
+)
 
 SPIDER_RECORD_URL = "https://zenodo.org/records/8009680"
 SPIDER_NEWER_RECORD_URL = "https://zenodo.org/records/10159290"
@@ -518,6 +522,58 @@ def run_read(case: SpineCase, dicom_dir: Path, cache_root: Path, arm: str, force
     return summary, meta
 
 
+def _load_model_level_points(cdir: Path) -> dict:
+    """Pull the read's per-disc-level annotation points from the cached work dir.
+
+    Prefers fig_verify.json ``nucleus_points`` ({level: [AP, SI]}); falls back to a
+    levels.json that maps a level name to a row/point. Returns {} when none is found."""
+    work = cdir / "work"
+    if not work.exists():
+        return {}
+    candidates = [work / "fig_verify.json", *sorted(work.rglob("fig_verify.json"))]
+    for path in candidates:
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:  # noqa: BLE001
+            continue
+        pts = data.get("nucleus_points") if isinstance(data, dict) else None
+        if isinstance(pts, dict) and pts:
+            return pts
+    for path in sorted(work.rglob("levels.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:  # noqa: BLE001
+            continue
+        lm = data.get("level_map") if isinstance(data, dict) else None
+        if isinstance(lm, dict) and lm:
+            return lm
+    return {}
+
+
+def positional_accuracy(case: SpineCase, cdir: Path) -> Optional[dict[str, Any]]:
+    """Measure the read's disc-level placement against the SPIDER mask ground truth.
+
+    The mask never drops a disc, so this exposes the sacrum-up off-by-one that
+    intensity-only verification passes silently. The read's figure points don't share an
+    origin with the mask, so registration is approximate and the verdict carries its
+    confidence — a definitive (sacrum-anchored) check rides on the engine's level_map."""
+    if not case.mask_path or not Path(case.mask_path).exists():
+        return None
+    points = _load_model_level_points(cdir)
+    if not points:
+        return None
+    try:
+        gt = spider_level_ground_truth(case.mask_path)
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"ground-truth parse failed: {exc}"}
+    result = compare_spine_levels(gt, points, calib=None)
+    result["mask"] = Path(case.mask_path).name
+    result["gt_discs"] = gt.get("discs_caudal_to_cranial")
+    return result
+
+
 def update_counts(counts: dict[str, dict[str, int]], truth: dict[str, Optional[bool]], pred: dict[str, int]) -> None:
     for finding in FINDINGS:
         expected = truth.get(finding)
@@ -580,6 +636,35 @@ def write_markdown(path: Path, summary: dict[str, Any], rows: list[dict[str, Any
             f"read={'cached' if row.get('read_cached') else row.get('read_status', 'not_run')}"
             f"{conv_note}"
         )
+
+    pa_rows = [r for r in rows if r.get("positional_accuracy")]
+    if pa_rows:
+        lines += [
+            "",
+            "## Positional accuracy",
+            "",
+            "Disc-level placement vs the SPIDER segmentation mask (which never drops a disc).",
+            "off-by-one flags the sacrum-up miscount that intensity-only verification misses;",
+            "`reg=approximate` means the read's figure points were not absolutely registered to",
+            "the mask, so the verdict is best-effort (a sacrum-anchored engine check is definitive).",
+            "",
+            "| case | level-match | mean offset | off-by-one | reg | mask |",
+            "|---|---:|---:|:--:|:--:|---|",
+        ]
+        for row in pa_rows:
+            pa = row["positional_accuracy"]
+            if pa.get("error"):
+                lines.append(f"| {row['case_id']} | — | — | error | — | {pa['error']} |")
+                continue
+            obo = pa.get("off_by_one_detected")
+            obo_txt = "n/a" if obo is None else ("DETECTED" if obo else "no")
+            mean_off = pa.get("mean_mm_offset")
+            mean_txt = f"{mean_off} mm" if mean_off is not None else "n/a"
+            lines.append(
+                f"| {row['case_id']} | {pa.get('level_match_kN', 'n/a')} | {mean_txt} | "
+                f"{obo_txt} | {pa.get('registration', '?')} | {pa.get('mask', '?')} |"
+            )
+
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -659,6 +744,12 @@ def main() -> None:
                     labels_path.write_text(json.dumps(pred, indent=2), encoding="utf-8")
                 row["predicted"] = pred
                 update_counts(counts, case.labels, pred)
+            try:
+                pa = positional_accuracy(case, cdir)
+            except Exception as exc:  # noqa: BLE001
+                pa = {"error": str(exc)}
+            if pa:
+                row["positional_accuracy"] = pa
             rows.append(row)
     finally:
         shutil.rmtree(tmp_root, ignore_errors=True)
