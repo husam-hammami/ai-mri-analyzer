@@ -177,6 +177,7 @@ class DICOMEngine:
         self.body_map: dict = {}   # vertebra -> row
         self.level_confidence: str = "unknown"   # high | moderate | low
         self.level_confidence_reason: str = ""
+        self.level_identity: dict = {}  # verify_level_identity() result (sacrum-anchor check)
         self.canal_col: int = 0
         self.body_col: int = 0
         self.reference_image: Optional[np.ndarray] = None
@@ -416,6 +417,13 @@ class DICOMEngine:
             if center < sacrum_row - 10:  # Must be above sacrum
                 disc_centers.append(center)
 
+        # The faint lowest disc (L5-S1) is the one the strict pass most often drops, which
+        # shifts every level one up (the off-by-one). If the gap below the lowest detected
+        # disc is wide enough to hide a disc, re-search that band at lower prominence.
+        disc_centers, recovered_faint = self._recover_faint_lowest_disc(
+            grad_smooth, disc_centers, sacrum_row
+        )
+
         # Map disc centers to levels (bottom-up = sacrum-up counting)
         disc_centers.sort(reverse=True)  # Bottom to top
         level_names = ["L5-S1", "L4-L5", "L3-L4", "L2-L3", "L1-L2", "T12-L1"]
@@ -459,11 +467,137 @@ class DICOMEngine:
             f"{n_levels} disc spaces detected, spacing CoV={regularity:.2f}"
         )
 
+        # Recovering a faint disc means the strict pass under-counted — trust it less.
+        if recovered_faint:
+            if self.level_confidence == "high":
+                self.level_confidence = "moderate"
+            self.level_confidence_reason += " (+faint lowest disc recovered)"
+
+        # Sacrum-anchor identity check (does NOT mutate the map). A failed anchor is the
+        # off-by-one signal intensity verification cannot see — downgrade confidence loudly.
+        self.level_identity = self.verify_level_identity()
+        if not self.level_identity.get("ok", True):
+            if self.level_confidence == "high":
+                self.level_confidence = "moderate"
+            if self.level_identity.get("anchored") is False:
+                self.level_confidence = "low"
+            reasons = self.level_identity.get("reasons") or []
+            if reasons:
+                self.level_confidence_reason += " | identity: " + "; ".join(reasons)
+
         logger.info(
             f"Level identification: {self.level_map} "
             f"(confidence={self.level_confidence}; {self.level_confidence_reason})"
         )
         return self.level_map
+
+    def _recover_faint_lowest_disc(self, grad_smooth, disc_centers, sacrum_row):
+        """Re-search the band between the lowest detected disc and the sacrum.
+
+        The lowest lumbar disc (L5-S1) is often faint, so the strict gradient pass drops it
+        and the whole sacrum-up count shifts up by one. When the gap below the lowest disc
+        is wide enough to hide a disc, re-run peak detection there at lower prominence and
+        insert the recovered center. Returns ``(disc_centers, recovered: bool)``.
+        Rows increase downward, so the lowest disc is the MAX row and the sacrum is below it.
+        """
+        if len(disc_centers) < 2:
+            return disc_centers, False
+        ordered = sorted(disc_centers)
+        spacings = sorted(ordered[i + 1] - ordered[i] for i in range(len(ordered) - 1))
+        median_sp = spacings[len(spacings) // 2]
+        lowest = max(disc_centers)
+        gap = sacrum_row - lowest
+        # A normal disc abuts the sacrum within ~one disc spacing; a gap near two spacings
+        # means a disc was skipped between the lowest detected one and the sacrum.
+        if median_sp <= 0 or gap < 1.5 * median_sp:
+            return disc_centers, False
+        lo_peaks, _ = find_peaks(grad_smooth, distance=12, prominence=1.0)
+        sorted_lo = sorted(lo_peaks)
+        candidates = []
+        for i in range(len(sorted_lo) - 1):
+            center = (sorted_lo[i] + sorted_lo[i + 1]) // 2
+            if lowest + 0.4 * median_sp < center < sacrum_row - 0.3 * median_sp:
+                candidates.append(center)
+        if not candidates:
+            return disc_centers, False
+        # the recovered disc should sit about one spacing below the current lowest
+        expected = lowest + median_sp
+        recovered = min(candidates, key=lambda c: abs(c - expected))
+        if recovered not in disc_centers:
+            return list(disc_centers) + [recovered], True
+        return disc_centers, False
+
+    def verify_level_identity(self) -> dict:
+        """Anchor check on the sacrum-up level map (does NOT mutate it).
+
+        Intensity verification only confirms a tip sits on a disc-like pixel, never that it
+        sits on the CLAIMED level — so an off-by-one (a missed faint lowest disc) passes
+        silently. This re-checks the identity geometrically:
+        (1) ANCHORED — the lowest counted disc must abut the sacrum (no unmarked disc
+            between it and S1: gap < ~1.3x the median inter-disc spacing);
+        (2) CONSECUTIVE — inter-disc spacings are regular (reuse the CoV idiom);
+        (3) COUNT — the disc-space count is ~5-6 (lumbar 5, ±1 transitional).
+        Returns ok / anchored / consecutive / count_ok / identity_confidence / reasons.
+        """
+        reasons: list[str] = []
+        level_map = self.level_map or {}
+        mapped_rows = sorted(level_map.values())
+        n_levels = len(mapped_rows)
+
+        regularity = 0.0
+        median_sp = None
+        if n_levels >= 2:
+            spacings = [mapped_rows[i + 1] - mapped_rows[i] for i in range(n_levels - 1)]
+            mean_sp = sum(spacings) / len(spacings)
+            srt = sorted(spacings)
+            median_sp = srt[len(srt) // 2]
+            if mean_sp > 0:
+                var = sum((s - mean_sp) ** 2 for s in spacings) / len(spacings)
+                regularity = (var ** 0.5) / mean_sp
+        consecutive = n_levels >= 2 and regularity < 0.35
+        if n_levels >= 2 and not consecutive:
+            reasons.append(f"irregular inter-disc spacing (CoV={regularity:.2f})")
+
+        # sacrum abutment: the lowest disc (max row) must sit just above the sacrum row.
+        sacrum_row = self.body_map.get("S1")
+        lowest_disc = max(mapped_rows) if mapped_rows else None
+        sacrum_gap = None
+        anchored = None
+        if sacrum_row is not None and lowest_disc is not None and median_sp:
+            sacrum_gap = sacrum_row - lowest_disc
+            anchored = 0 < sacrum_gap < 1.3 * median_sp
+            if not anchored:
+                reasons.append(
+                    f"lowest disc does not abut the sacrum (gap={sacrum_gap}px vs "
+                    f"~{median_sp}px spacing) — a faint L5-S1 may have been missed"
+                )
+        elif sacrum_row is None:
+            reasons.append("no sacrum row available to anchor the count")
+
+        count_ok = 4 <= n_levels <= 7
+        if not count_ok:
+            reasons.append(f"unexpected disc-space count ({n_levels}); expected ~5-6")
+
+        checks = [c for c in (anchored, consecutive, count_ok) if c is not None]
+        ok = bool(checks) and all(checks)
+        if anchored and consecutive and count_ok:
+            identity_confidence = "high"
+        elif (anchored is not False) and consecutive and count_ok:
+            identity_confidence = "moderate"
+        else:
+            identity_confidence = "low"
+
+        return {
+            "ok": ok,
+            "anchored": anchored,
+            "consecutive": consecutive,
+            "count_ok": count_ok,
+            "n_levels": n_levels,
+            "median_spacing_px": median_sp,
+            "sacrum_gap_px": sacrum_gap,
+            "identity_confidence": identity_confidence,
+            "reasons": reasons,
+        }
 
     # ── Phase 2: Quantitative Measurements ──
 
@@ -1037,6 +1171,7 @@ class DICOMEngine:
             "level_map": self.level_map,
             "level_confidence": self.level_confidence,
             "level_confidence_reason": self.level_confidence_reason,
+            "level_identity": self.level_identity,
             "disc_measurements": [asdict(m) for m in self.disc_measurements],
             "endplate_assessments": [asdict(e) for e in self.endplate_assessments],
             "canal_narrowing": self.canal_narrowing,
