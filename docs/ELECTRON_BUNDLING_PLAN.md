@@ -4,6 +4,17 @@
 
 ---
 
+## Scope decision — LOCKED 2026-06-24
+
+**Ship the base app now; the CV mm-localizer is explicitly OUT of this bundle.**
+
+- **In scope (bundled):** the current capability — agent-mode read on the user's subscription, the annotation-accuracy layer (model-chosen renderer + shared certainty palette + the verify-or-degrade position gate + sacrum-anchor identity check + the SPIDER positional harness), durable persistence, the patient PDF. This is shippable today; the ~500–700 MB inventory in §2 already covers it.
+- **What the annotations rely on (state honestly in-product, do NOT over-promise):** placement comes from the agent's own read plus the **verify-or-degrade gate** — a *pinpoint only when an independent signal confirms position*, otherwise an honest **region band** at lower certainty. There is **no validated mm-accurate auto-localizer** in this build. Never claim "mm-accurate localization for all imaging."
+- **Deferred (NOT bundled): the learned CV localizer (TotalSpineSeg / nnU-Net).** Measured this session as too heavy/fragile for the zero-prereq bundle: CPU inference OOM'd on a 34 GB workstation, the dependency tree broke on a kornia minor-version bump, and it is ~5 GB of deps + weights. It must NOT go into the bundled numpy<2 env. When pursued, it is an **opt-in "precision localization" download-on-first-use** component in its own isolated env (ONNX-runtime preferred over PyTorch), gated on its own generalization + packaging validation. See [CV_LOCALIZATION_PLAN.md](CV_LOCALIZATION_PLAN.md).
+- **Consequence for §2/§9:** do not add torch/nnU-Net/onnxruntime to `resources/python`. The size budget and the single-PATH bundled CPython are unchanged.
+
+---
+
 ## 0. Why this is non-trivial (the load-bearing constraint)
 
 MIKA's agent mode is not a self-contained Python program. At runtime it **shells out to two external binaries**:
