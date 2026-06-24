@@ -31,6 +31,12 @@ logger = logging.getLogger("mika.annotation_renderer")
 
 VALID_FORMS = {"arrow", "circle", "ellipse", "box", "caliper", "leader"}
 
+# Legibility on grayscale anatomy: every coloured stroke gets a dark HALO so it separates
+# from mid-grey tissue, and label text is WHITE (certainty is shown by a colour swatch +
+# the mark colour + the legend, never by tinting the text grey — which is unreadable).
+HALO = (6, 8, 12)
+WHITE = (245, 247, 250)
+
 
 def _get_font(size: int):
     for path in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "DejaVuSans.ttf", "arial.ttf"):
@@ -163,13 +169,29 @@ class _LabelPlacer:
         return y
 
 
+def _halo_line(draw, pts, color, width):
+    draw.line(pts, fill=HALO, width=width + max(3, width))
+    draw.line(pts, fill=color, width=width)
+
+
+def _halo_ellipse(draw, box, color, width):
+    draw.ellipse(box, outline=HALO, width=width + 2)
+    draw.ellipse(box, outline=color, width=width)
+
+
+def _halo_rect(draw, box, color, width):
+    draw.rectangle(box, outline=HALO, width=width + 2)
+    draw.rectangle(box, outline=color, width=width)
+
+
 def _draw_arrowhead(draw, start, end, color, width):
-    draw.line([start, end], fill=color, width=width)
+    _halo_line(draw, [start, end], color, width)
     ang = math.atan2(end[1] - start[1], end[0] - start[0])
+    bl = 6 + 3 * width
     for d in (+2.5, -2.5):
-        bx = end[0] - 12 * math.cos(ang + d)
-        by = end[1] - 12 * math.sin(ang + d)
-        draw.line([(bx, by), end], fill=color, width=width)
+        bx = end[0] - bl * math.cos(ang + d)
+        by = end[1] - bl * math.sin(ang + d)
+        _halo_line(draw, [(bx, by), end], color, width)
 
 
 def _render_form(draw, spec, scale, color, width=2):
@@ -179,22 +201,23 @@ def _render_form(draw, spec, scale, color, width=2):
     target = (tx * scale, ty * scale)
     if form in ("circle",):
         r = (spec["radius"] or 14.0) * scale
-        draw.ellipse([target[0] - r, target[1] - r, target[0] + r, target[1] + r], outline=color, width=width)
+        _halo_ellipse(draw, [target[0] - r, target[1] - r, target[0] + r, target[1] + r], color, width)
     elif form == "ellipse":
         x0, y0, x1, y1 = spec["bbox"]
-        draw.ellipse([x0 * scale, y0 * scale, x1 * scale, y1 * scale], outline=color, width=width)
+        _halo_ellipse(draw, [x0 * scale, y0 * scale, x1 * scale, y1 * scale], color, width)
     elif form == "box":
         x0, y0, x1, y1 = spec["bbox"]
-        draw.rectangle([x0 * scale, y0 * scale, x1 * scale, y1 * scale], outline=color, width=width)
+        _halo_rect(draw, [x0 * scale, y0 * scale, x1 * scale, y1 * scale], color, width)
     elif form == "caliper":
         a = (spec["p0"][0] * scale, spec["p0"][1] * scale)
         b = (spec["p1"][0] * scale, spec["p1"][1] * scale)
-        draw.line([a, b], fill=color, width=width)
+        _halo_line(draw, [a, b], color, width)
         # perpendicular end ticks
         ang = math.atan2(b[1] - a[1], b[0] - a[0]) + math.pi / 2
+        tick = 6 + 2 * width
         for pt in (a, b):
-            draw.line([(pt[0] - 6 * math.cos(ang), pt[1] - 6 * math.sin(ang)),
-                       (pt[0] + 6 * math.cos(ang), pt[1] + 6 * math.sin(ang))], fill=color, width=width)
+            _halo_line(draw, [(pt[0] - tick * math.cos(ang), pt[1] - tick * math.sin(ang)),
+                              (pt[0] + tick * math.cos(ang), pt[1] + tick * math.sin(ang))], color, width)
     # arrow/leader heads are drawn from the label connector; nothing else here.
     return target
 
@@ -220,9 +243,11 @@ def render_all(
     draw = ImageDraw.Draw(base)
     W, H = base.size
     base_w, base_h = base.width // scale, base.height // scale
-    font = _get_font(13)
-    title_font = _get_font(15)
-    line_h = 18
+    font_px = max(14, 9 * scale)
+    font = _get_font(font_px)
+    title_font = _get_font(font_px + 3)
+    line_h = font_px + 8
+    stroke = max(2, scale)
 
     # normalize + drop invalid
     clean = []
@@ -251,7 +276,7 @@ def render_all(
         try:
             color = certainty_rgb255(spec["certainty"])
             used_certainties.add(spec["certainty"])
-            target = _render_form(draw, spec, scale, color)
+            target = _render_form(draw, spec, scale, color, stroke)
 
             # number only when calibrated and a unit is given — never a fabricated mm
             show_number = (
@@ -265,29 +290,29 @@ def render_all(
             if spec["form"] == "caliper" and show_number:
                 mid = ((spec["p0"][0] + spec["p1"][0]) / 2 * scale, (spec["p0"][1] + spec["p1"][1]) / 2 * scale)
                 _text_chip(draw, (mid[0] + 6, mid[1] - line_h), f"{spec['number']:g} {spec['units']}".strip(),
-                           font, color)
+                           font, swatch=color)
 
             # margin-placed label with a thin leader (text never covers anatomy)
             if label_text:
                 side = spec["label_side"]
                 if side not in ("left", "right"):
                     side = "right" if target[0] < W / 2 else "left"
-                tw = draw.textlength(label_text, font=font)
+                label_w = (font_px + 6) + draw.textlength(label_text, font=font)  # swatch + text
                 ly = placer.place(side, target[1])
                 if side == "left":
                     lx = 6
-                    anchor = (lx + tw + 4, ly + line_h / 2)
+                    anchor = (lx + label_w + 4, ly + line_h / 2)
                 else:
-                    lx = W - tw - 8
+                    lx = W - label_w - 8
                     anchor = (lx - 4, ly + line_h / 2)
-                # leader / arrowhead from the label to the mark
+                # leader / arrowhead from the label to the mark (haloed so it reads on anatomy)
                 if spec["form"] == "arrow":
-                    _draw_arrowhead(draw, anchor, target, color, 2)
+                    _draw_arrowhead(draw, anchor, target, color, stroke)
                 else:
-                    draw.line([anchor, target], fill=color, width=1)
-                _text_chip(draw, (lx, ly), label_text, font, color)
+                    _halo_line(draw, [anchor, target], color, max(2, stroke - 1))
+                _text_chip(draw, (lx, ly), label_text, font, swatch=color)
             elif spec["form"] == "arrow":
-                _draw_arrowhead(draw, (target[0] + 40, target[1]), target, color, 2)
+                _draw_arrowhead(draw, (target[0] + 40, target[1]), target, color, stroke)
 
             marks_audit.append({"form": spec["form"], "label": spec["label"],
                                 "certainty": spec["certainty"], "number_shown": bool(show_number)})
@@ -295,9 +320,9 @@ def render_all(
             logger.warning("annotation mark failed to render (%s): %s", spec.get("form"), exc)
 
     if title:
-        _text_chip(draw, (5, 3), title, title_font, (255, 255, 255))
+        _text_chip(draw, (6, 4), title, title_font)
     if legend and used_certainties:
-        _draw_legend(draw, used_certainties, font, H)
+        _draw_legend(draw, used_certainties, font, W, H)
 
     out_path = str(out_path)
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
@@ -310,22 +335,29 @@ def render_all(
     }
 
 
-def _text_chip(draw, xy, text, font, color):
-    """Text on a black plate so it stays legible over any anatomy."""
+def _text_chip(draw, xy, text, font, swatch=None):
+    """White text on a black plate (always legible over any anatomy). An optional certainty
+    colour swatch sits at the left so certainty reads without tinting the text grey."""
     x, y = xy
-    bbox = draw.textbbox((x, y), text, font=font)
-    draw.rectangle([bbox[0] - 2, bbox[1] - 1, bbox[2] + 2, bbox[3] + 1], fill="black")
-    draw.text((x, y), text, fill=color, font=font)
+    th = int(getattr(font, "size", 14))
+    sw = th + 6 if swatch is not None else 0
+    tw = draw.textlength(text, font=font)
+    draw.rectangle([x - 4, y - 3, x + sw + tw + 4, y + th + 4], fill="black")
+    if swatch is not None:
+        draw.rectangle([x, y + 1, x + th, y + th + 1], fill=swatch, outline=WHITE)
+    draw.text((x + sw, y), text, fill=WHITE, font=font)
 
 
-def _draw_legend(draw, certainties, font, H):
-    """Colour → certainty key at the bottom-left."""
+def _draw_legend(draw, certainties, font, W, H):
+    """Colour → certainty key at the bottom-left (white text + colour swatches)."""
     items = [k for k in CERTAINTY_ORDER if k in certainties]
-    x, y = 6, H - 20
-    draw.rectangle([x - 2, y - 2, x + 2 + sum(int(draw.textlength(k, font=font)) + 26 for k in items), y + 16],
-                   fill="black")
-    for k in items:
-        sw = CERTAINTY_RGB255[k]
-        draw.rectangle([x, y, x + 12, y + 12], fill=sw)
-        draw.text((x + 16, y - 1), k, fill=sw, font=font)
-        x += 16 + int(draw.textlength(k, font=font)) + 12
+    th = int(getattr(font, "size", 14))
+    x = 8
+    y = H - th - 12
+    widths = [(k, int(draw.textlength(k, font=font))) for k in items]
+    total = sum(th + 6 + w + 16 for _, w in widths)
+    draw.rectangle([x - 5, y - 5, x + total, y + th + 5], fill="black")
+    for k, w in widths:
+        draw.rectangle([x, y, x + th, y + th], fill=CERTAINTY_RGB255[k], outline=WHITE)
+        draw.text((x + th + 5, y), k, fill=WHITE, font=font)
+        x += th + 6 + w + 16
