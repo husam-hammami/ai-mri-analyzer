@@ -70,6 +70,7 @@ async function start() {
     height: 900,
     show: false,
     title: 'MIKA',
+    icon: path.join(__dirname, 'build', 'icon.ico'),   // real logo raster (build/make_icon.py)
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
