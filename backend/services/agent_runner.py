@@ -735,8 +735,13 @@ class AgentRunner:
         except Exception as e:
             logger.warning(f"Patient report render failed (keeping agent PDF): {e}")
 
-    def _render_host_annotations(self, out_dir: Path) -> None:
+    @staticmethod
+    def _render_host_annotations(out_dir: Path) -> None:
         """Render model-emitted annotation specs deterministically (host-side fallback).
+
+        Static so it can be the SINGLE, shared figure-gate called from BOTH the agent finalize
+        and the post-QA PDF rebuild (app.py) — it must be the last writer of any figure the
+        patient PDF embeds, or the QA rebuild re-embeds the model's ungated figures.
 
         ``annotations.json`` (when present) is a list of figure entries::
 
@@ -766,7 +771,7 @@ class AgentRunner:
         # Host truth for calibration: the model can write calibrated:true in annotations.json, but
         # an image export (flat JPG/screenshot) has no scale — trust the manifest, not the model,
         # so the uncalibrated broad-box degrade can't be defeated by a wrong self-report.
-        host_uncalibrated = self._study_is_uncalibrated(out_dir)
+        host_uncalibrated = AgentRunner._study_is_uncalibrated(out_dir)
 
         for entry in entries:
             if not isinstance(entry, dict):
@@ -775,7 +780,7 @@ class AgentRunner:
             figure = entry.get("figure")
             if not figure or not marks:
                 continue
-            base = self._resolve_base_image(out_dir, entry.get("base") or figure)
+            base = AgentRunner._resolve_base_image(out_dir, entry.get("base") or figure)
             if base is None:
                 logger.warning("Host render skipped for %s: base image %r not resolved — model's "
                                "own figure left in place", figure, entry.get("base") or figure)

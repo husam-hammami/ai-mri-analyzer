@@ -81,6 +81,23 @@ def test_study_is_uncalibrated_reads_manifest(tmp_path):
     assert AgentRunner._study_is_uncalibrated(out_dir) is False   # absent manifest → not uncalibrated
 
 
+def test_render_host_annotations_static_gate_overwrites_model_figure(tmp_path):
+    # #12 regression: the post-QA PDF rebuild calls this as a STATICMETHOD (no AgentRunner
+    # instance) and it must be the LAST writer — re-rendering over the model's own ungated figure
+    # so the gate can't be bypassed by the rebuild path.
+    nested = tmp_path / "evidence" / "images"
+    nested.mkdir(parents=True)
+    Image.new("RGB", (200, 200), (0, 0, 0)).save(nested / "ev.png")
+    Image.new("RGB", (50, 50), (255, 0, 0)).save(tmp_path / "f.png")   # model's own ungated figure
+    before = (tmp_path / "f.png").read_bytes()
+    (tmp_path / "annotations.json").write_text(json.dumps([
+        {"figure": "f.png", "base": "ev.png", "calibrated": False,
+         "marks": [{"form": "box", "bbox": [20, 20, 60, 60], "label": "L5-S1", "certainty": "Possible"}]}
+    ]), encoding="utf-8")
+    AgentRunner._render_host_annotations(tmp_path)   # called with no instance, as app.py does
+    assert (tmp_path / "f.png").read_bytes() != before   # gate re-rendered over the model figure
+
+
 def test_host_render_skips_entry_with_missing_base(tmp_path):
     (tmp_path / "annotations.json").write_text(json.dumps([
         {"figure": "fig1.png", "base": "nope.png",

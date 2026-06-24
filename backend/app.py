@@ -1202,6 +1202,14 @@ def _rewrite_agent_summary_and_patient_pdf(job: "AnalysisJob", summary: dict) ->
             from backend.services.report_builder import build_patient_report
         except ImportError:
             from services.report_builder import build_patient_report
+        # Re-apply the deterministic figure gate (uncalibrated→broad box, calibrated-only numbers,
+        # host-truth calibration) as the LAST writer before the patient PDF — otherwise this QA
+        # rebuild re-embeds the model's ungated figures, silently defeating the gate.
+        try:
+            from backend.services.agent_runner import AgentRunner
+        except ImportError:
+            from services.agent_runner import AgentRunner
+        AgentRunner._render_host_annotations(report_dir)
         build_patient_report(patient, report_dir, report_dir / "report.pdf")
         job.pdf_path = str(report_dir / "report.pdf")
     except Exception as e:

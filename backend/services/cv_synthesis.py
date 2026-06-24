@@ -10,6 +10,7 @@ the blind read, the candidate review, and the candidate metadata.
 from __future__ import annotations
 
 import copy
+import os
 import re
 from typing import Any, Optional
 
@@ -140,6 +141,13 @@ def upgrade_reconciliation_with_cv_supported_findings(
     and records that a prior blind-read conflict or miss still needs clinical review.
     """
     rec = copy.deepcopy(reconciliation or {})
+    # The focused-CV "supported" verdict is NON-REPRODUCIBLE run-to-run (RUN10 QA), yet this
+    # routine MUTATES reconciliation (conflicts_with_reference / not_independently_seen ->
+    # supported_by_focused_evidence). Shipping a non-deterministic finding-upgrade on the flagship
+    # lumbar-MR path is unsafe, so it is OFF by default: the blind read / reference conflict is
+    # preserved verbatim unless MIKA_CV_SYNTHESIS=1 explicitly opts in.
+    if os.environ.get("MIKA_CV_SYNTHESIS", "0") != "1":
+        return rec
     findings = [f for f in (cv_supported_findings or []) if isinstance(f, dict)]
     if not rec or not findings or not rec.get("items"):
         return rec

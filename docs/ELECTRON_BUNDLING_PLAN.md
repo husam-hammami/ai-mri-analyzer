@@ -1,5 +1,11 @@
 # MIKA — Electron Desktop App: Bundling Plan
 
+> Reviewed ✓ (bulletproof, round 2 — 2026-06-25) — SUFFICIENT: P1–P4 approved to build after the two
+> clinical ship-blockers (#12 gate-bypass, #8 non-deterministic CV upgrade) were fixed + tested, the human
+> clean-VM run was made a hard release gate, and the bundled-env pin/lock was specified. P1 acceptance
+> criterion: soften the `agent_runner.py` "pip install matplotlib" line in the SAME commit as the
+> matplotlib pre-install.
+
 **Goal:** ship MIKA as a single, signed desktop installer (Windows-first; macOS/Linux via the same toolchain) where the end user installs **one** thing, signs into **their own Claude subscription**, and runs studies at **full capability** — with **zero external prerequisites**. Everything the app shells out to (the Claude Code CLI, a Python runtime + scientific libs, the analysis skill, the frontend assets) is **bundled inside the app**.
 
 ---
@@ -14,6 +20,21 @@
 - **Consequence for §2/§9:** do not add torch/nnU-Net/onnxruntime to `resources/python`. The size budget and the single-PATH bundled CPython are unchanged.
 
 ---
+
+## P0.5 — Pre-ship clinical-correctness fixes (LANDED 2026-06-25, before packaging)
+
+The bulletproof review found two "deferred" audit items were **live on the default agent path for
+lumbar spine** and would have shipped wrong/non-reproducible clinical output inside the EXE (where the
+user has no terminal to inspect it). Both are fixed and tested **before** P1–P4:
+
+- **#12 — post-QA PDF re-embedded ungated figures.** `_rewrite_agent_summary_and_patient_pdf` rebuilt
+  `report.pdf` via `build_patient_report` *without* re-applying the figure gate, so the model's ungated
+  figures reached the patient PDF after QA. Fix: `_render_host_annotations` is now a shared static gate,
+  called as the **last writer** before every `build_patient_report` (agent finalize + QA rebuild).
+- **#8 — non-deterministic CV reconciliation upgrade.** `upgrade_reconciliation_with_cv_supported_findings`
+  mutated `agreement_status` based on a "supported" verdict that **flips run-to-run** (RUN10 QA). Now
+  **OFF by default** (`MIKA_CV_SYNTHESIS=1` to opt in); the blind read / reference conflict is preserved
+  verbatim, so reconciliation is reproducible on the flagship path.
 
 ## 0. Why this is non-trivial (the load-bearing constraint)
 
@@ -74,7 +95,12 @@ Total installer ≈ **500–700 MB** (compressed). This is expected for an Elect
 
 ## 3. Repo changes required (small, additive — does not break the web/dev flow)
 
-1. **`requirements.txt`** — add `matplotlib` (agent figure rendering; avoids runtime pip).
+1. **`requirements.txt`** — add `matplotlib==3.8.4` (a **numpy<2-compatible pin**; bare `matplotlib`
+   can resolve a numpy 2.x wheel and re-break the scipy 1.12 ABI — the original numpy-pin incident).
+   Build the bundled env from a **hashed `requirements.lock`** (`pip install --require-hashes`/`--no-deps`)
+   so the frozen env is byte-reproducible and cannot drift numpy. Pre-install matplotlib + reportlab so
+   the agent never runs `pip` — AND soften the agent prompt (`agent_runner.py` "pip install … if you need")
+   so a **no-pip / read-only** bundled env doesn't hard-fail the figure step offline.
 2. **`frontend/index.html`** — vendor the 3 CDN scripts + DM Sans locally so the shell loads without internet and isn't hostage to cdnjs (see §6). Keep CDN as a fallback for the plain web/dev run, or switch to local paths unconditionally.
 3. **`backend/app.py`** — already honors `MIKA_DATA_DIR`; no change needed for port (Electron passes `--port`). Add a tiny **`GET /api/preflight`** that reports `{claude_cli_found, claude_logged_in, python_libs_ok, skill_present}` so the shell can show a clear "what's missing" panel instead of a mid-run 400 (reuse `AgentRunner.availability()` + a libs import check + `SKILL_PATH.exists()`).
 4. **New `electron/` project** — `electron/main.js`, `electron/preload.js`, `electron/package.json` with the electron-builder config (§5).
@@ -212,7 +238,14 @@ scripts/build:
 
 ## 10. Testing
 
-- **Clean-VM test (the real gate):** fresh Windows with **no** Python, **no** Node, **no** `claude` → install MIKA → Connect (browser OAuth) → run a real spine DICOM study → verify Read renders with proof figures. Repeat for a brain/MSK study (generalization) and offline-shell launch.
+- **HARD RELEASE GATE — human clean-VM run (non-skippable).** The assistant **structurally cannot verify
+  the agent path**: a headless `claude -p` launched from inside a Claude session hangs (INCIDENTS.md), and
+  P1's whole value — the agent's **child** `python` resolving to the bundled CPython via the spawned PATH —
+  is exactly that path. So "done" is **not declarable** until a **human** runs: fresh Windows with **no**
+  Python / **no** Node / **no** `claude`, Program-Files install → Connect (browser OAuth) → run a real spine
+  DICOM study → **open the patient PDF and confirm the figures are gated** (uncalibrated → broad boxes, no
+  pinpoint mm) → confirm no `pip install` happened (offline/read-only env). Repeat for a brain/MSK study
+  (generalization) and an offline-shell launch. No CI check and no assistant run substitutes for this.
 - **Regression:** the web/dev flow (`uvicorn app:app` from `backend/`) still works unchanged (the repo changes are additive).
 - **Spine pipeline untouched** — same gate as the redesign plan.
 

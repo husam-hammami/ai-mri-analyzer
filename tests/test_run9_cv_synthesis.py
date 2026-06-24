@@ -162,7 +162,21 @@ def test_unsupported_candidate_reviews_do_not_become_findings():
     assert verifier_rejected["used"] is False
 
 
-def test_reconciliation_conflict_can_move_to_partially_supported_by_focused_evidence():
+def test_cv_upgrade_is_off_by_default_preserving_blind_conflict(monkeypatch):
+    # Ship default: the non-reproducible CV upgrade is OFF, so a blind-read conflict is preserved
+    # verbatim even with real supported findings present. Guards against the default flipping on.
+    monkeypatch.delenv("MIKA_CV_SYNTHESIS", raising=False)
+    rec = build_reference_reconciliation(
+        blind_summary=_blind_summary(), reference_text=_reference_text(), evidence_manifest=_manifest())
+    assert rec["items"][0]["agreement_status"] == "conflicts_with_reference"
+    synthesis = synthesize_cv_candidate_reviews(
+        blind_report=_blind_summary(), cv_candidates=[_candidate()], cv_candidate_reviews=[_supported_review()])
+    upgraded = upgrade_reconciliation_with_cv_supported_findings(rec, synthesis["clinician_findings"])
+    assert upgraded["items"][0]["agreement_status"] == "conflicts_with_reference"   # unchanged, off by default
+
+
+def test_reconciliation_conflict_can_move_to_partially_supported_by_focused_evidence(monkeypatch):
+    monkeypatch.setenv("MIKA_CV_SYNTHESIS", "1")   # the upgrade is opt-in (off by default in ship builds)
     rec = build_reference_reconciliation(
         blind_summary=_blind_summary(),
         reference_text=_reference_text(),
