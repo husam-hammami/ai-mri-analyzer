@@ -716,6 +716,10 @@ class AgentRunner:
         if not patient:
             return
         try:
+            # Host-side deterministic render of any model-emitted annotation specs, so the
+            # proof figures exist (and follow the renderer's rules) even if the model's own
+            # draw failed. Non-fatal: a render error leaves the model's figures in place.
+            self._render_host_annotations(out_dir)
             try:
                 from backend.services.report_builder import build_patient_report
             except ImportError:
@@ -730,6 +734,70 @@ class AgentRunner:
             logger.info("Patient-first report rendered (technical version kept as report_clinical.pdf)")
         except Exception as e:
             logger.warning(f"Patient report render failed (keeping agent PDF): {e}")
+
+    def _render_host_annotations(self, out_dir: Path) -> None:
+        """Render model-emitted annotation specs deterministically (host-side fallback).
+
+        ``annotations.json`` (when present) is a list of figure entries::
+
+            [{"figure": "figX.png", "base": "rawY.png", "title": "...",
+              "calibrated": bool, "max_marks": int, "marks": [<spec>, ...]}, ...]
+
+        Each entry whose base image resolves is re-rendered onto ``out_dir/figure`` via the
+        shared annotation_renderer (model-chosen forms, calibrated-only numbers, certainty
+        colour + legend). Entries with no resolvable base are left to the model's own figure.
+        """
+        ann_path = out_dir / "annotations.json"
+        if not ann_path.exists():
+            return
+        try:
+            entries = json.loads(ann_path.read_text(encoding="utf-8-sig"))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"annotations.json unreadable, skipping host render: {e}")
+            return
+        if isinstance(entries, dict):
+            entries = entries.get("figures") or [entries]
+        if not isinstance(entries, list):
+            return
+        try:
+            from backend.core.annotation_renderer import render_all
+        except ImportError:
+            from core.annotation_renderer import render_all
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            marks = entry.get("marks") or []
+            figure = entry.get("figure")
+            if not figure or not marks:
+                continue
+            base = self._resolve_base_image(out_dir, entry.get("base") or figure)
+            if base is None:
+                continue
+            try:
+                res = render_all(
+                    base, marks, out_dir / figure,
+                    calibrated=bool(entry.get("calibrated")),
+                    max_marks=entry.get("max_marks"),
+                    title=entry.get("title"),
+                )
+                logger.info("Host-rendered %s: %d marks, %d dropped",
+                            figure, res["rendered"], len(res["dropped"]))
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Host render of {figure} failed (keeping model figure): {e}")
+
+    @staticmethod
+    def _resolve_base_image(out_dir: Path, base_name) -> Optional[Path]:
+        """Find a base image for a figure: by name in out_dir, out_dir/work, or as a path."""
+        if not base_name:
+            return None
+        candidates = [out_dir / base_name, out_dir / "work" / base_name, Path(base_name)]
+        for c in candidates:
+            try:
+                if c.exists() and c.is_file():
+                    return c
+            except OSError:
+                continue
+        return None
 
     def _collect_outputs(self, out_dir: Path, result: AgentResult, require_pdf: bool) -> None:
         """Gather figures + summary.json, render the patient report, set pdf_path.
@@ -747,6 +815,8 @@ class AgentRunner:
             except Exception as e:
                 logger.warning(f"Could not parse summary.json: {e}")
         self._finalize_patient_report(out_dir, result.summary)
+        # Re-glob: _finalize may have host-rendered new annotation figures from annotations.json.
+        result.figures = [str(p) for p in sorted(out_dir.glob("*.png"))]
         pdfs = sorted(out_dir.glob("*.pdf"))
         result.pdf_path = str(pdfs[0]) if pdfs else None  # report.pdf sorts before report_clinical.pdf
 
@@ -957,9 +1027,27 @@ ANNOTATION PRECISION — every annotation must be pixel-accurate AND informative
   - {shifting_rule}
   - On UNCALIBRATED (JPG/screenshot) studies, mark with REGION bands, not pinpoint circles.
   - For each finding choose the slice where it is MAXIMAL (scan the stack; no fixed index).
-  - Keep on-image labels SHORT (one line, ~6 words): structure + finding + [Tier X]. Put any
-    measurements, ratios, or reasoning in the figure CAPTION, not on the arrow label.
+  - Keep on-image labels SHORT (one line, ~6 words): structure + finding + certainty word. Put any
+    measurements, ratios, reasoning, or Tier in the figure CAPTION, not on the on-image label.
   - Place labels in the margin with a thin leader line so text never overlaps the anatomy.
+  - PICK THE CLEAREST FORM per finding (you choose; the renderer draws it):
+      focal point (disc, nodule, focal signal) -> circle or arrow
+      an area / fuzzy boundary (region, edema, "approximate") -> box
+      a linear extent or measurement (canal AP diameter, a distance) -> caliper
+      a level/structure reference (label a level, point at a normal) -> leader
+      UNCALIBRATED studies -> box or leader only (never a pinpoint circle/arrow)
+  - COLOUR ENCODES CERTAINTY (Confirmed/Likely/Possible), not severity — the renderer colours
+    the marks and draws a legend.
+  - The NUMBER is shown ONLY when calibrated and carries explicit units; uncalibrated -> omit the
+    number (use a qualitative word in the label), never a fabricated mm.
+  - Emit a SPEC per mark and also save them to `annotations.json` so figures can be re-rendered
+    deterministically. It is a list of figure entries (coords are BASE-image pixels):
+      [{{"figure": "<output png>", "base": "<the raw slice PNG you drew on>", "title": "...",
+         "calibrated": <true|false>, "max_marks": 6, "marks": [
+           {{"form": "circle|arrow|box|caliper|leader|ellipse", "center": [col,row]
+             (or "bbox":[x0,y0,x1,y1] / "p0":[..],"p1":[..]), "label": "short line",
+             "number": <num or omit>, "units": "mm", "certainty": "Confirmed|Likely|Possible",
+             "significance": 0.0-1.0, "label_side": "auto"}}, ... ]}}, ... ]
 
 READING RIGOR — read like a radiologist who commits to the findings:
   - Work systematically per the protocol. Call each finding at the severity and confidence the

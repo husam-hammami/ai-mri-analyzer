@@ -78,8 +78,22 @@ Computationally locate structures before any annotation — never visually estim
 - **Disc spaces**: vertical intensity profiling along the vertebral-body column (gradient peaks = disc-body boundaries).
 - **Canal narrowing / stenosis**: local minima of the canal CSF intensity profile.
 
-### Step 3B: Create Annotations with Verified Coordinates
-Draw arrows with tips from Step 3A only. At each arrow tip draw a small verification circle (radius 3-4px).
+### Step 3B: Create Annotations with Verified Coordinates — choose the clearest form
+Place every mark from Step 3A coordinates only. YOU pick the clearest visual form per finding; emit a spec and save all marks to `annotations.json` so they can be re-rendered deterministically.
+
+**Primitive-selection table:**
+
+| What you're marking | Form |
+|---|---|
+| a focal point (disc, nodule, focal signal) | circle or arrow |
+| an area / fuzzy boundary (region, edema, "approximate") | box |
+| a linear extent or measurement (canal AP diameter, a distance) | caliper |
+| a level/structure reference (label a level, point at a normal) | leader |
+| ANY uncalibrated (JPG/screenshot) study | box or leader only — never a pinpoint |
+
+- **Colour = certainty**, not severity: Confirmed / Likely / Possible. The renderer colours the marks and draws a colour→certainty legend on the figure.
+- **Number only when calibrated**, with explicit units (e.g. `7.2 mm`). Uncalibrated → omit the number and use a qualitative word; never a fabricated mm.
+- The label is ONE short line (structure + finding + certainty word); all reasoning/ratios/Tier go in the figure CAPTION.
 
 ### Step 3C: Pixel Intensity Verification (NEVER SKIP)
 After placing annotations, verify EVERY arrow tip against the RAW (unannotated) image using expected intensity ranges per structure type (T2 sagittal, 0-255): canal_csf 120-255; disc_protrusion 30-110; disc_space 20-200; vertebral_body 70-170; canal_narrowing 40-140; bone_cortex 0-50. If a tip fails, auto-search the neighborhood for the nearest matching pixel, reposition, and re-verify. **Do NOT proceed with failed annotations.**
@@ -95,7 +109,7 @@ After saving each annotated image, re-read it and confirm: arrow tip physically 
 - **Plane-shifting structures** (neural foramina, nerve-in-foramen): annotate with a REGION box, not a false-pinpoint arrow.
 - **Uncalibrated (JPG) studies:** region bands only, never pinpoint circles.
 - **Maximal slice:** for each finding choose the slice where it is greatest; do not reuse a fixed slice index.
-- **Informative labels:** structure + finding + [Tier X] + a comparison reference (e.g. "vs patent right recess"). Place text in the margin with a thin leader line so it never overlaps the anatomy. State each verified tip intensity in the caption.
+- **Informative labels:** ONE short on-image line — structure + finding + certainty word. Put the Tier, ratios, comparison reference (e.g. "vs patent right recess"), and the verified tip intensity in the figure CAPTION, not on the label. Place label text in the margin with a thin leader line so it never overlaps the anatomy.
 
 ---
 

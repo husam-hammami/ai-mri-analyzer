@@ -34,15 +34,16 @@ from pathlib import Path
 from typing import Optional
 from xml.sax.saxutils import escape
 
+try:  # shared certainty palette lives in core so the report chips, on-image marks and legend never drift
+    from core.palette import CERTAINTY_COLOR, CERTAINTY_ORDER
+except ImportError:  # pragma: no cover - import path when launched from backend/
+    from backend.core.palette import CERTAINTY_COLOR, CERTAINTY_ORDER
+
 # Single-accent brand palette (§7.9) — matches the on-screen Read (#2563EB), no teal/amber/grey.
 INK = (0.059, 0.090, 0.165)        # slate-ink #0F172A
 MUTED = (0.278, 0.333, 0.412)      # slate #475569
 ACCENT = (0.145, 0.388, 0.922)     # #2563EB (the only accent)
-CERTAINTY_COLOR = {
-    "Confirmed": (0.145, 0.388, 0.922),   # full accent
-    "Likely":    (0.451, 0.557, 0.863),   # reduced-opacity accent
-    "Possible":  (0.553, 0.604, 0.690),   # neutral slate (hollow-ring equivalent)
-}
+# CERTAINTY_COLOR is imported from core.palette (the single source of truth).
 CONF_COLOR = {"High": (0.145, 0.388, 0.922), "Moderate": (0.553, 0.604, 0.690), "Low": (0.620, 0.659, 0.722)}
 
 # Brand header — the EXACT MIKA lockup asset (cropped from frontend/assets/logo.png), not a re-render.
@@ -204,6 +205,23 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
             if findings_header_pending:   # keep the section header with its first finding (no orphan)
                 block.append(Paragraph("Findings", SECTION))
                 findings_header_pending = False
+                # Colour → certainty legend (so the reader isn't guessing what the colours mean).
+                present = [k for k in CERTAINTY_ORDER
+                           if any(isinstance(g, dict) and g.get("certainty") == k for g in findings)]
+                if present:
+                    cells = [[Paragraph(f'<font color="white"><b>{k}</b></font>', SMALL) for k in present]]
+                    legend = Table(cells, colWidths=[(6.6 * inch) / len(present)] * len(present))
+                    lstyle = [
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                        ("TOPPADDING", (0, 0), (-1, 0), 3), ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
+                    ]
+                    for i, k in enumerate(present):
+                        lstyle.append(("BACKGROUND", (i, 0), (i, 0), c(CERTAINTY_COLOR.get(k, MUTED))))
+                    legend.setStyle(TableStyle(lstyle))
+                    block.append(Paragraph("Colour shows how certain each finding is:", SMALL))
+                    block.append(Spacer(1, 2))
+                    block.append(legend)
+                    block.append(Spacer(1, 6))
             cert = f.get("certainty", "")
             cert_col = CERTAINTY_COLOR.get(cert, MUTED)
             row = Table([[Paragraph(f.get("plain", ""), BULLET, bulletText="•"),
