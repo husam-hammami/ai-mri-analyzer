@@ -215,4 +215,40 @@ scripts/build:
 - **Clean-VM test (the real gate):** fresh Windows with **no** Python, **no** Node, **no** `claude` → install MIKA → Connect (browser OAuth) → run a real spine DICOM study → verify Read renders with proof figures. Repeat for a brain/MSK study (generalization) and offline-shell launch.
 - **Regression:** the web/dev flow (`uvicorn app:app` from `backend/`) still works unchanged (the repo changes are additive).
 - **Spine pipeline untouched** — same gate as the redesign plan.
+
+---
+
+## 11. Auto-update (P5 detail): build → publish → self-update
+
+A bare `git push` does NOT reach installed apps. The chain is **build a signed installer → publish to a feed → `electron-updater` self-updates on launch.** This is the cheapest path that turns "I pushed" into "users have it on next open."
+
+### 11.1 Publish target — GitHub Releases
+In `electron/package.json` build config:
+```jsonc
+"publish": { "provider": "github", "owner": "husam-hammami", "repo": "ai-mri-analyzer" }
 ```
+`electron-builder --publish always` uploads the installer + `latest.yml` + `.blockmap` to a GitHub Release; the app reads that feed.
+
+### 11.2 `autoUpdater` in `main.js` (electron-updater)
+```js
+const { autoUpdater } = require('electron-updater');
+app.whenReady().then(async () => {
+  await start();                          // spawn sidecar + window (§4)
+  autoUpdater.checkForUpdatesAndNotify(); // poll the feed on launch
+});
+autoUpdater.on('update-downloaded', () => {
+  killTree(py);                           // §9.6: kill sidecar + any in-flight `claude` child FIRST
+  autoUpdater.quitAndInstall();           // swap in the new version on restart
+});
+```
+Downloads are **differential** (NSIS blockmap): only changed blocks transfer, so a `backend/`/`frontend/`/prompts/skills push is a *small* update even though the full bundle is ~600 MB.
+
+### 11.3 CI release workflow — `.github/workflows/release.yml` (sketch)
+On a pushed tag `v*`, `windows-latest` (mac later): checkout → run the §7 build steps (assemble_python / fetch_node / install_cli / vendor_frontend) → `electron-builder --win nsis --publish always`. Secrets: `CSC_LINK`+`CSC_KEY_PASSWORD` (Windows cert), Apple notarization creds (mac), `GH_TOKEN` (create/upload the Release).
+**Your release loop becomes:** bump `version` → `git tag vX.Y.Z && git push --tags` → CI builds + signs + publishes → installed apps update on next launch.
+
+### 11.4 Hard constraints (don't skip)
+- **Signing is mandatory** — electron-updater refuses unsigned updates and SmartScreen blocks them; **P4 must land before auto-update is real.**
+- **Sidecar-safe quit** — `quitAndInstall` quits the app, so tree-kill the Python sidecar + any in-flight `claude -p` grandchild first (§9.6); ideally defer the update until a study mid-run finishes.
+- **Data survives updates** — updates replace `resources/` only; `userData/data` (saved reports) is untouched.
+- **Keep runtimes stable across releases** — Python/Node/CLI change rarely; structure `resources/` so routine code pushes don't perturb them → deltas stay tiny. Only a runtime-version bump is a "big" update (and re-test `availability()` per §9.3).
