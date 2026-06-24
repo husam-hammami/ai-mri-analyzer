@@ -32,6 +32,11 @@ try:
 except ImportError:
     from backend.services.evidence_pack import cv_candidate_text_summary, load_manifest, manifest_text_summary
 
+try:
+    from services.disc_localizer import level_token, localize_levels, snap_marks_to_levels
+except ImportError:
+    from backend.services.disc_localizer import level_token, localize_levels, snap_marks_to_levels
+
 logger = logging.getLogger("mika.agent")
 
 # Vendored skill shipped with the app (self-contained — no dependency on a plugin session).
@@ -763,6 +768,8 @@ class AgentRunner:
             from backend.core.annotation_renderer import render_all
         except ImportError:
             from core.annotation_renderer import render_all
+        localizer_cache: dict = {}      # base path -> {level: (x, y)}; one focused call per image
+        snap_changed = False
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -773,6 +780,25 @@ class AgentRunner:
             base = self._resolve_base_image(out_dir, entry.get("base") or figure)
             if base is None:
                 continue
+            # Focused-localizer correction: the agent picks the right image but misplaces disc
+            # levels under its mega-prompt (measured: L5-S1 landed in the sacrum). Run ONE minimal
+            # vision call per base image and snap any level-named mark onto its coordinate.
+            # Fully guarded — needs a real claude_bin, skips otherwise (and on any failure).
+            if getattr(self, "claude_bin", None) and not os.environ.get("MIKA_DISABLE_DISC_LOCALIZER"):
+                try:
+                    if any(level_token(m.get("label")) for m in marks if isinstance(m, dict)):
+                        key = str(base)
+                        if key not in localizer_cache:
+                            localizer_cache[key] = localize_levels(
+                                self.claude_bin, base, model=self.model, effort=self.effort,
+                                permission_mode=self.permission_mode, env=self._child_env())
+                        n = snap_marks_to_levels(marks, localizer_cache[key])
+                        if n:
+                            snap_changed = True
+                            logger.info("Snapped %d level mark(s) in %s to focused-localizer coords",
+                                        n, figure)
+                except Exception as e:  # noqa: BLE001 — never block the render
+                    logger.warning("Localizer snap skipped for %s: %s", figure, e)
             try:
                 res = render_all(
                     base, marks, out_dir / figure,
@@ -784,6 +810,12 @@ class AgentRunner:
                             figure, res["rendered"], len(res["dropped"]))
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Host render of {figure} failed (keeping model figure): {e}")
+
+        if snap_changed:   # persist corrected coords so annotations.json matches the figures
+            try:
+                ann_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+            except OSError as e:
+                logger.warning("Could not rewrite annotations.json after localizer snap: %s", e)
 
     @staticmethod
     def _resolve_base_image(out_dir: Path, base_name) -> Optional[Path]:
