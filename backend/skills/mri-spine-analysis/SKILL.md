@@ -84,12 +84,14 @@ Draw arrows with tips from Step 3A only. At each arrow tip draw a small verifica
 ### Step 3C: Pixel Intensity Verification (NEVER SKIP)
 After placing annotations, verify EVERY arrow tip against the RAW (unannotated) image using expected intensity ranges per structure type (T2 sagittal, 0-255): canal_csf 120-255; disc_protrusion 30-110; disc_space 20-200; vertebral_body 70-170; canal_narrowing 40-140; bone_cortex 0-50. If a tip fails, auto-search the neighborhood for the nearest matching pixel, reposition, and re-verify. **Do NOT proceed with failed annotations.**
 
-### Step 3D: Mandatory Visual Re-Read (NEVER SKIP)
-After saving each annotated image, re-read it and confirm: arrow tip physically touches the intended structure; label at the correct vertebral level (cross-ref Figure 0); circle centered on the actual pathology; for axial images left/right laterality correct (patient's right = image left); caption accurate. If any annotation is off-target: delete, recalculate, regenerate, re-verify.
+### Step 3D: Mandatory Visual Re-Read + Independent Level Cross-Check (NEVER SKIP)
+After saving each annotated image, re-read it and confirm: arrow tip physically touches the intended structure; circle centered on the actual pathology; for axial images left/right laterality correct (patient's right = image left); caption accurate.
+
+**Do NOT confirm a level against Figure 0 alone — that is circular** (Figure 0 was built from the same sacrum-up count, so an off-by-one is invisible to it). Cross-check the level against at least one INDEPENDENT signal: (a) the lowest disc must abut the sacrum — if there is a clear disc space between your "L5-S1" mark and the S1 endplate, you miscounted and every level is one too high; (b) where a second localizer exists (a CV candidate level or a re-detected L5-S1 row), the marked level must agree with it. If the independent check disagrees, the level is wrong: recount from the sacrum, recover the faint lowest disc, and re-place every mark. If it cannot be reconciled, use a labelled region band, not a pinpoint. If any annotation is off-target: delete, recalculate, regenerate, re-verify.
 
 ### Step 3E: Precision & informativeness addendum
 - **Region band, don't fudge or drop:** if a tip cannot be verified to its expected intensity after neighborhood auto-search, fall back to a labelled REGION BAND at the computed location (approximate, not a pinpoint) — never ship a wrong pinpoint, and never silently drop the finding's visual.
-- **Level discipline:** confirm every mark's vertebral level against Figure 0; if unconfirmable, use a labelled region band ("approx Lx-Ly"), never a pinpoint circle.
+- **Level discipline:** confirm every mark's vertebral level with the independent cross-check of Step 3D (sacrum abutment + a second localizer), not Figure 0 alone; if it cannot be confirmed, use a labelled region band ("approx Lx-Ly"), never a pinpoint circle.
 - **Plane-shifting structures** (neural foramina, nerve-in-foramen): annotate with a REGION box, not a false-pinpoint arrow.
 - **Uncalibrated (JPG) studies:** region bands only, never pinpoint circles.
 - **Maximal slice:** for each finding choose the slice where it is greatest; do not reuse a fixed slice index.

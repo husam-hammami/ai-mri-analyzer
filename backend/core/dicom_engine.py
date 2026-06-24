@@ -599,6 +599,40 @@ class DICOMEngine:
             "reasons": reasons,
         }
 
+    def _independent_l5s1_localizer(self) -> dict:
+        """Second, INDEPENDENT L5-S1 localization to cross-check the level frame.
+
+        Re-detects the L5-S1 disc row from the reference image with a DIFFERENT detector
+        (the lumbar evidence module's peak finder), so it is not circular with the
+        sacrum-up gradient pass. Agreement with the level_map confirms the frame; a
+        whole-disc disagreement is the off-by-one veto that the position gate acts on.
+        Returns {status: confirmed|disagree|unavailable, ...}.
+        """
+        if self.reference_image is None or "L5-S1" not in (self.level_map or {}):
+            return {"status": "unavailable", "reason": "no reference image or L5-S1 in map"}
+        try:
+            from core.anatomy_modules.lumbar_spine import _detect_l5s1_sagittal_disc_row
+        except Exception:  # noqa: BLE001
+            return {"status": "unavailable", "reason": "lumbar detector unavailable"}
+        det = _detect_l5s1_sagittal_disc_row(self.reference_image)
+        if not det:
+            return {"status": "unavailable", "reason": "detector returned nothing"}
+        row, _col, conf, note = det
+        if conf < 0.4 or "fallback" in (note or "").lower():
+            return {"status": "unavailable", "reason": f"detector low confidence ({conf:.2f})",
+                    "detector_row": int(row)}
+        engine_row = self.level_map["L5-S1"]
+        rows = sorted(self.level_map.values())
+        spac = sorted(rows[i + 1] - rows[i] for i in range(len(rows) - 1))
+        median_sp = spac[len(spac) // 2] if spac else 30
+        tol = max(10.0, 0.5 * median_sp)  # a whole-disc miss must trip it
+        agree = abs(row - engine_row) <= tol
+        return {
+            "status": "confirmed" if agree else "disagree",
+            "detector_row": int(row), "engine_row": int(engine_row),
+            "tolerance_px": round(tol, 1), "detector_confidence": round(float(conf), 2),
+        }
+
     # ── Phase 2: Quantitative Measurements ──
 
     def measure_all_discs(self, sag_t2_seq_name: str, midline_slice: int = 8) -> list[DiscMeasurement]:
@@ -882,10 +916,12 @@ class DICOMEngine:
         Create annotated sagittal T2 with the skill's Phase-3 double-check loop:
           3A  structure localization (canal, discs, canal narrowing) — already computed
           3B  draw arrows + verification circle (via _draw_arrow)
-          3C  verify each tip against expected intensity; reposition or DROP on failure
+          3C  verify each tip against expected intensity; reposition or region-band on failure
           3D  record an audit trail so the VerificationPass can re-read placement
-        Arrows that fail 3C verification are NEVER drawn — the skill forbids shipping
-        annotations that land on the wrong structure.
+        A pinpoint arrow is drawn only when intensity verification passes AND the position
+        gate confirms the level frame (sacrum anchor + independent L5-S1 cross-check agree);
+        otherwise the finding still gets a visual, as an honest region band at lower
+        certainty — never a confident wrong pinpoint, never a silent drop.
         """
         self.annotation_audit = []
         safe = sag_t2_seq_name.replace(" ", "_").replace("-", "_")
@@ -903,6 +939,23 @@ class DICOMEngine:
 
         font_sm = self._get_font(13)
         font_title = self._get_font(15)
+
+        # Position gate (Phase 4): a pinpoint is only honest when an INDEPENDENT signal
+        # confirms the level frame. anchor_check (sacrum abutment) + an independent L5-S1
+        # cross-check decide pinpoint vs region band, overriding "intensity-verified ⇒ arrow".
+        try:
+            from services.position_verification import verify_annotation_position
+        except Exception:  # noqa: BLE001
+            from backend.services.position_verification import verify_annotation_position
+        anchor_check = self.level_identity or self.verify_level_identity()
+        frame = self._independent_l5s1_localizer()
+        frame_localizer = None
+        if frame.get("status") != "unavailable":
+            frame_localizer = {
+                "source": "L5-S1 cross-check",
+                "allows_pinpoint": True,
+                "agrees": frame.get("status") == "confirmed",
+            }
 
         # Build candidate targets: (label, col, row, structure_type, color, side)
         # side: 'left' draws the arrow from the left margin, 'right' from the right.
@@ -956,12 +1009,39 @@ class DICOMEngine:
                 # pinpoint) so the reader still sees where the finding is.
                 audit["status"] = "region_band"
                 audit["drawn"] = True
+                audit["position_decision"] = "region_band"
+                audit["position_reasons"] = ["intensity verification failed"]
                 rc = (int(t["col"]) * scale, int(t["row"]) * scale)
                 self._draw_region_band(
                     draw, rc, f"{t['label']} (approx region)", t["color"], t["side"], font_sm, scale
                 )
                 logger.info(
                     f"Annotation '{t['label']}' tip unverifiable — drawn as region band, not dropped"
+                )
+                continue
+
+            # Intensity passed — now the position gate decides pinpoint vs region band.
+            decision = verify_annotation_position(
+                {"level": t["level"], "col": final_col, "row": final_row},
+                independent_localizer=frame_localizer,
+                anchor_check=anchor_check,
+            )
+            audit["position_decision"] = decision["decision"]
+            audit["position_certainty"] = decision["certainty"]
+            audit["position_agreement"] = decision["agreement"]
+            audit["position_reasons"] = decision["reasons"]
+            if decision["decision"] != "pinpoint":
+                # Independent confirmation is missing or disagrees → honest region band,
+                # not a confident wrong pinpoint.
+                audit["status"] = "region_band"
+                audit["drawn"] = True
+                rc = (final_col * scale, final_row * scale)
+                self._draw_region_band(
+                    draw, rc, f"{t['label']} (approx region)", t["color"], t["side"], font_sm, scale
+                )
+                logger.info(
+                    f"Annotation '{t['label']}' position {decision['agreement']} "
+                    f"({decision['certainty']}) — region band, not a pinpoint"
                 )
                 continue
 
@@ -983,13 +1063,13 @@ class DICOMEngine:
         out_path = str(self.work_dir / "annotated" / "sag_t2_annotated.png")
         img.save(out_path)
 
-        drawn = sum(1 for a in self.annotation_audit if a["drawn"])
-        failed = sum(1 for a in self.annotation_audit if a["status"] == "failed")
-        repositioned = sum(1 for a in self.annotation_audit if a["status"] == "repositioned")
-        region = sum(1 for a in self.annotation_audit if a["status"] == "region_band")
+        drawn = sum(1 for a in self.annotation_audit if a.get("drawn"))
+        pinpoint = sum(1 for a in self.annotation_audit if a.get("position_decision") == "pinpoint")
+        region = sum(1 for a in self.annotation_audit if a.get("position_decision") == "region_band")
+        disagree = sum(1 for a in self.annotation_audit if a.get("position_agreement") == "disagree")
         logger.info(
-            f"Annotation 3C: {drawn} drawn ({repositioned} repositioned, {region} region-band), "
-            f"{failed} dropped"
+            f"Annotation gate: {drawn} drawn ({pinpoint} pinpoint, {region} region-band; "
+            f"{disagree} position-disagreement)"
         )
 
         return out_path

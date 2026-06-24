@@ -3195,9 +3195,22 @@ async def _run_analysis_pipeline(
             engine_annotation_failed = any(
                 a.get("status") == "failed" for a in (job.annotation_audit or [])
             )
+            # Position gate: a mark whose independent localizer disagreed was demoted to a
+            # region band rather than shipped as a confident wrong pinpoint. Surface it.
+            position_disagreements = [
+                {
+                    "label": a.get("label"),
+                    "level": a.get("level"),
+                    "agreement": a.get("position_agreement"),
+                    "reasons": a.get("position_reasons"),
+                }
+                for a in (job.annotation_audit or [])
+                if a.get("position_agreement") in ("disagree", "anchor_failed")
+            ]
+            position_disagreement = bool(position_disagreements)
             if not verified.parsed_ok:
                 v_status = "incomplete"
-            elif verified.audit_failures or engine_annotation_failed:
+            elif verified.audit_failures or engine_annotation_failed or position_disagreement:
                 v_status = "issues_flagged"
             else:
                 v_status = "passed"
@@ -3213,6 +3226,10 @@ async def _run_analysis_pipeline(
                 "corrections": verified.corrections,
                 "missed_findings": verified.missed_findings,
                 "annotation_3c_failed": engine_annotation_failed,
+                "position_verification": {
+                    "disagreement": position_disagreement,
+                    "demoted_to_region_band": position_disagreements,
+                },
             }
 
             interpretation.input_tokens += verified.input_tokens
