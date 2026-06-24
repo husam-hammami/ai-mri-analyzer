@@ -1,0 +1,13 @@
+{
+  "name": "mika-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MIKA desktop shell (P0: dev sidecar bring-up — spawns the system Python backend + Claude CLI, loads the localhost app in a window).",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^31.7.7"
+  }
+}
