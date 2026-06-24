@@ -461,8 +461,9 @@
     .page-read .read-right.proof-right .proof { height:100%; min-height:0; overflow:hidden; display:flex; flex-direction:column; }
     .page-read .read-right.proof-right .proof-head,
     .page-read .read-right.proof-right .proof-cap { flex-shrink:0; }
-    .page-read .read-right.proof-right .proof-img-wrap { flex:1 1 auto; min-height:0; overflow:hidden; }
-    .page-read .read-right.proof-right .proof-img-wrap img { width:100%; height:100%; max-height:none; object-fit:contain; }
+    .page-read .read-right.proof-right .proof-img-wrap { flex:1 1 auto; min-height:0; overflow:auto; }
+    /* width-led: the proof fills the card width at its natural ratio (was height:100% → shrank tiny) */
+    .page-read .read-right.proof-right .proof-img-wrap img { width:100%; height:auto; max-height:none; object-fit:contain; }
     .page-read .thread .read-wtm,
     .page-read .thread > .sec-block,
     .page-read .thread .clin-link { margin-top: var(--s-3); }
@@ -1621,7 +1622,7 @@
     }
 
     function AboutModal({ onClose }) {
-      const note = "MIKA started from a personal need for clearer imaging answers after a severe spine injury and a long recovery.\n\nThe goal is simple: help patients and clinicians review imaging evidence with less confusion, while keeping the official radiology report and clinician review at the center.\n\nMIKA is free because clear medical information should be easier to reach.";
+      const note = "MIKA started from something deeply personal.\n\nAfter a cauda equina emergency, two spine surgeries, failed back surgery syndrome, and an S1 nerve injury, I spent nearly a year mostly between my bed and a wheelchair.\n\nBut the hardest part was not only the pain. It was looking at scan after scan of my own body and not understanding what they meant, what mattered, or what I should ask next.\n\nI built MIKA because I needed clarity. It helped me understand details in my imaging that changed the direction of my treatment.\n\nThe goal is simple: help patients and clinicians review imaging evidence with less confusion, while keeping radiologists and doctors at the center.\n\nMIKA is free because no one should have to face a frightening scan feeling confused and alone.";
       return (
         <div className="overlay" onClick={onClose}>
           <div className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="About MIKA">
@@ -1872,6 +1873,7 @@
     }
 
     function WaitScreen({ progress, sequences, anatomy, jobId }) {
+      const [selectedSeq, setSelectedSeq] = useState(null);  // a sequence the user clicked to view
       const phases = phaseStates(progress.progress || 0, progress.status);
       const pct = Math.round(progress.progress || 0);
       // eta_seconds clamps to 0 in the over-estimate tail; treat <=0 as "no honest number left" → the
@@ -1906,7 +1908,9 @@
       const view = DEFAULT_VIEW(anatomy);   // spine → posterior (matches wait.png), others → their close-up
       // map the inspected region to a position on the figure (per-view, via clinician-reviewed landmarks)
       const inspect = activeRegion ? landmarkXY(anatomy, view, activeRegion) : null;
-      const activeSeq = activeName ? seqs.find(s => s.name === activeName) : (seqs[0] || null);
+      // a user-clicked sequence wins; else the one the agent is reading now; else the first.
+      const activeSeq = (selectedSeq && seqs.find(s => s.name === selectedSeq))
+        || (activeName ? seqs.find(s => s.name === activeName) : (seqs[0] || null));
       // show ONLY the sequence currently being analyzed, flipping through ITS slices
       const sliceImgs = !activeSeq ? []
         : (activeSeq.slices && activeSeq.slices.length) ? activeSeq.slices
@@ -1957,8 +1961,12 @@
                     const isActive = activeI === i;
                     const isDone = activeI >= 0 && i < activeI;     // only truthful once the agent reports position
                     const thumb = s.thumb || (s.thumb_stem ? proofUrl(jobId, s.thumb_stem) : null);
+                    const isSelected = selectedSeq === s.name;
                     return (
-                      <div className={`seq-row ${isActive?'active':''}`} key={i}>
+                      <div className={`seq-row ${(isSelected || isActive)?'active':''}`} key={i}
+                           onClick={() => setSelectedSeq(s.name)} role="button" tabIndex={0}
+                           style={{ cursor:'pointer' }}
+                           onKeyDown={(e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); setSelectedSeq(s.name); } }}>
                         <div className={`seq-thumb ${isActive?'scanning':''}`}>
                           {thumb ? <img src={thumb} alt="" loading="lazy" /> : I.scan({})}
                           {isActive && <span className="seq-scanline" aria-hidden="true" />}
