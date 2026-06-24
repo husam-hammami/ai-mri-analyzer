@@ -89,11 +89,14 @@ BROAD_BOX_W_FRAC = 0.18
 BROAD_BOX_H_FRAC = 0.18
 
 
-def normalize_spec(spec: dict, w: int, h: int) -> Optional[dict]:
+def normalize_spec(spec: dict, w: int, h: int, calibrated: Optional[bool] = None) -> Optional[dict]:
     """Coerce a model spec into a clean render spec, or None if unrenderable.
 
     Required: a ``form`` in VALID_FORMS and coords appropriate to that form. Everything else
     has a safe default. Never raises — a malformed spec returns None and is skipped.
+
+    ``calibrated`` is the STUDY-level calibration, used when the spec has no per-mark flag —
+    the model rarely sets it per mark, so without this the uncalibrated form-gate never fired.
     """
     if not isinstance(spec, dict):
         return None
@@ -111,8 +114,12 @@ def normalize_spec(spec: dict, w: int, h: int) -> Optional[dict]:
     # pinpoint. A flat JPG/screenshot has no scale or geometry, so any precise marker (circle,
     # arrow, tight box, caliper, leader) implies an accuracy we don't have. An honest broad box
     # beats a precise-but-wrong one (user call, 2026-06-24, after a focused localizer still
-    # missed). Degrade EVERY form to a generous region box centred on the mark.
-    if spec.get("calibrated") is False:
+    # missed). Degrade EVERY form to a generous region box centred on the mark. Falls back to
+    # the STUDY-level flag when the mark has none (the model rarely sets it per mark).
+    eff_calibrated = spec.get("calibrated")
+    if eff_calibrated is None:
+        eff_calibrated = calibrated
+    if eff_calibrated is False:
         cx = cy = hw = hh = None
         if bbox is not None:
             cx, cy = (bbox[0] + bbox[2]) / 2.0, (bbox[1] + bbox[3]) / 2.0
@@ -281,7 +288,7 @@ def render_all(
     # normalize + drop invalid
     clean = []
     for raw in (specs or []):
-        ns = normalize_spec(raw, base_w, base_h)
+        ns = normalize_spec(raw, base_w, base_h, calibrated=calibrated)
         if ns is None:
             logger.info("annotation spec skipped (unrenderable): %r", raw)
             continue

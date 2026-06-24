@@ -147,6 +147,20 @@ def test_uncalibrated_downgrades_every_form_to_broad_box():
     assert normalize_spec({"form": "circle", "center": [60, 60], "radius": 12}, 120, 120)["form"] == "circle"
 
 
+def test_study_level_calibrated_reaches_form_gate(tmp_path):
+    # The model rarely sets per-mark "calibrated"; the STUDY-level flag must still drive the
+    # broad-box degrade. This is the bug that silently no-op'd the gate on real studies:
+    # a circle with NO per-mark calibrated, rendered on an uncalibrated study, must become a box.
+    spec_no_flag = {"form": "circle", "center": [100, 100], "radius": 8, "label": "L5-S1"}
+    assert normalize_spec(dict(spec_no_flag), 200, 200, calibrated=False)["form"] == "box"
+    assert normalize_spec(dict(spec_no_flag), 200, 200, calibrated=True)["form"] == "circle"
+    # and end-to-end through render_all(calibrated=False) the rendered form is a region box
+    out = tmp_path / "leader_uncal.png"
+    res = render_all(_base(tmp_path, 200, 200), [{"form": "leader", "center": [100, 100], "label": "L4-L5"}],
+                     out, scale=2, calibrated=False, legend=False)
+    assert res["marks"][0]["form"] == "box"
+
+
 def test_normalize_spec_rejects_garbage():
     assert normalize_spec({"form": "nope"}, 100, 100) is None
     assert normalize_spec("not a dict", 100, 100) is None
