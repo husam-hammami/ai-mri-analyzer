@@ -128,6 +128,17 @@ def test_significance_cap_drops_least_significant_and_logs(tmp_path, caplog):
     assert any("de-clutter" in r.message for r in caplog.records)
 
 
+def test_uncalibrated_pinpoint_downgrades_to_region_box():
+    # A flat JPG (calibrated=False) must never get a pinpoint — circle/arrow → region box.
+    c = normalize_spec({"form": "circle", "center": [60, 60], "radius": 12, "calibrated": False}, 120, 120)
+    assert c["form"] == "box" and c["bbox"] is not None
+    a = normalize_spec({"form": "arrow", "point": [50, 50], "calibrated": False}, 120, 120)
+    assert a["form"] == "box"
+    # calibrated (or unspecified) keeps the model's chosen form
+    assert normalize_spec({"form": "circle", "center": [60, 60], "radius": 12, "calibrated": True}, 120, 120)["form"] == "circle"
+    assert normalize_spec({"form": "circle", "center": [60, 60], "radius": 12}, 120, 120)["form"] == "circle"
+
+
 def test_normalize_spec_rejects_garbage():
     assert normalize_spec({"form": "nope"}, 100, 100) is None
     assert normalize_spec("not a dict", 100, 100) is None

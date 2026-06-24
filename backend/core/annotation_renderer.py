@@ -99,6 +99,17 @@ def normalize_spec(spec: dict, w: int, h: int) -> Optional[dict]:
     p1 = _pt(spec.get("p1"), w, h)
     radius = _num(spec.get("radius"))
 
+    # Uncalibrated images get region bands, NEVER pinpoints — enforce the skill's rule at
+    # render time, not on the model's good behaviour. A flat JPG/screenshot has no scale or
+    # geometry, so a circle/arrow implies a precision we don't have; degrade it to a box.
+    if spec.get("calibrated") is False and form in ("arrow", "circle", "ellipse"):
+        if bbox is None and center is not None:
+            r = (radius or 16.0) * 1.5 if form == "circle" else 26.0
+            bbox = (_clamp(center[0] - r, 0, w - 1), _clamp(center[1] - r, 0, h - 1),
+                    _clamp(center[0] + r, 0, w - 1), _clamp(center[1] + r, 0, h - 1))
+        if bbox is not None:
+            form = "box"
+
     if form in ("arrow", "leader", "circle"):
         if center is None:
             return None

@@ -1047,7 +1047,11 @@ ANNOTATION PRECISION — every annotation must be pixel-accurate AND informative
            {{"form": "circle|arrow|box|caliper|leader|ellipse", "center": [col,row]
              (or "bbox":[x0,y0,x1,y1] / "p0":[..],"p1":[..]), "label": "short line",
              "number": <num or omit>, "units": "mm", "certainty": "Confirmed|Likely|Possible",
-             "significance": 0.0-1.0, "label_side": "auto"}}, ... ]}}, ... ]
+             "significance": 0.0-1.0, "calibrated": <true|false>, "label_side": "auto"}}, ... ]}}, ... ]
+    Set each mark's "calibrated" to the study's real status: false for ANY uncalibrated input
+    (JPG/PNG/screenshot, or DICOM with no PixelSpacing). On an uncalibrated study the renderer
+    FORCES region boxes (no circles/arrows) and shows NO mm number — so on flat image exports
+    you cannot pinpoint; place an honest region box over the structure, never a precise marker.
 
 ANNOTATION COVERAGE — mark the RIGHT things, driven by the findings (not the pixels):
   - Every reportable finding gets exactly ONE visual at the slice where it is maximal; the

@@ -115,7 +115,7 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
     if _LOGO.exists():
         try:
             liw, lih = ImageReader(str(_LOGO)).getSize()
-            lh = 0.8 * inch
+            lh = 1.25 * inch   # the wide lockup was squeezed to 0.8" → tiny/illegible; give it height
             logo_cell = Image(str(_LOGO), width=lh * liw / lih, height=lh)
         except Exception:
             logo_cell = ""
@@ -213,35 +213,37 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
                     legend = Table(cells, colWidths=[(6.6 * inch) / len(present)] * len(present))
                     lstyle = [
                         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                        ("TOPPADDING", (0, 0), (-1, 0), 3), ("BOTTOMPADDING", (0, 0), (-1, 0), 3),
+                        ("TOPPADDING", (0, 0), (-1, 0), 5), ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+                        ("LEFTPADDING", (0, 0), (-1, 0), 6), ("RIGHTPADDING", (0, 0), (-1, 0), 6),
                     ]
                     for i, k in enumerate(present):
                         lstyle.append(("BACKGROUND", (i, 0), (i, 0), c(CERTAINTY_COLOR.get(k, MUTED))))
                     legend.setStyle(TableStyle(lstyle))
                     block.append(Paragraph("Colour shows how certain each finding is:", SMALL))
-                    block.append(Spacer(1, 2))
+                    block.append(Spacer(1, 4))
                     block.append(legend)
-                    block.append(Spacer(1, 6))
+                    block.append(Spacer(1, 12))
             cert = f.get("certainty", "")
             cert_col = CERTAINTY_COLOR.get(cert, MUTED)
             row = Table([[Paragraph(f.get("plain", ""), BULLET, bulletText="•"),
                           Paragraph(f'<font color="white"><b>{cert}</b></font>', SMALL)]],
-                        colWidths=[5.4 * inch, 1.2 * inch])
+                        colWidths=[5.1 * inch, 1.5 * inch])
             row.setStyle(TableStyle([
                 ("BACKGROUND", (1, 0), (1, 0), c(cert_col)),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                 ("ALIGN", (1, 0), (1, 0), "CENTER"),
-                ("TOPPADDING", (1, 0), (1, 0), 5), ("BOTTOMPADDING", (1, 0), (1, 0), 5),
-                ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 10),
+                ("TOPPADDING", (1, 0), (1, 0), 8), ("BOTTOMPADDING", (1, 0), (1, 0), 8),
+                ("LEFTPADDING", (1, 0), (1, 0), 8), ("RIGHTPADDING", (1, 0), (1, 0), 8),
+                ("LEFTPADDING", (0, 0), (0, 0), 0), ("RIGHTPADDING", (0, 0), (0, 0), 12),
             ]))
             block.append(row)
-            im = _img(f.get("figure"))
+            im = _img(f.get("figure"), max_h=6.2 * inch)   # proof figures legible (was capped at 3.7")
             if im is not None:
-                block.append(Spacer(1, 4))
+                block.append(Spacer(1, 6))
                 block.append(im)
                 if f.get("caption"):
                     block.append(Paragraph(f["caption"], CAP))
-            block.append(Spacer(1, 8))
+            block.append(Spacer(1, 14))
             flow.append(KeepTogether(block))
 
     # 3a. FOCUSED EVIDENCE REVIEW
