@@ -787,16 +787,27 @@ class AgentRunner:
 
     @staticmethod
     def _resolve_base_image(out_dir: Path, base_name) -> Optional[Path]:
-        """Find a base image for a figure: by name in out_dir, out_dir/work, or as a path."""
+        """Find a base image for a figure. Tries direct paths, then searches the report dir and
+        the whole work tree by filename — the agent commonly nests bases under evidence/images/,
+        which the old one-level lookup missed (so host rendering was silently skipped)."""
         if not base_name:
             return None
-        candidates = [out_dir / base_name, out_dir / "work" / base_name, Path(base_name)]
-        for c in candidates:
+        name = Path(base_name).name
+        direct = [out_dir / base_name, out_dir / "work" / base_name,
+                  out_dir.parent / base_name, Path(base_name)]
+        for c in direct:
             try:
                 if c.exists() and c.is_file():
                     return c
             except OSError:
                 continue
+        for root in (out_dir, out_dir.parent):   # recursive fallback by filename
+            try:
+                hit = next((p for p in root.rglob(name) if p.is_file()), None)
+            except OSError:
+                hit = None
+            if hit:
+                return hit
         return None
 
     def _collect_outputs(self, out_dir: Path, result: AgentResult, require_pdf: bool) -> None:
@@ -1052,6 +1063,13 @@ ANNOTATION PRECISION — every annotation must be pixel-accurate AND informative
     (JPG/PNG/screenshot, or DICOM with no PixelSpacing). On an uncalibrated study the renderer
     FORCES region boxes (no circles/arrows) and shows NO mm number — so on flat image exports
     you cannot pinpoint; place an honest region box over the structure, never a precise marker.
+  - PLACEMENT ACCURACY (every input): the box must actually SIT ON the structure it names.
+    On uncalibrated/compressed exports do NOT trust pixel-intensity profiling — place each box by
+    DIRECT VISUAL identification of that disc space in the image. SANITY-CHECK the lowest level:
+    L5-S1 is the disc just ABOVE the sacrum (the sacral promontory), NOT inside the sacral body —
+    if your lowest box is on the sacrum, you over-counted; move every level up one. Coarse but
+    on the right disc beats precise-looking but a level off. Verify each box overlaps a real disc
+    space (dark band between two vertebral bodies), then re-read the saved figure to confirm.
 
 ANNOTATION COVERAGE — mark the RIGHT things, driven by the findings (not the pixels):
   - Every reportable finding gets exactly ONE visual at the slice where it is maximal; the

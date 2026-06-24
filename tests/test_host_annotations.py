@@ -35,6 +35,21 @@ def test_host_render_no_annotations_is_noop(tmp_path):
     assert not (tmp_path / "fig1.png").exists()
 
 
+def test_host_render_finds_nested_base_image(tmp_path):
+    # The agent nests bases under evidence/images/; the resolver must find them by recursive
+    # search — the one-level lookup silently skipped them, so the gate/rendering never ran.
+    nested = tmp_path / "evidence" / "images"
+    nested.mkdir(parents=True)
+    Image.new("RGB", (100, 100), (0, 0, 0)).save(nested / "ev008.png")
+    (tmp_path / "annotations.json").write_text(json.dumps([
+        {"figure": "fig1.png", "base": "ev008.png", "calibrated": False,
+         "marks": [{"form": "box", "bbox": [10, 10, 40, 40], "certainty": "Possible", "label": "x"}]}
+    ]), encoding="utf-8")
+    runner = AgentRunner.__new__(AgentRunner)
+    runner._render_host_annotations(tmp_path)
+    assert (tmp_path / "fig1.png").exists()
+
+
 def test_host_render_skips_entry_with_missing_base(tmp_path):
     (tmp_path / "annotations.json").write_text(json.dumps([
         {"figure": "fig1.png", "base": "nope.png",
