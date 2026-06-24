@@ -516,6 +516,9 @@ class FormatConverter:
 
                 for s in range(num_slices):
                     slice_data = data_t[s]
+                    # Same vertical flip as the NIfTI path (line ~371) so a study's orientation —
+                    # and the sacrum-up level map that depends on it — does not differ by container.
+                    slice_data = np.flipud(slice_data)
                     dcm_filename = f"{seq_name}_Img{s+1:04d}.dcm"
                     self._create_synthetic_dicom(
                         pixel_data=slice_data,

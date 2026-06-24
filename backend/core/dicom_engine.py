@@ -653,6 +653,9 @@ class DICOMEngine:
             arr = arr.mean(axis=-1)
 
         ps = seq.calibration.row_spacing_mm if seq and seq.calibration else None
+        # Canal AP diameter is measured ACROSS columns (horizontal), so it must scale by the
+        # COLUMN spacing, not the row (vertical) spacing — they differ on anisotropic sagittals.
+        ps_col = seq.calibration.col_spacing_mm if seq and seq.calibration else None
 
         # Reference CSF signal at L1 body level
         ref_body = self.body_map.get("L1")
@@ -724,7 +727,7 @@ class DICOMEngine:
                         right = c
                         break
 
-                m.canal_ap_mm = (right - left) * ps
+                m.canal_ap_mm = (right - left) * ps_col
 
             # Confidence tier — aligned with prompt rules:
             #   Calibrated + abnormal  → Tier A (DICOM-verified measurement)
@@ -887,13 +890,25 @@ class DICOMEngine:
             return best[0], best[1], round(best[2], 1), "repositioned"
         return col, row, round(val, 1), "failed"
 
-    def _draw_region_band(self, draw, center, label, color, side, font, scale: int = 2) -> None:
+    def _draw_region_band(self, draw, center, label, color, side, font, scale: int = 2,
+                          broad: bool = False, img_size=None) -> None:
         """Fallback visual when a precise tip cannot be verified: draw a labelled REGION BOX at the
         computed location (approximate, not a pinpoint) so the finding still has a visible marker
-        instead of being silently dropped. The corner ticks read as 'approximate region'."""
+        instead of being silently dropped. The corner ticks read as 'approximate region'.
+
+        On uncalibrated studies (``broad=True``) the box is sized to a fraction of the image so it
+        honestly covers the region rather than implying a near-pinpoint — the same broad-region rule
+        the shared annotation_renderer enforces (single definition of 'honest broad region')."""
         cx, cy = int(center[0]), int(center[1])
-        half = 16 * scale
-        box = [cx - half, cy - half, cx + half, cy + half]
+        if broad and img_size:
+            try:
+                from core.annotation_renderer import BROAD_BOX_W_FRAC, BROAD_BOX_H_FRAC
+            except ImportError:
+                from backend.core.annotation_renderer import BROAD_BOX_W_FRAC, BROAD_BOX_H_FRAC
+            half_w, half_h = int(BROAD_BOX_W_FRAC * img_size[0]), int(BROAD_BOX_H_FRAC * img_size[1])
+        else:
+            half_w = half_h = 16 * scale
+        box = [cx - half_w, cy - half_h, cx + half_w, cy + half_h]
         draw.rectangle(box, outline=color, width=2)
         t = 6
         for x, sx in ((box[0], 1), (box[2], -1)):
@@ -925,6 +940,11 @@ class DICOMEngine:
         certainty — never a confident wrong pinpoint, never a silent drop.
         """
         self.annotation_audit = []
+        # Calibration gate (class-B guard): on an uncalibrated study this annotator must NOT draw
+        # confident pinpoint arrows — it has no scale or verified geometry. Mirrors the shared
+        # renderer's uncalibrated→broad-region rule so the two annotators can't disagree.
+        seq = self.inventory.sequences.get(sag_t2_seq_name)
+        calibrated = bool(seq and seq.calibration and getattr(seq.calibration, "is_calibrated", False))
         safe = sag_t2_seq_name.replace(" ", "_").replace("-", "_")
         raw_path = self.work_dir / "raw_png" / safe / f"slice_{midline_slice:03d}.png"
         raw_arr = np.array(Image.open(str(raw_path))).astype(float)
@@ -982,14 +1002,32 @@ class DICOMEngine:
         # Most-severe canal narrowing arrow (only if meaningfully reduced).
         if self.canal_narrowing and self.canal_narrowing[0]["reduction_pct"] >= 25:
             n = self.canal_narrowing[0]
+            # Qualitative severity, not a precise "% CSF loss": the percentage is a raw-pixel
+            # signal ratio (not a calibrated spatial measure), so a number on the image overstates
+            # it. The raw value still travels in the measurement table. Matches the disc grade words.
+            sev = "marked" if n["reduction_pct"] >= 50 else "moderate"
             candidates.append({
-                "label": f"Canal narrowing (~{int(n['reduction_pct'])}% CSF loss)",
+                "label": f"Canal narrowing ({sev})",
                 "col": self.canal_col, "row": n["row"],
                 "structure": "canal_narrowing", "color": "yellow",
                 "side": "right", "level": None,
             })
 
         for t in candidates:
+            if not calibrated:
+                # Uncalibrated → never a pinpoint. Draw an honest BROAD region band over the area
+                # and move on; no intensity/position machinery can earn precision the data lacks.
+                rc = (int(t["col"]) * scale, int(t["row"]) * scale)
+                self._draw_region_band(draw, rc, f"{t['label']} (approx region)", t["color"],
+                                       t["side"], font_sm, scale, broad=True,
+                                       img_size=(img.width, img.height))
+                self.annotation_audit.append({
+                    "label": t["label"], "structure": t["structure"], "level": t["level"],
+                    "final_tip": [int(t["col"]), int(t["row"])], "status": "region_band_uncalibrated",
+                    "drawn": True, "position_decision": "region_band",
+                    "position_reasons": ["uncalibrated study — broad region, never a pinpoint"],
+                })
+                continue
             final_col, final_row, intensity, status = self._verify_and_reposition_tip(
                 raw_arr, int(t["col"]), int(t["row"]), t["structure"]
             )

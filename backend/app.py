@@ -2897,7 +2897,12 @@ async def _run_analysis_pipeline(
         # Spine requires sagittal T2 for quantitative analysis. Even without a Sag T2
         # match, a spine study must still get a Level Reference (Figure 0) from the
         # best-available sagittal (T1/STIR), per the skill's "NEVER SKIP" level ID.
-        is_spine_quant = detected_anatomy == "spine" and sag_t2
+        # Precise measurements + pinpoint annotation require a CALIBRATED Sag T2. On an
+        # uncalibrated study (image export / no PixelSpacing) we still produce the Level
+        # Reference + a qualitative read, but never precise grades/mm/pinpoints the flat data
+        # can't support — honest coarseness over precise-but-Tier-C (class-B guard).
+        study_calibrated = bool(getattr(inventory, "is_calibrated", False))
+        is_spine_quant = detected_anatomy == "spine" and bool(sag_t2) and study_calibrated
         sag_for_levels = sag_t2 or sag_t1 or sag_tirm
         do_levels = detected_anatomy == "spine" and sag_for_levels is not None
         if detected_anatomy == "spine" and not sag_t2:
@@ -2905,6 +2910,12 @@ async def _run_analysis_pipeline(
                 "Spine study detected but no sagittal T2 found — quantitative measurements "
                 "skipped (tiers capped); Level Reference still generated from best-available "
                 f"sagittal ({sag_for_levels})."
+            )
+        elif detected_anatomy == "spine" and sag_t2 and not study_calibrated:
+            logger.warning(
+                "Spine Sag T2 present but study is UNCALIBRATED — precise measurements and "
+                "pinpoint annotation skipped (qualitative, broad regions only); Level Reference "
+                "still generated."
             )
 
         # Phase 0B: Convert key sequences
@@ -2956,7 +2967,7 @@ async def _run_analysis_pipeline(
                 job.status = "measuring"
                 job.progress = 40
                 job.progress_message = (
-                    "Sag T2 not found — Level Reference produced; visual interpretation "
+                    "No calibrated Sag T2 — Level Reference produced; visual interpretation "
                     "only (measurement tiers capped)."
                 )
         else:
