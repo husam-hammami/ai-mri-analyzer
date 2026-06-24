@@ -113,3 +113,30 @@ def test_spider_ground_truth_parses_and_names_sacrum_up():
     # the sacrum vertebra sits caudal to (more inferior than) the L5-S1 disc
     assert gt["sacrum_si_mm"] is not None
     assert gt["sacrum_si_mm"] > gt["levels"]["L5-S1"]["si_mm"]
+
+
+def test_spider_naming_is_orientation_robust():
+    # SPIDER's .mha direction can put L5-S1 at EITHER end of the array. Naming must follow
+    # the disc LABEL (highest = L5-S1), not a fixed physical-axis sign — the bug that made
+    # every level off by the full column. Here higher label sits at the HIGHER row.
+    sitk = pytest.importorskip("SimpleITK")
+    np = pytest.importorskip("numpy")
+    import tempfile
+    from pathlib import Path
+
+    vol = np.zeros((80, 40, 40), dtype=np.int16)
+    vol[18:22, 15:25, 15:25] = 252    # L3-L4 (lowest label) at the TOP (small row)
+    vol[38:42, 15:25, 15:25] = 253    # L4-L5
+    vol[58:62, 15:25, 15:25] = 255    # L5-S1 (highest label) at the BOTTOM (large row)
+    vol[68:72, 15:25, 15:25] = 8      # sacrum, below L5-S1
+    img = sitk.GetImageFromArray(vol)
+    with tempfile.TemporaryDirectory() as td:
+        mp = Path(td) / "mask.mha"
+        sitk.WriteImage(img, str(mp))
+        gt = spider_level_ground_truth(mp)
+
+    assert gt["levels"]["L5-S1"]["label"] == 255            # highest label is always L5-S1
+    assert gt["discs_caudal_to_cranial"][0] == "L5-S1"
+    # L5-S1 is the most caudal disc, and the sacrum is even more caudal
+    assert gt["levels"]["L5-S1"]["si_mm"] > gt["levels"]["L3-L4"]["si_mm"]
+    assert gt["sacrum_si_mm"] > gt["levels"]["L5-S1"]["si_mm"]

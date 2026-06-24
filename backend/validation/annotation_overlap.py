@@ -380,8 +380,21 @@ def spider_level_ground_truth(mask_path, disc_label_floor: int = SPIDER_DISC_LAB
             "si_extent_mm": round(si_extent_mm, 1),
         })
 
-    # Caudal-most disc (largest inferior-positive si_mm) is L5-S1; name upward from there.
-    discs.sort(key=lambda d: d["si_mm"], reverse=True)
+    # Caudal direction & naming. The physical-axis sign of an .mha varies with its direction
+    # matrix, so we DON'T trust -pz to say which way is caudal. SPIDER's disc LABEL value
+    # increases caudally (the documented convention: highest disc label = L5-S1), which is
+    # orientation-independent — so name by label descending and derive the si sign from how
+    # the label order maps onto the array-row axis.
+    caudal_sign = 1.0
+    if len(discs) >= 2:
+        by_label = sorted(discs, key=lambda d: d["label"])
+        caudal_sign = 1.0 if (by_label[-1]["si_row"] - by_label[0]["si_row"]) >= 0 else -1.0
+    # Recompute si_mm as an inferior-positive coordinate consistent with that direction
+    # (larger = more caudal), in mm via the array-row (SI) spacing.
+    for disc in discs:
+        disc["si_mm"] = round(caudal_sign * disc["si_row"] * z_spacing, 2)
+
+    discs.sort(key=lambda d: d["label"], reverse=True)  # highest label = L5-S1, name upward
     levels: dict[str, dict] = {}
     order: list[str] = []
     for i, disc in enumerate(discs):
@@ -390,12 +403,12 @@ def spider_level_ground_truth(mask_path, disc_label_floor: int = SPIDER_DISC_LAB
         levels[name] = disc
         order.append(name)
 
-    spacings = [order and abs(levels[order[i]]["si_mm"] - levels[order[i + 1]]["si_mm"])
+    spacings = [abs(levels[order[i]]["si_mm"] - levels[order[i + 1]]["si_mm"])
                 for i in range(len(order) - 1)]
     spacings = [s for s in spacings if s]
     median_spacing = float(sorted(spacings)[len(spacings) // 2]) if spacings else None
 
-    # Most-inferior vertebra centroid = sacrum/S1 region — an absolute caudal anchor.
+    # Sacrum = the most-caudal vertebra (largest inferior-positive coordinate) — a caudal anchor.
     sacrum_si_mm = None
     sacrum_si_row = None
     vert = [int(v) for v in labels if 0 < int(v) < 100]
@@ -403,11 +416,11 @@ def spider_level_ground_truth(mask_path, disc_label_floor: int = SPIDER_DISC_LAB
         idx = np.argwhere(arr == label)
         if idx.size == 0:
             continue
-        centroid = idx.mean(axis=0)
-        si_mm, _ = _si_mm(centroid)
+        row = float(idx.mean(axis=0)[0])
+        si_mm = caudal_sign * row * z_spacing
         if sacrum_si_mm is None or si_mm > sacrum_si_mm:
             sacrum_si_mm = round(si_mm, 2)
-            sacrum_si_row = round(float(centroid[0]), 1)
+            sacrum_si_row = round(row, 1)
 
     return {
         "source": "spider_mask",
