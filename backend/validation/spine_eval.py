@@ -549,6 +549,26 @@ def _load_model_level_points(cdir: Path) -> dict:
         lm = data.get("level_map") if isinstance(data, dict) else None
         if isinstance(lm, dict) and lm:
             return lm
+    # New format: annotations.json marks — pull a level token from each mark's label.
+    level_re = re.compile(r"([TLS]\d{1,2}\s*[-–]\s*[TLS]\d{1,2})", re.IGNORECASE)
+    for path in [work.parent / "annotations.json", *sorted(work.rglob("annotations.json"))]:
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:  # noqa: BLE001
+            continue
+        entries = data if isinstance(data, list) else (data.get("figures") or [data])
+        points: dict[str, list] = {}
+        for entry in entries if isinstance(entries, list) else []:
+            for mark in (entry.get("marks") or []) if isinstance(entry, dict) else []:
+                pt = mark.get("center") or mark.get("point")
+                m = level_re.search(str(mark.get("label") or ""))
+                if pt and isinstance(pt, (list, tuple)) and len(pt) >= 2 and m:
+                    lvl = m.group(1).upper().replace(" ", "")
+                    points.setdefault(lvl, [float(pt[0]), float(pt[1])])
+        if points:
+            return points
     return {}
 
 
