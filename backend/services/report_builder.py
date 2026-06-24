@@ -34,6 +34,10 @@ from pathlib import Path
 from typing import Optional
 from xml.sax.saxutils import escape
 
+import logging
+
+logger = logging.getLogger("mika.report_builder")
+
 try:  # shared certainty palette lives in core so the report chips, on-image marks and legend never drift
     from core.palette import CERTAINTY_COLOR, CERTAINTY_ORDER
 except ImportError:  # pragma: no cover - import path when launched from backend/
@@ -243,6 +247,13 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
                 block.append(im)
                 if f.get("caption"):
                     block.append(Paragraph(f["caption"], CAP))
+            elif f.get("figure"):
+                # A finding declared a proof figure that isn't on disk — never drop it silently;
+                # surface it (a finding with no visual evidence is the worst silent degradation).
+                logger.warning("Finding proof figure %r missing on disk — rendering finding "
+                               "without its image", f.get("figure"))
+                block.append(Spacer(1, 4))
+                block.append(Paragraph("<i>(proof image unavailable)</i>", CAP))
             block.append(Spacer(1, 14))
             flow.append(KeepTogether(block))
 

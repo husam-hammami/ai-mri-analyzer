@@ -763,6 +763,11 @@ class AgentRunner:
             from backend.core.annotation_renderer import render_all
         except ImportError:
             from core.annotation_renderer import render_all
+        # Host truth for calibration: the model can write calibrated:true in annotations.json, but
+        # an image export (flat JPG/screenshot) has no scale — trust the manifest, not the model,
+        # so the uncalibrated broad-box degrade can't be defeated by a wrong self-report.
+        host_uncalibrated = self._study_is_uncalibrated(out_dir)
+
         for entry in entries:
             if not isinstance(entry, dict):
                 continue
@@ -772,11 +777,13 @@ class AgentRunner:
                 continue
             base = self._resolve_base_image(out_dir, entry.get("base") or figure)
             if base is None:
+                logger.warning("Host render skipped for %s: base image %r not resolved — model's "
+                               "own figure left in place", figure, entry.get("base") or figure)
                 continue
             try:
                 res = render_all(
                     base, marks, out_dir / figure,
-                    calibrated=bool(entry.get("calibrated")),
+                    calibrated=bool(entry.get("calibrated")) and not host_uncalibrated,
                     max_marks=entry.get("max_marks"),
                     title=entry.get("title"),
                 )
@@ -786,10 +793,28 @@ class AgentRunner:
                 logger.warning(f"Host render of {figure} failed (keeping model figure): {e}")
 
     @staticmethod
+    def _study_is_uncalibrated(out_dir: Path) -> bool:
+        """Read the persisted evidence manifest for the HOST's calibration truth (image export /
+        no PixelSpacing). Used to AND-gate the renderer so the model can't self-promote a flat
+        image to calibrated. Best-effort: returns False if the manifest is absent/unreadable."""
+        try:
+            mpath = out_dir.parent / "evidence" / "evidence_manifest.json"
+            if mpath.exists():
+                study = json.loads(mpath.read_text(encoding="utf-8-sig")).get("study", {})
+                return study.get("input_type") == "image_export" or study.get("calibrated") is False
+        except Exception:  # noqa: BLE001
+            pass
+        return False
+
+    @staticmethod
     def _resolve_base_image(out_dir: Path, base_name) -> Optional[Path]:
-        """Find a base image for a figure. Tries direct paths, then searches the report dir and
-        the whole work tree by filename — the agent commonly nests bases under evidence/images/,
-        which the old one-level lookup missed (so host rendering was silently skipped)."""
+        """Find a base image for a figure. Tries direct (path-qualified) locations first, then a
+        recursive filename search — but accepts the recursive match ONLY when it is UNAMBIGUOUS.
+
+        The agent nests bases under evidence/images/, so a one-level lookup missed them (silent
+        skip). But blindly taking the first filename match risks the opposite error: drawing marks
+        (whose coords were computed for one slice) onto a same-named slice from a different series.
+        So an ambiguous basename is skipped (and logged), never guessed."""
         if not base_name:
             return None
         name = Path(base_name).name
@@ -801,13 +826,18 @@ class AgentRunner:
                     return c
             except OSError:
                 continue
-        for root in (out_dir, out_dir.parent):   # recursive fallback by filename
+        for root in (out_dir, out_dir.parent):   # recursive fallback — unambiguous match only
             try:
-                hit = next((p for p in root.rglob(name) if p.is_file()), None)
+                matches = [p for p in root.rglob(name) if p.is_file()]
             except OSError:
-                hit = None
-            if hit:
-                return hit
+                matches = []
+            if len(matches) == 1:
+                return matches[0]
+            if len(matches) > 1:
+                logger.warning("Base image %r is ambiguous (%d matches under %s) — skipping host "
+                               "render rather than drawing on a possibly-wrong slice",
+                               name, len(matches), root.name)
+                return None
         return None
 
     def _collect_outputs(self, out_dir: Path, result: AgentResult, require_pdf: bool) -> None:

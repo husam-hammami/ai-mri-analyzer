@@ -50,6 +50,37 @@ def test_host_render_finds_nested_base_image(tmp_path):
     assert (tmp_path / "fig1.png").exists()
 
 
+def test_resolve_base_image_skips_ambiguous_match(tmp_path):
+    # Two same-named slices under the work tree: the recursive fallback must NOT guess the first —
+    # drawing marks computed for one slice onto a different series' same-named slice is a silent
+    # coordinate-space mismatch. Ambiguous → None (skip, leave the model's figure).
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(tmp_path / "a" / "slice_008.png")
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(tmp_path / "b" / "slice_008.png")
+    out_dir = tmp_path / "report"
+    out_dir.mkdir()
+    assert AgentRunner._resolve_base_image(out_dir, "slice_008.png") is None
+    # but a single unambiguous nested match still resolves
+    (tmp_path / "c").mkdir()
+    Image.new("RGB", (10, 10), (0, 0, 0)).save(tmp_path / "c" / "unique_042.png")
+    assert AgentRunner._resolve_base_image(out_dir, "unique_042.png") is not None
+
+
+def test_study_is_uncalibrated_reads_manifest(tmp_path):
+    # Host calibration truth comes from the manifest, not the model's annotations.json claim.
+    out_dir = tmp_path / "report"
+    out_dir.mkdir()
+    (tmp_path / "evidence").mkdir()
+    man = tmp_path / "evidence" / "evidence_manifest.json"
+    man.write_text(json.dumps({"study": {"input_type": "image_export"}}), encoding="utf-8")
+    assert AgentRunner._study_is_uncalibrated(out_dir) is True
+    man.write_text(json.dumps({"study": {"input_type": "dicom", "calibrated": True}}), encoding="utf-8")
+    assert AgentRunner._study_is_uncalibrated(out_dir) is False
+    man.unlink()
+    assert AgentRunner._study_is_uncalibrated(out_dir) is False   # absent manifest → not uncalibrated
+
+
 def test_host_render_skips_entry_with_missing_base(tmp_path):
     (tmp_path / "annotations.json").write_text(json.dumps([
         {"figure": "fig1.png", "base": "nope.png",
