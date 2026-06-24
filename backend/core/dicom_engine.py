@@ -185,6 +185,7 @@ class DICOMEngine:
         self.endplate_assessments: list[EndplateAssessment] = []
         self.canal_narrowing: list = []   # [{row, intensity, reduction_pct}] from Step 3A.3
         self.annotation_audit: list = []  # Step 3C/3D record per arrow tip (for VerificationPass)
+        self.annotation_completeness: dict = {}  # Phase-6 coverage self-audit (lite path)
         self._converted_images: dict = {}  # seq_name/slice -> path
 
     # ── Phase 0: Inventory ──
@@ -1072,7 +1073,37 @@ class DICOMEngine:
             f"{disagree} position-disagreement)"
         )
 
+        # Phase-6 completeness self-audit.
+        self.annotation_completeness = self._compute_annotation_completeness()
+        comp = self.annotation_completeness
+        if not comp.get("complete"):
+            logger.info(
+                f"Annotation completeness: unmarked={comp.get('unmarked_findings')}, "
+                f"orphans={comp.get('orphan_marks')}, "
+                f"normal_reference={comp.get('normal_reference_present')}"
+            )
+
         return out_path
+
+    def _compute_annotation_completeness(self) -> dict:
+        """Phase-6 coverage check: every reportable finding has a visual, a neutral reference
+        is present, and there are no orphan marks (a drawn mark with no matching finding)."""
+        reportable = {m.level for m in self.disc_measurements
+                      if getattr(m, "desiccation_grade", None) in ("severe", "moderate")}
+        marked = {a.get("level") for a in self.annotation_audit if a.get("level") and a.get("drawn")}
+        normal_ref = any(a.get("structure") == "canal_csf" and a.get("drawn") for a in self.annotation_audit)
+        unmarked = sorted(reportable - marked)
+        orphans = [a.get("label") for a in self.annotation_audit
+                   if a.get("level") and a.get("drawn") and a.get("level") not in reportable
+                   and a.get("structure") == "disc_desiccated"]
+        return {
+            "reportable_findings": len(reportable),
+            "marked": len(reportable) - len(unmarked),
+            "unmarked_findings": unmarked,
+            "normal_reference_present": bool(normal_ref),
+            "orphan_marks": orphans,
+            "complete": not unmarked and not orphans and bool(normal_ref),
+        }
 
     def create_contrast_comparison(
         self, pre_seq: str, post_seq: str, slice_idx: int, label: str = "L4-L5"
@@ -1256,6 +1287,7 @@ class DICOMEngine:
             "endplate_assessments": [asdict(e) for e in self.endplate_assessments],
             "canal_narrowing": self.canal_narrowing,
             "annotation_audit": self.annotation_audit,
+            "annotation_completeness": self.annotation_completeness,
         }
 
     # ── Private Helpers ──

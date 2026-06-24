@@ -1049,6 +1049,16 @@ ANNOTATION PRECISION — every annotation must be pixel-accurate AND informative
              "number": <num or omit>, "units": "mm", "certainty": "Confirmed|Likely|Possible",
              "significance": 0.0-1.0, "label_side": "auto"}}, ... ]}}, ... ]
 
+ANNOTATION COVERAGE — mark the RIGHT things, driven by the findings (not the pixels):
+  - Every reportable finding gets exactly ONE visual at the slice where it is maximal; the
+    `findings[].figure` must point to it. No unmarked key finding.
+  - ALWAYS include at least one neutral "normal for comparison" reference (a preserved disc
+    beside the degenerate ones, or the normal side vs the abnormal side), certainty "Possible"
+    and labelled "normal for comparison" — severity should read by contrast, not by assertion.
+  - No orphan marks: every drawn mark ties to a stated finding. Never annotate incidental noise
+    or artifact; merge co-located findings. Use `significance` so a crowded figure drops the
+    least-significant mark (the renderer logs it) rather than cluttering.
+
 READING RIGOR — read like a radiologist who commits to the findings:
   - Work systematically per the protocol. Call each finding at the severity and confidence the
     images support; do NOT default to the less-severe reading out of caution, and do not skip
