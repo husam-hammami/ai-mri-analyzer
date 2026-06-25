@@ -124,13 +124,14 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
         except Exception:
             logo_cell = ""
 
+    band_h = lh + 0.30 * inch   # band a bit taller than the logo; logo sits vertically centred in it
     header = Table([[logo_cell, Paragraph("Imaging analysis<br/>report", DESC)]],
-                   colWidths=[4.5 * inch, 2.2 * inch])
+                   colWidths=[4.5 * inch, 2.2 * inch], rowHeights=[band_h])
     header.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), c(LOGO_BG)),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (0, 0), 14), ("RIGHTPADDING", (-1, 0), (-1, 0), 16),
-        ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     flow.append(header)
     flow.append(Spacer(1, 7))
