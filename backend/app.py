@@ -161,6 +161,14 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MIKA_MAX_UPLOAD_BYTES", str(2 * 1024 * 10
 # Arabic presentation layer — flag-dark by default. English report.json is the only clinical
 # source of truth; Arabic is a derived view (see docs/Mika_Arabic_Plan.md).
 AR_ENABLED = os.environ.get("MIKA_AR_ENABLED", "0") == "1"
+# Case chat — flag-dark by default (docs/Mika_Chat_Plan.md). Answers ONLY from the patient's own report,
+# in plain language, never as medical advice. Inert (endpoint 404s, button hidden) until flipped.
+CHAT_ENABLED = os.environ.get("MIKA_CHAT_ENABLED", "0") == "1"
+CHAT_MODEL = os.environ.get("MIKA_CHAT_MODEL", os.environ.get("MIKA_AGENT_MODEL", "opus"))
+CHAT_EFFORT = os.environ.get("MIKA_CHAT_EFFORT", "low")
+CHAT_TIMEOUT = int(os.environ.get("MIKA_CHAT_TIMEOUT_S", "90"))
+CHAT_MAX_Q = int(os.environ.get("MIKA_CHAT_MAX_QUESTION_CHARS", "1000"))
+CHAT_MAX_TURNS = int(os.environ.get("MIKA_CHAT_MAX_TURNS", "12"))
 
 # ── Application ──
 
@@ -2353,6 +2361,53 @@ async def generate_arabic_report(job_id: str):
         return {"status": "degraded", "patient": None}   # client falls back to English (the C floor)
     arabic.write_sidecar(jd, patient, ar_patient)
     return {"status": "ok", "patient": ar_patient}
+
+
+class ChatRequest(BaseModel):
+    question: str
+    history: list[dict] = []           # [{role:"user"|"assistant", text:str}], capped server-side
+
+
+class ChatResponse(BaseModel):
+    answer: str
+
+
+@app.get("/api/chat/availability")
+async def chat_availability():
+    """Lets the UI hide the chat trigger when the flag is off (mirrors /api/agent/availability)."""
+    return {"enabled": CHAT_ENABLED}
+
+
+@app.post("/api/chat/{job_id}", response_model=ChatResponse)
+async def case_chat_endpoint(job_id: str, body: ChatRequest):
+    """A patient asks a question about THEIR ONE completed study; answered concisely + plainly, grounded only
+    in their report, never as medical advice. Flag-dark. The live `claude -p` call runs off the event loop."""
+    if not CHAT_ENABLED:
+        raise HTTPException(404, "Not found")
+    _validate_job_id(job_id)            # JOB_ID_RE — anti-traversal
+    q = (body.question or "").strip()
+    if not q:
+        raise HTTPException(400, "Empty question")
+    if len(q) > CHAT_MAX_Q:
+        raise HTTPException(413, "Question too long")
+    # Load the SAME normalized payload the UI renders — raw report.json has an EMPTY top-level patient block on
+    # most studies (real findings live under agent.summary.patient; _normalize_loaded_report backfills it).
+    job = JOBS.get(job_id)
+    if job and job.status == "complete":
+        report = _build_report_payload(job)
+    else:
+        raw = _load_report(job_id)
+        report = _normalize_loaded_report(job_id, raw) if raw else None
+    if not report or not report.get("patient"):
+        raise HTTPException(404, "Report not found")
+    from services.case_chat import answer_case_question
+    text, err = await asyncio.to_thread(
+        answer_case_question, job_id, report, q, body.history[-CHAT_MAX_TURNS:],
+        model=CHAT_MODEL, effort=CHAT_EFFORT, timeout_s=CHAT_TIMEOUT, data_dir=DATA_DIR,
+    )
+    if err:
+        raise HTTPException(503, "Chat is unavailable right now")
+    return ChatResponse(answer=text)
 
 
 @app.get("/api/reports")

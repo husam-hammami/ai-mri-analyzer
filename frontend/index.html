@@ -665,6 +665,33 @@
 
     /* ── Lightbox / Modal ── */
     .overlay { position:fixed; inset:0; background: rgba(10,15,29,0.72); backdrop-filter: blur(4px); display:flex; align-items:center; justify-content:center; z-index:1100; padding: var(--s-6); animation: fadeIn var(--duration-normal) var(--ease-out); }
+    /* Case chat — "Beside": a right slide-over that leaves the read visible; no full-screen scrim. */
+    .chat-drawer { position:fixed; top:0; right:0; bottom:0; width:380px; max-width:92vw; background:var(--surface); border-left:1px solid var(--line); display:flex; flex-direction:column; z-index:1200; box-shadow:-12px 0 28px rgba(15,23,42,0.12); animation: chatIn var(--duration-normal) var(--ease-out); }
+    @keyframes chatIn { from{ transform:translateX(16px); opacity:0; } to{ transform:none; opacity:1; } }
+    @media (prefers-reduced-motion: reduce) { .chat-drawer{ animation:none; } .chat-mark-pulse{ animation:none !important; } }
+    .chat-head { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line-soft); }
+    .chat-mark { width:26px; height:26px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .chat-mark-pulse { animation: chatBreath 1.6s var(--ease-calm) infinite; }
+    @keyframes chatBreath { 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
+    .chat-scope { font-size:11px; color:var(--slate); background:var(--surface-2); border:1px solid var(--line); padding:3px 9px; border-radius:999px; white-space:nowrap; }
+    .chat-x { background:none; border:none; color:var(--slate-300); cursor:pointer; font-size:20px; line-height:1; padding:2px 4px; }
+    .chat-x:hover { color:var(--ink); }
+    .chat-thread { flex:1; min-height:0; overflow:auto; padding:18px 16px; display:flex; flex-direction:column; gap:16px; }
+    .chat-hint { font-size:13.5px; color:var(--slate); line-height:1.6; }
+    .chat-q { align-self:flex-end; max-width:82%; }
+    .chat-q .bub { display:inline-block; background:var(--surface-2); color:var(--ink); font-size:13.5px; line-height:1.5; padding:9px 13px; border-radius:14px 14px 4px 14px; }
+    .chat-a { max-width:94%; }
+    .chat-note { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:13px 15px; font-size:13.5px; line-height:1.62; color:var(--ink); white-space:pre-wrap; }
+    .chat-think { display:flex; align-items:center; gap:9px; font-size:13px; color:var(--slate); }
+    .chat-err { font-size:13px; color:#b91c1c; }
+    .chat-foot { padding:12px 16px 16px; border-top:1px solid var(--line-soft); }
+    .chat-chips { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:11px; }
+    .chat-chip { font-size:12px; color:var(--slate); background:var(--surface-2); border:1px solid var(--line); padding:6px 11px; border-radius:999px; cursor:pointer; text-align:start; }
+    .chat-chip:hover { border-color:var(--accent-line); color:var(--ink); }
+    .chat-inputrow { display:flex; align-items:center; gap:8px; border:1px solid var(--line); border-radius:12px; padding:7px 8px 7px 13px; background:var(--surface); }
+    .chat-inputrow input { flex:1; border:none; outline:none; font-size:13.5px; color:var(--ink); background:none; }
+    .chat-send { width:32px; height:32px; border-radius:9px; border:none; background:var(--accent); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .chat-send:disabled { opacity:.4; cursor:default; }
     @keyframes fadeIn { from{opacity:0;} to{opacity:1;} }
     .lightbox-img { max-width:92vw; max-height:90vh; border-radius: var(--r-md); box-shadow: var(--shadow-lg); }
     .lb-close, .modal-close { position:absolute; top:20px; right:24px; width:40px; height:40px; border-radius:50%; background: rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2); color:#fff; cursor:pointer; display:flex; align-items:center; justify-content:center; }
@@ -776,6 +803,10 @@
     [dir="rtl"] .wait-heading, [dir="rtl"] .topbar-meta { unicode-bidi: plaintext; }
     /* the AR/EN switch glyph */
     .lang-toggle button { min-width: 30px; font-weight: 700; }
+    /* chat drawer flips to the inline-start under RTL (the body figure + glyphs are NOT mirrored) */
+    [dir="rtl"] .chat-drawer { right:auto; left:0; border-left:0; border-right:1px solid var(--line); box-shadow:12px 0 28px rgba(15,23,42,0.12); }
+    [dir="rtl"] .chat-q .bub { border-radius:14px 14px 14px 4px; }
+    [dir="rtl"] .chat-inputrow { padding:7px 13px 7px 8px; }
   </style>
 </head>
 <body>
@@ -942,6 +973,14 @@
       'Limited clinician detail for this run.':'تفاصيل سريرية محدودة لهذه القراءة.',
       'Tier':'الدرجة','Quality':'الجودة','Clinical PDF':'PDF السريري','Enlarge':'تكبير',
       'passed':'ناجح','issues flagged':'مشاكل مرصودة','not run':'لم يُجرَ',
+      'Ask about your read':'اسأل عن قراءتك','this study only':'هذه الدراسة فقط',
+      'Ask me anything about this scan.':'اسألني أي شيء عن هذه الدراسة.',
+      'MIKA is reading your report…':'تقرأ MIKA تقريرك…',
+      "Couldn't answer just now — try again":'تعذّر الرد الآن — حاول مرة أخرى',
+      'Ask in your own words…':'اسأل بكلماتك الخاصة…','view on scan':'اعرض على الصورة',
+      'What does my result mean in simple terms?':'ماذا تعني نتيجتي بكلمات بسيطة؟',
+      'Is this something I should worry about?':'هل هذا أمر يستدعي القلق؟',
+      'What should I ask my doctor next?':'ما الذي ينبغي أن أسأل طبيبي عنه تالياً؟',
       'This run did not include a pinned proof image for the selected finding.':'لم تتضمّن هذه القراءة صورة إثبات مثبّتة للنتيجة المحددة.',
     };
     // Translate a UI chrome string (English fallback). NOT for medical content.
@@ -1244,6 +1283,8 @@
       generateArabic: (id) => fetch(`${API_BASE}/api/report/${id}/ar`, { method:'POST' }).then(r => r.ok ? r.json() : { status:'error' }).catch(() => ({ status:'error' })),
       reports: () => fetch(`${API_BASE}/api/reports`, { cache:'no-store' }).then(r => r.ok ? r.json() : { reports:[] }).catch(() => ({ reports:[] })),
       sequences: (id) => fetch(`${API_BASE}/api/study/${id}/sequences`, { cache:'no-store' }).then(r => r.ok ? r.json() : { sequences:[] }).catch(() => ({ sequences:[] })),
+      chatAvailability: () => fetch(`${API_BASE}/api/chat/availability`, { cache:'no-store' }).then(r => r.ok ? r.json() : { enabled:false }).catch(() => ({ enabled:false })),
+      chat: (id, question, history) => fetch(`${API_BASE}/api/chat/${id}`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ question, history }) }).then(async r => { const d = await r.json().catch(()=>({})); if (!r.ok) throw new Error('unavailable'); return d; }),
     };
 
     function proofUrl(jobId, figureFilename) {
@@ -1801,7 +1842,7 @@
       );
     }
 
-    function TopBar({ screen, connection, vm, progress, uiPrefs, setUiPrefs, onDownload, onConnect, onNotify, checking }) {
+    function TopBar({ screen, connection, vm, progress, uiPrefs, setUiPrefs, onDownload, onConnect, onNotify, checking, chatAvail, onAsk }) {
       // AR ⇄ EN language switch — available on every screen; merges into uiPrefs so `view` is preserved.
       const langToggle = (
         <div className="toggle lang-toggle" role="group" aria-label="Language">
@@ -1866,6 +1907,7 @@
               <button className={uiPrefs.view==='plain'?'on':''} onClick={()=>setUiPrefs(p=>({...p, view:'plain'}))}>{L('Plain language')}</button>
               <button className={uiPrefs.view==='clinician'?'on':''} onClick={()=>setUiPrefs(p=>({...p, view:'clinician'}))}>{L('Clinician')}</button>
             </div>
+            {chatAvail && <button className="btn btn-ghost btn-sm" onClick={onAsk}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> {L('Ask about your read')}</button>}
             <button className="btn btn-primary btn-sm" onClick={()=>onDownload(reportKind)} disabled={vm && !canDownload}>{I.download({width:15,height:15})} {downloadLabel}</button>
           </div>
         </div>
@@ -2764,6 +2806,58 @@
       return { ...EMPTY_JOB, id:jobId, status:'loading', progress:0, message:'Opening saved read...' };
     }
 
+    // Case chat — "Beside": a calm reading companion, not a chatbot. Answers are plain "notes", not bubbles.
+    // P1 = text Q&A + the calm look + states. The "view on scan" peek (anchor → body marker) is P2 (grounding).
+    const CHAT_MARK = (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+    );
+    const CHAT_CHIPS = ['What does my result mean in simple terms?', 'Is this something I should worry about?', 'What should I ask my doctor next?'];
+    function ChatDrawer({ jobId, onClose }) {
+      const [msgs, setMsgs] = useState([]);     // [{role:'user'|'assistant', text}]
+      const [busy, setBusy] = useState(false);
+      const [err, setErr] = useState(false);
+      const [q, setQ] = useState('');
+      const threadRef = useRef(null);
+      useEffect(() => { const t = threadRef.current; if (t) t.scrollTop = t.scrollHeight; }, [msgs, busy]);
+      const send = async (text) => {
+        text = (text || '').trim(); if (!text || busy) return;
+        setErr(false); setQ('');
+        const history = msgs.slice(-24).map(m => ({ role:m.role, text:m.text }));
+        setMsgs(m => [...m, { role:'user', text }]); setBusy(true);
+        try { const d = await api.chat(jobId, text, history); setMsgs(m => [...m, { role:'assistant', text:(d && d.answer) || '' }]); }
+        catch(_) { setErr(true); }
+        finally { setBusy(false); }
+      };
+      return (
+        <div className="chat-drawer" role="dialog" aria-label={L('Ask about your read')}>
+          <div className="chat-head">
+            <span className="chat-mark">{CHAT_MARK}</span>
+            <div style={{flex:1, minWidth:0, fontSize:'14px', fontWeight:600, color:'var(--ink)'}}>{L('Ask about your read')}</div>
+            <span className="chat-scope">{L('this study only')}</span>
+            <button className="chat-x" onClick={onClose} aria-label="Close">×</button>
+          </div>
+          <div className="chat-thread" ref={threadRef}>
+            {msgs.length === 0 && !busy && <div className="chat-hint">{L('Ask me anything about this scan.')}</div>}
+            {msgs.map((m, i) => m.role === 'user'
+              ? <div className="chat-q" key={i}><div className="bub">{m.text}</div></div>
+              : <div className="chat-a" key={i}><div className="chat-note">{m.text}</div></div>)}
+            {busy && <div className="chat-think"><span className="chat-mark chat-mark-pulse">{CHAT_MARK}</span>{L('MIKA is reading your report…')}</div>}
+            {err && <div className="chat-err">{L("Couldn't answer just now — try again")}</div>}
+          </div>
+          <div className="chat-foot">
+            {msgs.length === 0 && <div className="chat-chips">{CHAT_CHIPS.map((c, i) => <span className="chat-chip" key={i} onClick={()=>send(c)}>{L(c)}</span>)}</div>}
+            <div className="chat-inputrow">
+              <input value={q} onChange={e=>setQ(e.target.value)} placeholder={L('Ask in your own words…')} aria-label={L('Ask about your read')}
+                     onKeyDown={e=>{ if (e.key==='Enter') { e.preventDefault(); send(q); } }} />
+              <button className="chat-send" onClick={()=>send(q)} disabled={busy || !q.trim()} aria-label="Send">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function App() {
       const reduced = useReducedMotion();
       const { toasts, addToast } = useToast();
@@ -2790,6 +2884,9 @@
       const [lightbox, setLightbox] = useState(null);
       const [showAbout, setShowAbout] = useState(false);
       const [showConnect, setShowConnect] = useState(false);
+      const [chatOpen, setChatOpen] = useState(false);
+      const [chatAvail, setChatAvail] = useState(false);   // gate the trigger on the backend flag (MIKA_CHAT_ENABLED)
+      useEffect(() => { api.chatAvailability().then(d => setChatAvail(!!(d && d.enabled))).catch(()=>{}); }, []);
       const [checkingConn, setCheckingConn] = useState(false);
       const [authSession, setAuthSession] = useState(null);
       const [compareState, setCompareState] = useState(EMPTY_COMPARE);
@@ -3219,6 +3316,7 @@
             onHelp={()=>addToast('Need a hand? In the full app this opens help — for now, email the team.', 'success')} />
           <div className="canvas">
             <TopBar screen={view} connection={connection} vm={effVm} progress={dm?demoProgress:job}
+              chatAvail={chatAvail && !dm} onAsk={()=>setChatOpen(true)}
               uiPrefs={uiPrefs} setUiPrefs={setUiPrefs} onDownload={onDownload}
               onConnect={()=>{ setShowConnect(true); checkConnection(); }} onNotify={onNotify} checking={checkingConn} />
             <div className="page">
@@ -3231,6 +3329,7 @@
             </div>
           </div>
           {showAbout && <AboutModal onClose={()=>setShowAbout(false)} />}
+          {chatOpen && !dm && job.id && <ChatDrawer jobId={job.id} onClose={()=>setChatOpen(false)} />}
           {showConnect && <ConnectModal connection={connection} authSession={authSession} checking={checkingConn}
             onConnect={()=>connectClaude('browser')} onUseCode={()=>retryAuth('code')} onSubmitCode={submitAuthCode}
             onRetry={()=>retryAuth('browser')} onCancel={cancelAuth} onRecheck={checkConnection}
