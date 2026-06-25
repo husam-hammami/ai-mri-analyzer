@@ -33,6 +33,7 @@
       /* ── Single accent (the ONLY hue) ── */
       --accent:        #2563EB;
       --accent-strong: #1D4ED8;
+      --accent-on-dark:#5B8DEF;   /* same hue, lifted for legibility on deep navy */
       --accent-soft:   rgba(37, 99, 235, 0.10);
       --accent-softer: rgba(37, 99, 235, 0.05);
       --accent-line:   rgba(37, 99, 235, 0.28);
@@ -674,8 +675,70 @@
     .modal-x { background:none; border:none; font-size:24px; line-height:1; color: var(--slate-300); cursor:pointer; }
     .modal-body { padding: 0 var(--s-6) var(--s-6); }
     .founder-note { font-size:14px; line-height:1.7; color: var(--slate); white-space:pre-line; }
-    .founder-note .sig { display:block; margin-top: var(--s-4); font-weight:600; color: var(--ink); }
-    .founder-photo { width:64px; height:64px; border-radius: var(--r-md); object-fit:cover; margin-bottom: var(--s-4); }
+
+    /* ── About · "From the Creator" (dark Reading Room band) ── */
+    .modal-about {
+      position: relative;
+      background:
+        radial-gradient(120% 95% at 16% 10%, #182a52 0%, rgba(24,42,82,0) 56%),
+        linear-gradient(165deg, #0c1426 0%, #0a0f1d 58%, #080c17 100%);
+      border: 1px solid rgba(255,255,255,0.07);
+      max-width: 980px;
+      max-height: 94vh;          /* sizes to content; never taller than the viewport */
+      display: flex; flex-direction: column;
+    }
+    .about-x {
+      position: absolute; top: 18px; right: 20px; z-index: 2;
+      width: 36px; height: 36px; border-radius: 50%;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+      color: var(--on-navy-dim); font-size: 20px; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+    }
+    .about-x:hover { background: rgba(255,255,255,0.12); color: var(--on-navy); }
+    /* no inner scroll: the band + note are sized to fit one screen (modal clips as a last resort, never scrolls) */
+    .about-scroll { overflow: hidden; padding: clamp(28px, 3vw, 46px); }
+
+    .about-band { display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: clamp(28px, 3.4vw, 52px); align-items: center; }
+    .about-photo-wrap { position: relative; animation: fadeUp var(--duration-slow) var(--ease-out) both; }
+    .about-photo-wrap::before {
+      content: ""; position: absolute; inset: -13%;
+      background: radial-gradient(58% 58% at 50% 38%, var(--accent-glow), transparent 72%);
+      filter: blur(8px); z-index: 0;
+    }
+    .about-photo {
+      position: relative; z-index: 1; display: block;
+      width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 20px;
+      border: 1px solid rgba(255,255,255,0.10);
+      box-shadow: 0 18px 50px rgba(0,0,0,0.45), inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+    .about-copy { min-width: 0; }
+    .about-copy > * { animation: fadeUp var(--duration-slow) var(--ease-out) both; }
+    .about-copy > *:nth-child(1) { animation-delay: 60ms; }
+    .about-copy > *:nth-child(2) { animation-delay: 130ms; }
+    .about-copy > *:nth-child(3) { animation-delay: 200ms; }
+    .about-eyebrow {
+      font-size: 12.5px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--accent-on-dark); margin-bottom: 18px;
+    }
+    .about-headline {
+      font-size: clamp(30px, 3.4vw, 44px); line-height: 1.12; font-weight: 700;
+      letter-spacing: -0.012em; color: #fff; margin: 0 0 22px;
+      overflow-wrap: break-word; text-wrap: balance;
+    }
+    .about-headline .accent { color: var(--accent-on-dark); }
+    .about-name { font-size: 17px; font-weight: 700; color: #fff; }
+    .about-role {
+      font-size: 12px; font-weight: 600; letter-spacing: 0.16em; text-transform: uppercase;
+      color: var(--on-navy-dim); margin-top: 4px;
+    }
+    .about-rule { height: 1px; background: rgba(255,255,255,0.08); margin: clamp(32px, 4vw, 48px) 0 28px; }
+    .about-story { font-size: 15.5px; line-height: 1.8; color: #b7c2d6; white-space: pre-line; max-width: 64ch; }
+
+    @media (max-width: 760px) {
+      .about-band { grid-template-columns: 1fr; gap: 28px; }
+      .about-photo-wrap { max-width: 220px; }
+    }
 
     /* headings receive programmatic focus on screen change (a11y) but shouldn't show a ring */
     .home-title:focus, .wait-heading:focus, .read-bottom-line:focus, .eb-t:focus { outline: none; }
@@ -689,6 +752,30 @@
     @media (max-width: 1180px), (max-height: 720px) {
       html, body, #root, .shell { min-width:1180px; min-height:720px; }
     }
+
+    /* ── RTL (Arabic) — scoped overrides only; the LTR rules above are untouched (no English regression). ──
+       Flips the chrome's physical edges; the body figure, scan image and SVG markers are NOT mirrored
+       (their coordinate space is intrinsic — a flipped medical image would be a laterality defect). */
+    [dir="rtl"] body, [dir="rtl"] .topbar-title, [dir="rtl"] .field-label,
+    [dir="rtl"] .frow, [dir="rtl"] .recent-row, [dir="rtl"] .sb-item { text-align: right; }
+    [dir="rtl"] .sidebar { border-right: 0; border-left: 1px solid var(--line-navy); }
+    /* push-to-end spacers were margin-left:auto (LTR end = right); RTL end = left */
+    [dir="rtl"] .sb-soon-tag, [dir="rtl"] .cov-row .cov-dot, [dir="rtl"] .seq-active-dot,
+    [dir="rtl"] .seq-check, [dir="rtl"] .recent-date { margin-left: 0; margin-right: auto; }
+    [dir="rtl"] .tier-badge { margin-right: 0; margin-left: 6px; }
+    /* findings list: bullet + indent move to the right edge */
+    [dir="rtl"] .sec-block li { padding-left: 0; padding-right: var(--s-5); }
+    [dir="rtl"] .sec-block li::before { left: auto; right: 4px; }
+    /* accent rule on cards moves to the right (the RTL start edge) */
+    [dir="rtl"] .ref-review { border-left: 0; border-right: 3px solid var(--accent); }
+    [dir="rtl"] .ref-review.warn { border-left-color: var(--line); border-right-color: #ea580c; }
+    [dir="rtl"] .empty-banner, [dir="rtl"] .verify-banner { border-left-width: 1px; border-right: 3px solid var(--accent); }
+    /* mixed AR + Latin (L4-L5, 6 mm): resolve each line's direction from its own content */
+    [dir="rtl"] .proof-title, [dir="rtl"] .frow, [dir="rtl"] .sec-block li,
+    [dir="rtl"] .read-bottom-line, [dir="rtl"] .home-title, [dir="rtl"] .home-sub,
+    [dir="rtl"] .wait-heading, [dir="rtl"] .topbar-meta { unicode-bidi: plaintext; }
+    /* the AR/EN switch glyph */
+    .lang-toggle button { min-width: 30px; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -723,9 +810,143 @@
         seqTitle: 'Study sequences', seqPlaceholder: 'Sequences will appear here after the scan is organized.',
         progress: 'Study progress', overall: 'Study progress',
       },
+      about: {
+        eyebrow: 'From the Creator',
+        headlineLead: "I don't want anyone to feel this ", headlineAccent: 'lost.',
+        name: 'Husam Hammami', role: 'Creator · MIKA',
+        story: "After a cauda equina emergency and an S1 nerve injury, I spent close to a year mostly in bed or a wheelchair.\n\nI kept looking at my own scans and couldn't make sense of them. I built MIKA because I needed that clarity. It helped me understand things in my scans I had missed.\n\nIt's free. No one should face a frightening scan feeling alone.",
+      },
       privacy: { t:'Private by design', b:'Your scan is processed securely and is never shared.' },
       help: 'Need help?',
     };
+
+    // ── i18n: Arabic UI overlay (flag-dark; English is the source of truth, Arabic strings DRAFT) ──
+    // UI_LANG is set from uiPrefs.lang at the top of App's render so the whole tree re-renders in the
+    // active language. Any string without an AR entry falls back to English (chrome coverage is phased).
+    // Medical CONTENT is NOT translated here — it comes from the backend Arabic block (services/arabic).
+    let UI_LANG = 'en';
+    const AR_UI = {
+      'Clinical imaging intelligence':'ذكاء التصوير الطبي',
+      'From scan to clear answers.':'من الصورة إلى إجابات واضحة.',
+      'From scan to clear ':'من الصورة إلى ','answers':'إجابات',
+      'Upload an imaging study. MIKA will organize the images, measurements, and proof views into a clear read.':'ارفع دراسة تصويرية. ستنظّم MIKA الصور والقياسات وصور الإثبات في قراءة واضحة.',
+      'Upload an imaging study':'ارفع دراسة تصويرية',
+      'DICOM folders, ZIP files, or standard image formats':'مجلدات DICOM أو ملفات ZIP أو صيغ الصور الشائعة',
+      'Choose files':'اختر الملفات','Select DICOM folder':'اختر مجلد DICOM',
+      'scan ready':'دراسة جاهزة','Analysis coverage':'نطاق التحليل',
+      'Supported':'مدعوم','coming soon':'قريباً',
+      'Symptoms or reason for the scan (optional)':'الأعراض أو سبب الفحص (اختياري)',
+      'Read my scan':'اقرأ دراستي',
+      'Reading in progress':'القراءة جارية','Reading the study now.':'تجري قراءة الدراسة الآن.',
+      'Notify me when ready':'أبلغني عند الجهوزية',
+      'You can keep MIKA open while the read runs. Enable notifications if you want a desktop alert.':'يمكنك إبقاء MIKA مفتوحة أثناء القراءة. فعّل التنبيهات إن أردت إشعاراً على سطح المكتب.',
+      'Study sequences':'تسلسلات الدراسة',
+      'Sequences will appear here after the scan is organized.':'ستظهر التسلسلات هنا بعد تنظيم الدراسة.',
+      'Study progress':'تقدّم الدراسة',
+      'Private by design':'خصوصية بالتصميم',
+      'Your scan is processed securely and is never shared.':'تُعالَج دراستك بأمان ولا تُشارك أبداً.',
+      'Need help?':'تحتاج مساعدة؟',
+      'Read a new scan':'اقرأ دراسة جديدة','Recent scans':'الدراسات الأخيرة','Read complete':'اكتملت القراءة',
+      'Plain language':'لغة مبسّطة','Clinician':'للطبيب',
+      'Download report':'تنزيل التقرير','Download clinical report':'تنزيل التقرير السريري',
+      'Sign in with Claude':'تسجيل الدخول عبر Claude','Checking sign-in…':'جارٍ التحقق…',
+      'What this may mean':'ما الذي قد يعنيه هذا','Change over time':'التغيّر عبر الزمن',
+      'Findings':'النتائج','Notes':'ملاحظات',
+      'Confirmed':'مؤكَّد','Likely':'مُرجَّح','Possible':'محتمل',
+      'Home':'الرئيسية','New scan':'دراسة جديدة','About MIKA':'عن MIKA','Your Read':'قراءتك',
+      // About modal — founder's personal voice; DRAFT Arabic, should be reviewed/voiced by Husam himself
+      'From the Creator':'من المُنشئ',
+      "I don't want anyone to feel this ":'لا أريد لأحد أن يشعر بهذا ','lost.':'الضياع.',
+      'Husam Hammami':'حسام الحمامي','Creator · MIKA':'المُنشئ · MIKA',
+      "After a cauda equina emergency and an S1 nerve injury, I spent close to a year mostly in bed or a wheelchair.\n\nI kept looking at my own scans and couldn't make sense of them. I built MIKA because I needed that clarity. It helped me understand things in my scans I had missed.\n\nIt's free. No one should face a frightening scan feeling alone.":'بعد حالة طارئة في ذيل الفرس وإصابة في العصب S1، أمضيتُ قرابة عام معظمه بين السرير والكرسي المتحرك.\n\nكنت أنظر إلى صوري الطبية دون أن أفهمها. بنيتُ MIKA لأنني احتجتُ إلى هذا الوضوح. ساعدتني على فهم أمورٍ في صوري كنت قد أغفلتها.\n\nهي مجانية. لا ينبغي لأحدٍ أن يواجه صورةً مُخيفة وهو يشعر بالوحدة.',
+      'Reading the scan':'جارٍ قراءة الدراسة','Findings by tier':'النتائج حسب الدرجة',
+      'Ask your doctor about':'اسأل طبيبك عن','View technical detail':'عرض التفاصيل التقنية',
+      'Front':'أمام','Back':'خلف',
+      // Home — coverage rail, caption, disclaimer, anatomy labels (also reused as Wait "Region" values)
+      'The areas I can read, at a glance.':'المناطق التي يمكنني قراءتها، بلمحة.',
+      'MIKA supports clinical review and does not replace professional diagnosis.':'تدعم MIKA المراجعة السريرية ولا تحل محل التشخيص المهني.',
+      'e.g. lower-back pain radiating down the left leg':'مثال: ألم أسفل الظهر يمتد إلى الساق اليسرى',
+      'Brain':'الدماغ','Spine':'العمود الفقري','Head & Neck':'الرأس والرقبة','Head & neck':'الرأس والرقبة',
+      'Chest':'الصدر','Cardiac':'القلب','Vascular':'الأوعية الدموية','Abdomen (liver · kidney)':'البطن (الكبد · الكلية)',
+      'Abdomen':'البطن','Breast':'الثدي','Prostate':'البروستاتا','Musculoskeletal':'العضلي الهيكلي',
+      'file':'ملف','files':'ملفات','ready':'جاهز','slices':'مقاطع','images':'صورة',
+      // Sidebar footer + wait reassurance
+      'Connect to Claude':'الاتصال بـ Claude','Connected to Claude':'متصل بـ Claude',
+      'Careful reads take time.':'القراءة الدقيقة تستغرق وقتاً.',
+      'MIKA is checking the study step by step and keeping proof images with the result.':'تفحص MIKA الدراسة خطوة بخطوة وتحتفظ بصور الإثبات مع النتيجة.',
+      // Wait — phases, facts, status
+      'Prepare':'التحضير','Map':'التحديد','Read':'القراءة','Review':'المراجعة',
+      'Prepared':'تم التحضير','Mapped':'تم التحديد','Reviewed':'تمت المراجعة',
+      'Region':'المنطقة','Modality':'النوع','Sequences':'التسلسلات','Images':'الصور',
+      'Ultrasound':'الموجات فوق الصوتية','Mammography':'تصوير الثدي','Angiography':'تصوير الأوعية','Nuclear medicine':'الطب النووي',
+      'Organizing images and measurements':'تنظيم الصور والقياسات',
+      'Level map':'خريطة المستويات','Latest view':'أحدث عرض','READING':'جارٍ القراءة',
+      'Finishing the final checks':'إنهاء الفحوصات الأخيرة',
+      'sagittal':'سهمي','axial':'محوري','coronal':'إكليلي','oblique':'مائل',
+      // Recent
+      'Reports saved on this PC. Open a previous read or start a new one.':'التقارير المحفوظة على هذا الجهاز. افتح قراءة سابقة أو ابدأ واحدة جديدة.',
+      'No scans yet.':'لا توجد دراسات بعد.','Once you read a scan it will appear here.':'بمجرد قراءة دراسة ستظهر هنا.',
+      'Reference-assisted review':'مراجعة مُسانَدة بمرجع','Scan':'دراسة',
+      // Read — proof / empty / confidence
+      'Proof image unavailable for this finding.':'صورة الإثبات غير متوفرة لهذه النتيجة.',
+      'No flagged findings':'لا توجد نتائج مميّزة',
+      'MIKA did not identify a significant abnormality to pin in this read. Treat this as an AI-assisted screen, not a diagnosis.':'لم تحدّد MIKA أي خلل ملحوظ في هذه القراءة. اعتبر هذا فحصاً مدعوماً بالذكاء الاصطناعي، وليس تشخيصاً.',
+      'What MIKA found':'ما وجدته MIKA','Confidence':'درجة الثقة',
+      'What still matters':'ما الذي لا يزال مهماً','Study context':'سياق الدراسة','Read summary':'ملخّص القراءة',
+      'High':'عالية','Moderate':'متوسطة','Low':'منخفضة','Imaging':'تصوير','Study':'دراسة',
+      'No finding met the threshold for a pinned abnormality in this automated read.':'لم تبلغ أي نتيجة عتبة التمييز كخلل في هذه القراءة الآلية.',
+      'This does not replace the official radiology report or your clinician review.':'هذا لا يحل محل التقرير الإشعاعي الرسمي أو مراجعة طبيبك.',
+      'Review the official report and symptoms with a qualified clinician.':'راجع التقرير الرسمي والأعراض مع طبيب مختص.',
+      // Read — confidence pill, note, disclaimer banner (production note/disclaimer arrive already-Arabic from the backend)
+      'Read confidence:':'درجة ثقة القراءة:','Important:':'هام:',
+      'MIKA is an AI assistant and does not replace a doctor. Review all findings with a qualified clinician.':'MIKA مساعد بالذكاء الاصطناعي ولا يحل محل الطبيب. راجع جميع النتائج مع طبيب مختص.',
+      'MIKA is an AI assistant and does not replace a doctor. All findings should be reviewed by a qualified clinician.':'MIKA مساعد بالذكاء الاصطناعي ولا يحل محل الطبيب. يجب مراجعة جميع النتائج من قبل طبيب مختص.',
+      'Confirmed across more than one view.':'مؤكَّد عبر أكثر من عرض.','Seen on more than one sequence.':'شوهد في أكثر من تسلسل.',
+      'Clearly seen across views.':'واضح عبر العروض.','Seen on more than one view.':'شوهد في أكثر من عرض.',
+      'Limited by image quality in places.':'محدود بجودة الصورة في بعض المواضع.','Based on the available images.':'بناءً على الصور المتاحة.',
+      'No significant abnormality was flagged on this automated read.':'لم يُسجَّل أي خلل ملحوظ في هذه القراءة الآلية.',
+      "A body map isn't available for this scan — the findings and proof images below are the full read.":'خريطة الجسم غير متوفرة لهذه الدراسة — النتائج وصور الإثبات أدناه هي القراءة الكاملة.',
+      'Annotated proof image, enlarged':'صورة إثبات موضّحة، مكبّرة',
+      // Compare panel
+      'Compare with my report':'قارن مع تقريري',
+      'Upload your radiology report or paste its text. MIKA will compare it with the independent image read without changing the read.':'ارفع تقريرك الإشعاعي أو الصق نصه. ستقارنه MIKA مع القراءة المستقلة للصور دون تغيير القراءة.',
+      'Change report file':'تغيير ملف التقرير','Upload report PDF':'رفع تقرير PDF',
+      'Or paste the report text here.':'أو الصق نص التقرير هنا.','Retry comparison':'إعادة المقارنة',
+      'Comparing…':'جارٍ المقارنة…','Comparing...':'جارٍ المقارنة…','Clear':'مسح',
+      "Extracting the report and comparing it with MIKA's independent read...":'استخراج التقرير ومقارنته بقراءة MIKA المستقلة…',
+      'Comparison complete. The reference-assisted review is shown below.':'اكتملت المقارنة. تظهر المراجعة المُسانَدة بمرجع أدناه.',
+      'Comparison cancelled. Your blind read was not changed.':'أُلغيت المقارنة. لم تتغيّر قراءتك العمياء.',
+      'Reference-assisted review added':'تمت إضافة مراجعة مُسانَدة بمرجع',
+      'Discrepancy flagged':'تم وضع علامة على تباين','Compared':'تمت المقارنة',
+      'Focused evidence review':'مراجعة الأدلة المركّزة','Reviewed':'تمت المراجعة','Focused review':'مراجعة مركّزة',
+      // Connect modal
+      'Signed in with Claude':'تم تسجيل الدخول عبر Claude','Sign in with your Claude subscription':'سجّل الدخول باشتراك Claude الخاص بك',
+      'Continue':'متابعة','Cancel':'إلغاء','Submit':'إرسال','Retry':'إعادة المحاولة',
+      'MIKA reads through the Claude account signed in on this PC. No API key is needed.':'تقرأ MIKA عبر حساب Claude المسجّل على هذا الجهاز. لا حاجة لمفتاح API.',
+      'A browser window opens for Claude sign-in.':'ستُفتح نافذة متصفّح لتسجيل الدخول إلى Claude.',
+      'Use the Claude subscription you already pay for.':'استخدم اشتراك Claude الذي تدفع مقابله بالفعل.',
+      'Waiting for sign-in…':'بانتظار تسجيل الدخول…','Paste Claude code':'الصق رمز Claude',
+      'Use pasted-code sign-in':'استخدم تسجيل الدخول برمز ملصق','Already signed in? Re-check':'مسجّل الدخول بالفعل؟ أعد الفحص',
+      'MIKA needs Claude sign-in to read your images. It is an AI assistant and does not replace a doctor; all findings should be reviewed by a qualified clinician.':'تحتاج MIKA إلى تسجيل الدخول إلى Claude لقراءة صورك. وهي مساعد بالذكاء الاصطناعي ولا تحل محل الطبيب؛ ويجب مراجعة جميع النتائج من قبل طبيب مختص.',
+      // Toasts / banners
+      'Could not start sign-in.':'تعذّر بدء تسجيل الدخول.','Could not reach the app service.':'تعذّر الوصول إلى خدمة التطبيق.',
+      'Could not restart sign-in.':'تعذّر إعادة بدء تسجيل الدخول.','Could not submit the sign-in code.':'تعذّر إرسال رمز تسجيل الدخول.',
+      'MIKA could not find a supported scan. Upload DICOM, NIfTI, NRRD, images, or a ZIP.':'لم تجد MIKA دراسة مدعومة. ارفع DICOM أو NIfTI أو NRRD أو صوراً أو ملف ZIP.',
+      'We lost track of this scan — please upload again.':'فقدنا تتبّع هذه الدراسة — يرجى الرفع مرة أخرى.',
+      'Could not start the read.':'تعذّر بدء القراءة.','Could not reach the app service to resume your scan.':'تعذّر الوصول إلى خدمة التطبيق لاستئناف دراستك.',
+      'Upload a report PDF/text file or paste report text first.':'ارفع ملف تقرير PDF/نصي أو الصق نص التقرير أولاً.',
+      'Could not compare the report.':'تعذّرت مقارنة التقرير.',
+      "Arabic translation isn't ready yet — showing the report in English.":'ترجمة العربية غير جاهزة بعد — يُعرض التقرير بالإنجليزية.',
+      // Clinician detail — section headers + human labels (deep CV-audit diagnostics stay technical English)
+      'Verification':'التحقق','Technical findings':'النتائج التقنية','Audit corrections':'تصحيحات التدقيق',
+      'Limited clinician detail for this run.':'تفاصيل سريرية محدودة لهذه القراءة.',
+      'Tier':'الدرجة','Quality':'الجودة','Clinical PDF':'PDF السريري','Enlarge':'تكبير',
+      'passed':'ناجح','issues flagged':'مشاكل مرصودة','not run':'لم يُجرَ',
+      'This run did not include a pinned proof image for the selected finding.':'لم تتضمّن هذه القراءة صورة إثبات مثبّتة للنتيجة المحددة.',
+    };
+    // Translate a UI chrome string (English fallback). NOT for medical content.
+    function L(s){ return UI_LANG === 'ar' && AR_UI[s] != null ? AR_UI[s] : s; }
+    const UI_LANG_KEY = 'mika.lang.v1';
 
     // Phase tracker (§7.3) — threshold-driven within agent's `interpreting`
     const PHASES = [
@@ -996,7 +1217,7 @@
       const [toasts, setToasts] = useState([]);
       const addToast = useCallback((message, type='success') => {
         const id = ++toastId;
-        setToasts(p => [...p, { id, message, type }]);
+        setToasts(p => [...p, { id, message: L(message), type }]);  // static toasts localize; dynamic fall back to English
         setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 4500);
       }, []);
       return { toasts, addToast };
@@ -1019,7 +1240,8 @@
         return data;
       },
       status: (id) => fetch(`${API_BASE}/api/status/${id}`, { cache:'no-store' }),
-      report: (id) => fetch(`${API_BASE}/api/report/${id}`, { cache:'no-store' }),
+      report: (id, lang) => fetch(`${API_BASE}/api/report/${id}${lang==='ar'?'?lang=ar':''}`, { cache:'no-store' }),
+      generateArabic: (id) => fetch(`${API_BASE}/api/report/${id}/ar`, { method:'POST' }).then(r => r.ok ? r.json() : { status:'error' }).catch(() => ({ status:'error' })),
       reports: () => fetch(`${API_BASE}/api/reports`, { cache:'no-store' }).then(r => r.ok ? r.json() : { reports:[] }).catch(() => ({ reports:[] })),
       sequences: (id) => fetch(`${API_BASE}/api/study/${id}/sequences`, { cache:'no-store' }).then(r => r.ok ? r.json() : { sequences:[] }).catch(() => ({ sequences:[] })),
     };
@@ -1208,13 +1430,17 @@
       if (mode === 'agent' && patient) {
         const conf = patient.confidence || {};
         const findings = (patient.findings || []).map((f, i) => {
-          const certainty = ['Confirmed','Likely','Possible'].includes(f.certainty) ? f.certainty : 'Possible';
+          // Arabic block carries the English tier in `certainty_key` (logic/color/glyph stay English-keyed);
+          // `certainty` is then the Arabic display word shown in the chip. English reports have no key.
+          const key = f.certainty_key || f.certainty;
+          const certainty = ['Confirmed','Likely','Possible'].includes(key) ? key : 'Possible';
+          const certaintyLabel = f.certainty_key ? f.certainty : null;
           const loc = trustAllowsMarker(f) ? parseLandmark(anatomy, f.plain, f.caption) : null;
           return {
             id: `finding-${i}`,
             sourceIndex: i,
             plainSentence: stripTier(f.plain || ''),
-            certainty,
+            certainty, certaintyLabel,
             caption: stripTier(f.caption || ''),
             proofImageUrl: trustedFigure(report.job_id, f),
             location: loc ? { label: loc } : null,
@@ -1354,13 +1580,15 @@
       if (certainty === 'Likely') return <svg className="glyph" viewBox="0 0 12 12"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" strokeWidth="1.4"/><path d="M6 1 A5 5 0 0 1 6 11 Z" fill="currentColor"/></svg>;
       return <svg className="glyph" viewBox="0 0 12 12"><circle cx="6" cy="6" r="4.6" fill="none" stroke="currentColor" strokeWidth="1.4"/></svg>;
     }
-    function CertaintyChip({ certainty }) {
+    function CertaintyChip({ certainty, label }) {
       const cls = certainty === 'Confirmed' ? 'confirmed' : certainty === 'Likely' ? 'likely' : 'possible';
-      return <span className={`cchip ${cls}`}><CertaintyGlyph certainty={certainty} />{certainty}</span>;
+      // glyph + class stay keyed on the English tier; the visible word is the Arabic label when present,
+      // else the localized English word (L() so a non-AR-block report still reads in the active language).
+      return <span className={`cchip ${cls}`}><CertaintyGlyph certainty={certainty} />{label || L(certainty)}</span>;
     }
     function ConfidencePill({ label, score }) {
       const cls = label === 'High' ? 'high' : label === 'Low' ? 'low' : 'moderate';
-      return <span className={`opill ${cls}`}><span className="dot" />Read confidence: {label}{typeof score === 'number' ? ` · ${Math.round(score)}%` : ''}</span>;
+      return <span className={`opill ${cls}`}><span className="dot" />{L('Read confidence:')} {L(label)}{typeof score === 'number' ? ` · ${Math.round(score)}%` : ''}</span>;
     }
     function ProgressBar({ value, reduced }) {
       const w = Math.max(0, Math.min(100, value || 0));
@@ -1485,17 +1713,17 @@
             </picture>
           </div>
           <nav className="sb-nav">
-            {navItem('home', I.home, onHome ? 'Home' : 'New scan', onHome, () => onNav('new'))}
-            {hasJob && navItem('current', I.reading, screen==='wait' ? 'Reading the scan' : 'Your Read', onCurrent, () => onNav('current'))}
-            {navItem('recent', I.stack, 'Recent scans', route==='recent', () => onNav('recent'))}
-            {navItem('about', I.info, 'About MIKA', false, onAbout)}
+            {navItem('home', I.home, onHome ? L('Home') : L('New scan'), onHome, () => onNav('new'))}
+            {hasJob && navItem('current', I.reading, screen==='wait' ? L('Reading the scan') : L('Your Read'), onCurrent, () => onNav('current'))}
+            {navItem('recent', I.stack, L('Recent scans'), route==='recent', () => onNav('recent'))}
+            {navItem('about', I.info, L('About MIKA'), false, onAbout)}
           </nav>
           <div className="sb-spacer" />
           <div className="sb-foot">
             {screen === 'wait' && (
               <div className="sb-reassure">
-                <div className="sb-reassure-t">Careful reads take time.</div>
-                <div className="sb-reassure-b">MIKA is checking the study step by step and keeping proof images with the result.</div>
+                <div className="sb-reassure-t">{L('Careful reads take time.')}</div>
+                <div className="sb-reassure-b">{L('MIKA is checking the study step by step and keeping proof images with the result.')}</div>
               </div>
             )}
             {/* Connection to the user's own Claude subscription — the only sign-in MIKA needs. */}
@@ -1503,14 +1731,14 @@
               title={connected ? 'Connected to your Claude subscription' : 'Connect MIKA to your Claude subscription'}>
               <span className={`sb-conn-dot ${connected?'ok':''}`} />
               <span className="sb-conn-txt">
-                {connected ? `Connected to Claude${sub ? ' · '+String(sub).toUpperCase() : ''}` : 'Connect to Claude'}
+                {connected ? `${L('Connected to Claude')}${sub ? ' · '+String(sub).toUpperCase() : ''}` : L('Connect to Claude')}
               </span>
             </button>
             <div className="sb-privacy">
               {I.shield({})}
-              <div><div className="sb-privacy-t">{COPY.privacy.t}</div><div className="sb-privacy-b">{COPY.privacy.b}</div></div>
+              <div><div className="sb-privacy-t">{L(COPY.privacy.t)}</div><div className="sb-privacy-b">{L(COPY.privacy.b)}</div></div>
             </div>
-            <button className="sb-link" style={{display:'flex'}} onClick={onHelp}>{I.bell({ width:14, height:14 })} Need help?</button>
+            <button className="sb-link" style={{display:'flex'}} onClick={onHelp}>{I.bell({ width:14, height:14 })} {L('Need help?')}</button>
           </div>
         </aside>
       );
@@ -1545,12 +1773,12 @@
       }, []);
       return (
         <div className="page-inner page-route fade-up">
-          <h1 className="route-title">Recent scans</h1>
-          <p className="route-sub">Reports saved on this PC. Open a previous read or start a new one.</p>
+          <h1 className="route-title">{L('Recent scans')}</h1>
+          <p className="route-sub">{L('Reports saved on this PC. Open a previous read or start a new one.')}</p>
           {items.length === 0 ? (
             <div className="empty-banner">
-              <div className="eb-t">No scans yet.</div>
-              <div className="eb-b">Once you read a scan it will appear here. <button className="clin-link" style={{padding:0}} onClick={onNew}>Read a new scan</button></div>
+              <div className="eb-t">{L('No scans yet.')}</div>
+              <div className="eb-b">{L('Once you read a scan it will appear here.')} <button className="clin-link" style={{padding:0}} onClick={onNew}>{L('Read a new scan')}</button></div>
             </div>
           ) : (
             <div className="recent-list">
@@ -1561,8 +1789,8 @@
                               : I.reading({ width:18, height:18 })}
                   </span>
                   <span className="recent-name">
-                    {it.label || 'Scan'}{it.modality ? <span className="recent-meta"> - {it.modality}</span> : null}
-                    {it.referenceReview ? <span className="recent-ref">Reference-assisted review</span> : null}
+                    {it.label || L('Scan')}{it.modality ? <span className="recent-meta"> - {it.modality}</span> : null}
+                    {it.referenceReview ? <span className="recent-ref">{L('Reference-assisted review')}</span> : null}
                   </span>
                   <span className="recent-date">{it.date ? new Date(it.date).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
                 </button>
@@ -1574,13 +1802,21 @@
     }
 
     function TopBar({ screen, connection, vm, progress, uiPrefs, setUiPrefs, onDownload, onConnect, onNotify, checking }) {
+      // AR ⇄ EN language switch — available on every screen; merges into uiPrefs so `view` is preserved.
+      const langToggle = (
+        <div className="toggle lang-toggle" role="group" aria-label="Language">
+          <button className={uiPrefs.lang!=='ar'?'on':''} onClick={()=>setUiPrefs(p=>({...p, lang:'en'}))} aria-label="English">EN</button>
+          <button className={uiPrefs.lang==='ar'?'on':''} onClick={()=>setUiPrefs(p=>({...p, lang:'ar'}))} aria-label="العربية" lang="ar">ع</button>
+        </div>
+      );
       if (screen === 'recent') {
         return (
           <div className="topbar">
             <div className="topbar-l">
               <button className="topbar-back" onClick={() => window.history.back()} title="Back" aria-label="Back">{I.chevL ? I.chevL({}) : '‹'}</button>
-              <span className="topbar-title">Recent scans</span>
+              <span className="topbar-title">{L('Recent scans')}</span>
             </div>
+            <div className="topbar-r">{langToggle}</div>
           </div>
         );
       }
@@ -1589,13 +1825,14 @@
       if (screen === 'home') {
         return (
           <div className="topbar">
-            <div className="topbar-l"><span className="topbar-title">Read a new scan</span></div>
+            <div className="topbar-l"><span className="topbar-title">{L('Read a new scan')}</span></div>
             <div className="topbar-r">
               {connected ? (
-                <span className="conn-pill"><span className="conn-dot" />Connected to Claude{plan && plan!=='api' ? ` · ${String(plan).toUpperCase()}` : ''}</span>
+                <span className="conn-pill"><span className="conn-dot" />{L('Connected to Claude')}{plan && plan!=='api' ? ` · ${String(plan).toUpperCase()}` : ''}</span>
               ) : (
-                <button className="btn btn-primary btn-sm" onClick={onConnect}>{I.mark({ width:14, height:14 })} {checking ? 'Checking sign-in…' : 'Sign in with Claude'}</button>
+                <button className="btn btn-primary btn-sm" onClick={onConnect}>{I.mark({ width:14, height:14 })} {checking ? L('Checking sign-in…') : L('Sign in with Claude')}</button>
               )}
+              {langToggle}
             </div>
           </div>
         );
@@ -1604,29 +1841,30 @@
         const eta = progress && progress.eta_seconds != null ? Math.max(1, Math.ceil(progress.eta_seconds/60)) : null;
         return (
           <div className="topbar">
-            <div className="topbar-l stacked"><span className="topbar-title">{COPY.wait.topbar}</span>
-              {eta && <span className="topbar-meta">about {eta} min left</span>}</div>
-            <div className="topbar-r"><button className="btn btn-ghost btn-sm" onClick={onNotify}>{I.bell({width:15,height:15})} {COPY.wait.leaveBtn}</button></div>
+            <div className="topbar-l stacked"><span className="topbar-title">{L(COPY.wait.topbar)}</span>
+              {eta && <span className="topbar-meta">{UI_LANG==='ar' ? `متبقٍ ${eta} دقيقة تقريباً` : `about ${eta} min left`}</span>}</div>
+            <div className="topbar-r"><button className="btn btn-ghost btn-sm" onClick={onNotify}>{I.bell({width:15,height:15})} {L(COPY.wait.leaveBtn)}</button>{langToggle}</div>
           </div>
         );
       }
       // read
       const s = (vm && vm.study) || {};
-      const line = [s.body_part, s.modality, s.date].filter(Boolean).join(' · ') || 'Your Read';
+      const line = [s.body_part, s.modality, s.date].filter(Boolean).join(' · ') || L('Your Read');
       const clinicianView = uiPrefs && uiPrefs.view === 'clinician';
       const reportKind = clinicianView ? 'clinical' : 'patient';
       const canDownload = !!(vm && (clinicianView ? vm.clinicalPdfAvailable : vm.pdfAvailable));
-      const downloadLabel = clinicianView ? 'Download clinical report' : 'Download report';
+      const downloadLabel = clinicianView ? L('Download clinical report') : L('Download report');
       return (
         <div className="topbar">
           <div className="topbar-l stacked">
             <span className="topbar-title">{line}</span>
-            <span className="topbar-meta">Read complete{vm && vm.referenceReview && vm.referenceReview.used ? ' - Reference-assisted review' : ''}</span>
+            <span className="topbar-meta">{L('Read complete')}{vm && vm.referenceReview && vm.referenceReview.used ? ' - Reference-assisted review' : ''}</span>
           </div>
           <div className="topbar-r">
+            {langToggle}
             <div className="toggle">
-              <button className={uiPrefs.view==='plain'?'on':''} onClick={()=>setUiPrefs({view:'plain'})}>Plain language</button>
-              <button className={uiPrefs.view==='clinician'?'on':''} onClick={()=>setUiPrefs({view:'clinician'})}>Clinician</button>
+              <button className={uiPrefs.view==='plain'?'on':''} onClick={()=>setUiPrefs(p=>({...p, view:'plain'}))}>{L('Plain language')}</button>
+              <button className={uiPrefs.view==='clinician'?'on':''} onClick={()=>setUiPrefs(p=>({...p, view:'clinician'}))}>{L('Clinician')}</button>
             </div>
             <button className="btn btn-primary btn-sm" onClick={()=>onDownload(reportKind)} disabled={vm && !canDownload}>{I.download({width:15,height:15})} {downloadLabel}</button>
           </div>
@@ -1635,17 +1873,30 @@
     }
 
     function AboutModal({ onClose }) {
-      const note = "MIKA started from something deeply personal.\n\nAfter a cauda equina emergency, two spine surgeries, failed back surgery syndrome, and an S1 nerve injury, I spent nearly a year mostly between my bed and a wheelchair.\n\nBut the hardest part was not only the pain. It was looking at scan after scan of my own body and not understanding what they meant, what mattered, or what I should ask next.\n\nI built MIKA because I needed clarity. It helped me understand details in my imaging that changed the direction of my treatment.\n\nThe goal is simple: help patients and clinicians review imaging evidence with less confusion, while keeping radiologists and doctors at the center.\n\nMIKA is free because no one should have to face a frightening scan feeling confused and alone.";
+      const a = COPY.about;
       return (
         <div className="overlay" onClick={onClose}>
-          <div className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="About MIKA">
-            <div className="modal-head"><h2>Why I built MIKA</h2><button className="modal-x" onClick={onClose} aria-label="Close">×</button></div>
-            <div className="modal-body">
-              <picture>
-                <source srcSet="/assets/brand/founder-husam.webp" type="image/webp" />
-                <img className="founder-photo" src="/assets/brand/founder-husam.png" alt="Husam Hammami" />
-              </picture>
-              <p className="founder-note">{note}<span className="sig">— Husam Hammami, Founder</span></p>
+          <div className="modal modal-about" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="About MIKA — from the creator">
+            <button className="about-x" onClick={onClose} aria-label="Close">×</button>
+            <div className="about-scroll">
+              <div className="about-band">
+                <div className="about-photo-wrap">
+                  <picture>
+                    <source srcSet="/assets/brand/founder-husam.webp?v=2" type="image/webp" />
+                    <img className="about-photo" src="/assets/brand/founder-husam.png?v=2" alt="Husam Hammami, creator of MIKA" />
+                  </picture>
+                </div>
+                <div className="about-copy">
+                  <div className="about-eyebrow">{L(a.eyebrow)}</div>
+                  <h2 className="about-headline">{L(a.headlineLead)}<span className="accent">{L(a.headlineAccent)}</span></h2>
+                  <div className="about-attrib">
+                    <div className="about-name">{L(a.name)}</div>
+                    <div className="about-role">{L(a.role)}</div>
+                  </div>
+                </div>
+              </div>
+              <div className="about-rule"></div>
+              <p className="about-story">{L(a.story)}</p>
             </div>
           </div>
         </div>
@@ -1664,50 +1915,52 @@
         <div className="overlay" onClick={onClose}>
           <div className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Sign in with Claude">
             <div className="modal-head">
-              <h2>{connected ? 'Signed in with Claude' : 'Sign in with your Claude subscription'}</h2>
+              <h2>{connected ? L('Signed in with Claude') : L('Sign in with your Claude subscription')}</h2>
               <button className="modal-x" onClick={onClose} aria-label="Close">×</button>
             </div>
             <div className="modal-body">
               {connected ? (
                 <>
                   <p className="founder-note" style={{marginBottom:'18px'}}>
-                    Claude is connected{plan && plan!=='api' ? ` (${String(plan).toUpperCase()} plan)` : ''}. You can upload a scan and start a read.
+                    {UI_LANG==='ar'
+                      ? `تم الاتصال بـ Claude${plan && plan!=='api' ? ` (خطة ${String(plan).toUpperCase()})` : ''}. يمكنك رفع دراسة وبدء القراءة.`
+                      : `Claude is connected${plan && plan!=='api' ? ` (${String(plan).toUpperCase()} plan)` : ''}. You can upload a scan and start a read.`}
                   </p>
-                  <button className="btn btn-primary" style={{width:'100%'}} onClick={onClose}>Continue</button>
+                  <button className="btn btn-primary" style={{width:'100%'}} onClick={onClose}>{L('Continue')}</button>
                 </>
               ) : (
                 <>
                   <p className="founder-note" style={{marginBottom:'10px'}}>
-                    MIKA reads through the Claude account signed in on this PC. No API key is needed.
+                    {L('MIKA reads through the Claude account signed in on this PC. No API key is needed.')}
                   </p>
                   <ul style={{fontSize:'13px', lineHeight:1.7, color:'var(--slate)', paddingLeft:'18px', margin:'0 0 16px'}}>
-                    <li>A browser window opens for Claude sign-in.</li>
-                    <li>Use the Claude subscription you already pay for.</li>
+                    <li>{L('A browser window opens for Claude sign-in.')}</li>
+                    <li>{L('Use the Claude subscription you already pay for.')}</li>
                   </ul>
                   <div style={{display:'flex', gap:'10px'}}>
                     <button className="btn btn-primary" style={{flex:1}} disabled={checking} onClick={onConnect}>
-                      {checking ? 'Waiting for sign-in…' : 'Sign in with Claude'}
+                      {checking ? L('Waiting for sign-in…') : L('Sign in with Claude')}
                     </button>
-                    <button className="btn btn-ghost" disabled={!authSession || checking} onClick={onCancel}>Cancel</button>
+                    <button className="btn btn-ghost" disabled={!authSession || checking} onClick={onCancel}>{L('Cancel')}</button>
                   </div>
                   {(msg || state) && <p style={{fontSize:'12px', color:'var(--slate)', margin:'10px 0 0'}}>{msg || state}</p>}
                   {err && <p style={{fontSize:'12px', color:'var(--danger)', margin:'10px 0 0'}}>{err}</p>}
                   {needsCode && (
                     <form style={{display:'flex', gap:'8px', marginTop:'12px'}} onSubmit={e=>{ e.preventDefault(); onSubmitCode(code); }}>
-                      <input value={code} onChange={e=>setCode(e.target.value)} placeholder="Paste Claude code" aria-label="Claude sign-in code"
+                      <input value={code} onChange={e=>setCode(e.target.value)} placeholder={L('Paste Claude code')} aria-label="Claude sign-in code"
                         style={{flex:1, minWidth:0, border:'1px solid var(--line)', borderRadius:'8px', padding:'10px 12px'}} />
-                      <button className="btn btn-primary" disabled={checking || !code.trim()}>Submit</button>
+                      <button className="btn btn-primary" disabled={checking || !code.trim()}>{L('Submit')}</button>
                     </form>
                   )}
                   <div style={{textAlign:'center', marginTop:'10px'}}>
-                    <button className="clin-link" style={{fontSize:'12px', marginRight:'14px'}} disabled={checking} onClick={onUseCode}>Use pasted-code sign-in</button>
-                    <button className="clin-link" style={{fontSize:'12px', marginRight:'14px'}} disabled={checking} onClick={onRetry}>Retry</button>
-                    <button className="clin-link" style={{fontSize:'12px'}} disabled={checking} onClick={onRecheck}>Already signed in? Re-check</button>
+                    <button className="clin-link" style={{fontSize:'12px', marginRight:'14px'}} disabled={checking} onClick={onUseCode}>{L('Use pasted-code sign-in')}</button>
+                    <button className="clin-link" style={{fontSize:'12px', marginRight:'14px'}} disabled={checking} onClick={onRetry}>{L('Retry')}</button>
+                    <button className="clin-link" style={{fontSize:'12px'}} disabled={checking} onClick={onRecheck}>{L('Already signed in? Re-check')}</button>
                   </div>
                 </>
               )}
               <p style={{fontSize:'11.5px', color:'var(--slate-300)', marginTop:'18px', borderTop:'1px solid var(--line)', paddingTop:'12px', lineHeight:1.6}}>
-                MIKA needs Claude sign-in to read your images. It is an AI assistant and does not replace a doctor; all findings should be reviewed by a qualified clinician.
+                {L('MIKA needs Claude sign-in to read your images. It is an AI assistant and does not replace a doctor; all findings should be reviewed by a qualified clinician.')}
               </p>
             </div>
           </div>
@@ -1750,11 +2003,11 @@
           {!ready ? (
             <>
               <div className="dz-ico">{I.upload({ width:24, height:24 })}</div>
-              <div className="dz-title">{COPY.home.dropTitle}</div>
-              <div className="dz-sub">{COPY.home.dropSub}</div>
+              <div className="dz-title">{L(COPY.home.dropTitle)}</div>
+              <div className="dz-sub">{L(COPY.home.dropSub)}</div>
               <div className="dz-actions">
-                <button className="btn btn-primary" onClick={()=>fileRef.current.click()}>{I.upload({width:16,height:16})} {COPY.home.choose}</button>
-                <button className="btn btn-ghost" onClick={()=>dirRef.current.click()}>{I.folder({width:16,height:16})} {COPY.home.folder}</button>
+                <button className="btn btn-primary" onClick={()=>fileRef.current.click()}>{I.upload({width:16,height:16})} {L(COPY.home.choose)}</button>
+                <button className="btn btn-ghost" onClick={()=>dirRef.current.click()}>{I.folder({width:16,height:16})} {L(COPY.home.folder)}</button>
               </div>
               <input ref={fileRef} type="file" multiple hidden onChange={e=>onFiles(e.target.files)} />
               <input ref={dirRef} type="file" hidden webkitdirectory="" directory="" onChange={e=>onFiles(e.target.files)} />
@@ -1766,9 +2019,9 @@
           ) : (
             <div className="dz-meta" style={{borderTop:'none', paddingTop:0, marginTop:0}}>
               <div className="dz-ready-row"><span className="ok">{I.check({})}</span>{ready.file_count} file{ready.file_count===1?'':'s'} ready{ready.input_format?` · ${String(ready.input_format).toUpperCase()}`:''}</div>
-              <label className="field-label">{COPY.home.history}</label>
-              <textarea className="field" rows="2" value={history} onChange={e=>setHistory(e.target.value)} placeholder="e.g. lower-back pain radiating down the left leg" />
-              <button className="btn btn-primary" style={{ width:'100%', marginTop:'16px' }} onClick={onStart}>{COPY.home.cta}</button>
+              <label className="field-label">{L(COPY.home.history)}</label>
+              <textarea className="field" rows="2" value={history} onChange={e=>setHistory(e.target.value)} placeholder={L('e.g. lower-back pain radiating down the left leg')} />
+              <button className="btn btn-primary" style={{ width:'100%', marginTop:'16px' }} onClick={onStart}>{L(COPY.home.cta)}</button>
             </div>
           )}
         </div>
@@ -1825,35 +2078,35 @@
           <div className="home-grid" ref={gridRef}>
             <HomeLeaders gridRef={gridRef} />
             <div className="home-hero">
-              <h1 className="home-title">{COPY.home.title1}<br/><span className="accent">{COPY.home.titleAccent}</span>{COPY.home.title2}</h1>
-              <p className="home-sub">{COPY.home.sub}</p>
+              <h1 className="home-title">{L(COPY.home.title1)}<br/><span className="accent">{L(COPY.home.titleAccent)}</span>{COPY.home.title2}</h1>
+              <p className="home-sub">{L(COPY.home.sub)}</p>
               <UploadDropzone onFiles={onFiles} ready={ready} onStart={onStart} history={history} setHistory={setHistory} />
             </div>
             <div className="home-body">
               <BodyFigure state="home" anatomy="spine" ariaLabel="A full-body anatomical figure with the spine highlighted — the areas MIKA can read." />
-              <div className="bf-foot">The areas I can read, at a glance.</div>
+              <div className="bf-foot">{L('The areas I can read, at a glance.')}</div>
             </div>
             <div className="coverage">
-              <div className="cov-title">{COPY.home.coverageTitle}</div>
+              <div className="cov-title">{L(COPY.home.coverageTitle)}</div>
               <div className="cov-list">
                 {COVERAGE.map(c => {
                   const Ico = COV_ICON[c.icon] || I.target;
                   return (
                     <div className={`cov-row ${c.can?'':'soon'} ${BODY_POINTS[c.name]?'leader':''}`} data-region={c.name} key={c.name}>
                       <span className="cov-ico">{Ico({})}</span>
-                      <span className="cov-name">{c.name}</span>
+                      <span className="cov-name">{L(c.name)}</span>
                       <span className={`cov-dot ${c.can?'can':'soon'}`} />
                     </div>
                   );
                 })}
               </div>
               <div className="cov-legend">
-                <span><span className="ld" style={{background:'var(--accent)'}} />{COPY.home.legendCan}</span>
+                <span><span className="ld" style={{background:'var(--accent)'}} />{L(COPY.home.legendCan)}</span>
               </div>
             </div>
           </div>
 
-          <div className="page-foot">MIKA supports clinical review and does not replace professional diagnosis.</div>
+          <div className="page-foot">{L('MIKA supports clinical review and does not replace professional diagnosis.')}</div>
         </div>
       );
     }
@@ -1870,7 +2123,7 @@
         return () => clearInterval(t);
       }, [slices, reduced]);
       if (!slices || !slices.length) return null;
-      const meta = [label, plane, totalSlices ? `${totalSlices} images` : null].filter(Boolean).join('  ·  ').toUpperCase();
+      const meta = [label, L(plane), totalSlices ? `${totalSlices} ${L('images')}` : null].filter(Boolean).join('  ·  ').toUpperCase();
       return (
         <div className="reading-viewer" role="img" aria-label={`The ${label || 'scan'} being read, image by image.`}>
           <div className="rv-stage">
@@ -1879,7 +2132,7 @@
             <span className="rv-scan" aria-hidden="true" />
             <i className="rv-bk tl" aria-hidden="true" /><i className="rv-bk tr" aria-hidden="true" />
             <i className="rv-bk bl" aria-hidden="true" /><i className="rv-bk br" aria-hidden="true" />
-            <div className="rv-hud"><span className="rv-tag">READING</span><span className="rv-meta">{meta}</span></div>
+            <div className="rv-hud"><span className="rv-tag">{L('READING')}</span><span className="rv-meta">{meta}</span></div>
           </div>
         </div>
       );
@@ -1911,13 +2164,14 @@
       const activeName = progress.active_sequence || null;  // real "now reading X" when emitted
       const activeRegion = (progress.active_region || '').trim() || null;  // real "now inspecting <region>"
       const rawStatus = (progress.message || '').trim();
+      const ar = UI_LANG === 'ar';   // sequence names (STIR/T2) stay Latin; region words localize
       const liveLabel = activeName && activeRegion
-        ? `${activeName}: checking ${activeRegion}`
+        ? (ar ? `${activeName}: فحص ${L(activeRegion)}` : `${activeName}: checking ${activeRegion}`)
         : activeName
-          ? `Reading ${activeName}`
+          ? (ar ? `قراءة ${activeName}` : `Reading ${activeName}`)
           : activeRegion
-            ? `Checking ${activeRegion}`
-            : rawStatus || 'Organizing images and measurements';
+            ? (ar ? `فحص ${L(activeRegion)}` : `Checking ${activeRegion}`)
+            : rawStatus || L('Organizing images and measurements');
       const view = DEFAULT_VIEW(anatomy);   // spine → posterior (matches wait.png), others → their close-up
       // map the inspected region to a position on the figure (per-view, via clinician-reviewed landmarks)
       const inspect = activeRegion ? landmarkXY(anatomy, view, activeRegion) : null;
@@ -1940,13 +2194,13 @@
         <div className="page-inner page-wait fade-up">
           <div className="wait-grid">
             <div className="wait-left">
-              <h1 className="wait-heading">{COPY.wait.heading}</h1>
+              <h1 className="wait-heading">{L(COPY.wait.heading)}</h1>
               {facts.length > 0 && (
                 <div className="wait-facts" aria-label="Study summary">
                   {facts.map(f => (
                     <div className="wait-fact" key={f.label}>
-                      <span className="wait-fact-label">{f.label}</span>
-                      <span className="wait-fact-value">{f.value}</span>
+                      <span className="wait-fact-label">{L(f.label)}</span>
+                      <span className="wait-fact-value">{L(f.value)}</span>
                     </div>
                   ))}
                 </div>
@@ -1956,13 +2210,13 @@
                 {phases.map(p => (
                   <div className={`step ${p.state}`} key={p.key} role="listitem" aria-current={p.state==='active' ? 'step' : undefined}>
                     <div className="step-node">{p.state==='done' ? I.check({ width:18, height:18 }) : (PHASE_ICON[p.icon] || I.scan)({ width:19, height:19 })}</div>
-                    <div className="step-label">{p.short}</div>
+                    <div className="step-label">{L(p.short)}</div>
                   </div>
                 ))}
               </div>
               <div className="wait-live" role="status" aria-live="polite">{liveLabel}</div>
               <ReadingViewer slices={sliceImgs} label={activeSeq && activeSeq.name} plane={activeSeq && activeSeq.plane} totalSlices={activeSeq && activeSeq.num_slices} />
-              <div className="safe-leave">{I.bell({})}{COPY.wait.safe}</div>
+              <div className="safe-leave">{I.bell({})}{L(COPY.wait.safe)}</div>
             </div>
 
             <div className="wait-body">
@@ -1971,7 +2225,7 @@
 
             <div className="wait-right">
               <div className="seq-panel">
-                <div className="seq-title">{COPY.wait.seqTitle}</div>
+                <div className="seq-title">{L(COPY.wait.seqTitle)}</div>
                 {seqs.length ? (() => {
                   const activeI = activeName ? seqs.findIndex(x => x.name === activeName) : -1;
                   return seqs.map((s,i) => {
@@ -1989,16 +2243,16 @@
                           {thumb ? <img src={thumb} alt="" loading="lazy" /> : I.scan({})}
                           {isActive && <span className="seq-scanline" aria-hidden="true" />}
                         </div>
-                        <div><div className="seq-name">{s.name}</div><div className="seq-meta">{[s.plane, s.num_slices ? `${s.num_slices} slices` : null].filter(Boolean).join(' · ')}</div></div>
+                        <div><div className="seq-name">{s.name}</div><div className="seq-meta">{[L(s.plane), s.num_slices ? `${s.num_slices} ${L('slices')}` : null].filter(Boolean).join(' · ')}</div></div>
                         {isDone ? <span className="seq-check">{I.check({})}</span> : isActive ? <span className="seq-active-dot" /> : null}
                       </div>
                     );
                   });
-                })() : <div className="seq-placeholder">{COPY.wait.seqPlaceholder}</div>}
+                })() : <div className="seq-placeholder">{L(COPY.wait.seqPlaceholder)}</div>}
               </div>
               {latestImage && (
                 <div className="wait-latest">
-                  <div className="wait-latest-t">{sequences && sequences.level_map ? 'Level map' : 'Latest view'}</div>
+                  <div className="wait-latest-t">{sequences && sequences.level_map ? L('Level map') : L('Latest view')}</div>
                   <div className="wait-latest-img">
                     <img src={latestImage} alt="" loading="lazy" />
                     <span className="wait-latest-scan" aria-hidden="true" />
@@ -2006,11 +2260,11 @@
                 </div>
               )}
               <div className="progress-block" role="status" aria-live="polite">
-                <div className="progress-head"><span className="ph-l">{COPY.wait.overall}</span><span className="ph-r">~{pct}%</span></div>
+                <div className="progress-head"><span className="ph-l">{L(COPY.wait.overall)}</span><span className="ph-r">~{pct}%</span></div>
                 <ProgressBar value={pct} />
                 <div className="progress-eta">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-                  {eta ? <span>Time left: <strong>about {eta} min</strong></span> : <span>Finishing the final checks</span>}
+                  {eta ? <span>{UI_LANG==='ar'?'الوقت المتبقي: ':'Time left: '}<strong>{UI_LANG==='ar'?`${eta} دقيقة تقريباً`:`about ${eta} min`}</strong></span> : <span>{L('Finishing the final checks')}</span>}
                 </div>
               </div>
             </div>
@@ -2024,12 +2278,12 @@
       if (!finding) return null;
       return (
         <div className="proof">
-          <div className="proof-head"><div className="proof-title">{finding.plainSentence}</div><CertaintyChip certainty={finding.certainty} /></div>
+          <div className="proof-head"><div className="proof-title">{finding.plainSentence}</div><CertaintyChip certainty={finding.certainty} label={finding.certaintyLabel} /></div>
           <div className="proof-img-wrap" onClick={() => finding.proofImageUrl && onZoom(finding.proofImageUrl)}>
             {finding.proofImageUrl
               ? <img src={finding.proofImageUrl} alt={`Annotated proof: ${finding.plainSentence}`} loading="lazy" onError={e=>{e.target.style.display='none'; e.target.parentNode.querySelector('.proof-img-missing').style.display='block';}} />
               : null}
-            <div className="proof-img-missing" style={{ display: finding.proofImageUrl ? 'none':'block' }}>Proof image unavailable for this finding.</div>
+            <div className="proof-img-missing" style={{ display: finding.proofImageUrl ? 'none':'block' }}>{L('Proof image unavailable for this finding.')}</div>
           </div>
           {finding.caption && <div className="proof-cap">{finding.caption}</div>}
         </div>
@@ -2047,8 +2301,8 @@
       const text = (state && state.text) || '';
       const hasInput = !!file || !!text.trim();
       const compared = !!(review && review.used);
-      const chooseLabel = file ? 'Change report file' : 'Upload report PDF';
-      const compareLabel = status === 'error' ? 'Retry comparison' : 'Compare with my report';
+      const chooseLabel = file ? L('Change report file') : L('Upload report PDF');
+      const compareLabel = status === 'error' ? L('Retry comparison') : L('Compare with my report');
       const clear = () => {
         if (busy) return;
         if (fileRef.current) fileRef.current.value = '';
@@ -2058,10 +2312,10 @@
         <div className="compare-panel">
           <div className="compare-head">
             <div>
-              <div className="compare-title">Compare with my report</div>
-              <div className="compare-sub">Upload your radiology report or paste its text. MIKA will compare it with the independent image read without changing the read.</div>
+              <div className="compare-title">{L('Compare with my report')}</div>
+              <div className="compare-sub">{L('Upload your radiology report or paste its text. MIKA will compare it with the independent image read without changing the read.')}</div>
             </div>
-            {compared && <span className="compare-done">Reference-assisted review added</span>}
+            {compared && <span className="compare-done">{L('Reference-assisted review added')}</span>}
           </div>
           <div className="compare-controls">
             <input ref={fileRef} type="file" accept=".pdf,.txt,.md,.rtf,application/pdf,text/plain" style={{display:'none'}}
@@ -2072,17 +2326,17 @@
             {file && <span className="compare-file" title={file.name}>{file.name}</span>}
           </div>
           <textarea className="compare-text" value={text} disabled={busy}
-            placeholder="Or paste the report text here."
+            placeholder={L('Or paste the report text here.')}
             onChange={e=>setState(s=>({ ...(s||{}), text:e.target.value, status:'idle', error:null }))} />
           <div className="compare-actions">
             <button className="btn btn-primary btn-sm" type="button" disabled={busy || !hasInput}
-              onClick={()=>onCompare({ file, text })}>{busy ? 'Comparing...' : compareLabel}</button>
+              onClick={()=>onCompare({ file, text })}>{busy ? L('Comparing...') : compareLabel}</button>
             {busy && <button className="btn btn-ghost btn-sm" type="button" onClick={onCancel}>Cancel</button>}
             {!busy && hasInput && <button className="btn btn-ghost btn-sm" type="button" onClick={clear}>Clear</button>}
           </div>
-          {busy && <div className="compare-status">Extracting the report and comparing it with MIKA's independent read...</div>}
-          {status === 'success' && <div className="compare-status ok">Comparison complete. The reference-assisted review is shown below.</div>}
-          {status === 'cancelled' && <div className="compare-status">Comparison cancelled. Your blind read was not changed.</div>}
+          {busy && <div className="compare-status">{L("Extracting the report and comparing it with MIKA's independent read...")}</div>}
+          {status === 'success' && <div className="compare-status ok">{L('Comparison complete. The reference-assisted review is shown below.')}</div>}
+          {status === 'cancelled' && <div className="compare-status">{L('Comparison cancelled. Your blind read was not changed.')}</div>}
           {status === 'error' && <div className="compare-status err">{state.error || 'MIKA could not compare that report.'}</div>}
         </div>
       );
@@ -2255,55 +2509,55 @@
         <div className="clin">
           <div className="clin-strip">
             <div>
-              <div className="clin-h">Verification</div>
+              <div className="clin-h">{L('Verification')}</div>
               <div className="clin-verline">
                 <span className={`clin-vstatus ${v.status==='passed'?'ok':v.status==='issues_flagged'?'warn':'muted'}`}>
-                  {v.status ? v.status.replace('_',' ') : 'not run'}
+                  {v.status ? L(v.status.replace('_',' ')) : L('not run')}
                 </span>
-                {typeof v.quality_score === 'number' && <span className="clin-score">Quality {v.quality_score}/100</span>}
+                {typeof v.quality_score === 'number' && <span className="clin-score">{L('Quality')} {v.quality_score}/100</span>}
               </div>
               {v.quality_notes && <div className="clin-notes">{v.quality_notes}</div>}
             </div>
             <button className="btn btn-ghost btn-sm" disabled={!vm.clinicalPdfAvailable}
               onClick={()=>jobId && jobId!=='demo' && window.open(`${API_BASE}/api/report/${jobId}/clinical-pdf`,'_blank')}>
-              {I.download({width:14,height:14})} Clinical PDF
+              {I.download({width:14,height:14})} {L('Clinical PDF')}
             </button>
           </div>
           <div className="clin-proof">
             <div className="clin-proof-head">
               <div className="clin-proof-title">{evidenceTitle}</div>
-              {evidenceUrl && <button className="clin-figlink" onClick={()=>onZoom(evidenceUrl)}>{I.scan({width:13,height:13})} Enlarge</button>}
+              {evidenceUrl && <button className="clin-figlink" onClick={()=>onZoom(evidenceUrl)}>{I.scan({width:13,height:13})} {L('Enlarge')}</button>}
             </div>
             {evidenceUrl ? (
               <div className="clin-proof-img" onClick={()=>onZoom(evidenceUrl)}>
                 <img src={evidenceUrl} alt="" loading="lazy" />
               </div>
             ) : (
-              <div className="clin-proof-empty">This run did not include a pinned proof image for the selected finding.</div>
+              <div className="clin-proof-empty">{L('This run did not include a pinned proof image for the selected finding.')}</div>
             )}
           </div>
           <div className="clin-card">
-            <div className="clin-h">Technical findings</div>
+            <div className="clin-h">{L('Technical findings')}</div>
             {tech.length ? tech.map((f,i) => {
               const tier = f.tier || tierFromText(f.text) || 'C';
               const url = proofUrl(jobId, f.figure);
               return (
                 <div className="clin-row" key={i}>
-                  <span className={`tier-badge t${tier}`}>Tier {tier}</span>
+                  <span className={`tier-badge t${tier}`}>{L('Tier')} {tier}</span>
                   <div className="clin-row-body">
                     <div className="clin-text">{stripTier(f.text)}</div>
                     {url && <button className="clin-figlink" onClick={()=>onZoom(url)}>{I.scan({width:13,height:13})} View figure</button>}
                   </div>
                 </div>
               );
-            }) : <div className="clin-notes">Limited clinician detail for this run.</div>}
+            }) : <div className="clin-notes">{L('Limited clinician detail for this run.')}</div>}
           </div>
           <ClinicianCvSupportedFindings review={vm.cvSupportedReview} />
           <ClinicianCvAdjudication review={vm.cvAdjudication} />
           <ClinicianCvCandidateReview review={vm.cvCandidateReview} />
           <ClinicianReferenceReview review={vm.referenceReview} />
           {(v.corrections && v.corrections.length>0) && (
-            <div className="clin-card"><div className="clin-h">Audit corrections</div>
+            <div className="clin-card"><div className="clin-h">{L('Audit corrections')}</div>
               <ul className="sec-block" style={{marginTop:0}}>{v.corrections.map((c,i)=><li key={i}>{typeof c==='string'?c:(c.finding||JSON.stringify(c))}</li>)}</ul></div>
           )}
         </div>
@@ -2321,22 +2575,22 @@
             <div className="empty-status">
               <span className="empty-status-icon">{I.check({width:22,height:22})}</span>
               <div>
-                <div className="empty-status-title">No flagged findings</div>
-                <div className="empty-status-sub">MIKA did not identify a significant abnormality to pin in this read. Treat this as an AI-assisted screen, not a diagnosis.</div>
+                <div className="empty-status-title">{L('No flagged findings')}</div>
+                <div className="empty-status-sub">{L('MIKA did not identify a significant abnormality to pin in this read. Treat this as an AI-assisted screen, not a diagnosis.')}</div>
               </div>
             </div>
             <div className="empty-checklist">
               <div className="empty-checkitem">
-                <div className="empty-checkitem-t">What MIKA found</div>
-                <div className="empty-checkitem-b">{points[0]}</div>
+                <div className="empty-checkitem-t">{L('What MIKA found')}</div>
+                <div className="empty-checkitem-b">{L(points[0])}</div>
               </div>
               <div className="empty-checkitem">
-                <div className="empty-checkitem-t">What still matters</div>
-                <div className="empty-checkitem-b">{points[1] || 'Review the official report and symptoms with a qualified clinician.'}</div>
+                <div className="empty-checkitem-t">{L('What still matters')}</div>
+                <div className="empty-checkitem-b">{L(points[1]) || L('Review the official report and symptoms with a qualified clinician.')}</div>
               </div>
             </div>
             <div className="empty-actions">
-              {!clinician && <button className="btn btn-ghost" onClick={onClinician}>{I.info({width:15,height:15})} View technical detail</button>}
+              {!clinician && <button className="btn btn-ghost" onClick={onClinician}>{I.info({width:15,height:15})} {L('View technical detail')}</button>}
             </div>
           </div>
           {!clinician && <CompareReportPanel jobId={jobId} review={vm.referenceReview} state={compareState}
@@ -2352,14 +2606,14 @@
       return (
         <div className="empty-side">
           <div className="empty-side-card">
-            <div className="empty-side-title">Study context</div>
+            <div className="empty-side-title">{L('Study context')}</div>
             <BodyFigure state="read" anatomy={vm.anatomy} ariaLabel="Body map for this study." />
           </div>
           <div className="empty-side-card">
-            <div className="empty-side-title">Read summary</div>
-            <div className="empty-side-row"><span>Confidence</span><span>{vm.overall.label || 'Moderate'}{typeof vm.overall.score === 'number' ? ` · ${vm.overall.score}%` : ''}</span></div>
-            <div className="empty-side-row"><span>Region</span><span>{s.body_part || vm.anatomy || 'Study'}</span></div>
-            <div className="empty-side-row"><span>Modality</span><span>{s.modality || 'Imaging'}</span></div>
+            <div className="empty-side-title">{L('Read summary')}</div>
+            <div className="empty-side-row"><span>{L('Confidence')}</span><span>{L(vm.overall.label || 'Moderate')}{typeof vm.overall.score === 'number' ? ` · ${vm.overall.score}%` : ''}</span></div>
+            <div className="empty-side-row"><span>{L('Region')}</span><span>{L(s.body_part || vm.anatomy || 'Study')}</span></div>
+            <div className="empty-side-row"><span>{L('Modality')}</span><span>{L(s.modality || 'Imaging')}</span></div>
           </div>
         </div>
       );
@@ -2399,7 +2653,7 @@
             )}
             <div style={{display:'flex', gap:'12px', alignItems:'center', flexWrap:'wrap'}}>
               <ConfidencePill label={vm.overall.label} score={vm.overall.score} />
-              {vm.overall.note && <span style={{fontSize:'13px', color:'var(--slate)'}}>{vm.overall.note}</span>}
+              {vm.overall.note && <span style={{fontSize:'13px', color:'var(--slate)'}}>{L(vm.overall.note)}</span>}
             </div>
           </div>
 
@@ -2420,15 +2674,15 @@
                     <div className="read-figcol">
                       {hasBack && (
                         <div className="viewtoggle" role="group" aria-label="Body view">
-                          <button className={bodyView==='front'?'on':''} aria-pressed={bodyView==='front'} onClick={()=>setBodyView('front')}>Front</button>
-                          <button className={bodyView==='back'?'on':''} aria-pressed={bodyView==='back'} onClick={()=>setBodyView('back')}>Back</button>
+                          <button className={bodyView==='front'?'on':''} aria-pressed={bodyView==='front'} onClick={()=>setBodyView('front')}>{L('Front')}</button>
+                          <button className={bodyView==='back'?'on':''} aria-pressed={bodyView==='back'} onClick={()=>setBodyView('back')}>{L('Back')}</button>
                         </div>
                       )}
                       <BodyFigure state="read" anatomy={vm.anatomy} view={bodyView} findings={findings} activeId={active && active.id}
                         onMarkerClick={selectFinding} ariaLabel={`${bodyView==='back'?'Back':'Front'} body map with ${findings.length} finding${findings.length===1?'':'s'} marked by certainty.`} />
                     </div>
                     <div className="thread">
-                      <div className="thread-title">{CLIN ? 'Findings by tier' : 'Findings'}</div>
+                      <div className="thread-title">{CLIN ? L('Findings by tier') : L('Findings')}</div>
                       {findings.map((f, i) => {
                         const techRow = CLIN && typeof f.sourceIndex === 'number' ? (vm.clinicianFindings || [])[f.sourceIndex] : null;
                         const rowSentence = (techRow && techRow.text) ? stripTier(techRow.text) : f.plainSentence;
@@ -2436,12 +2690,12 @@
                           <button key={f.id} id={f.id} className={`frow ${active && active.id===f.id ? 'active':''}`}
                             aria-expanded={active && active.id===f.id} onClick={()=>selectFinding(f.id)}>
                             <div className="frow-top"><span className="frow-num">{i+1}</span>
-                              {CLIN ? <span className={`tier-badge t${WORD2LETTER[f.certainty]}`}>Tier {WORD2LETTER[f.certainty]}</span> : <CertaintyChip certainty={f.certainty} />}
+                              {CLIN ? <span className={`tier-badge t${WORD2LETTER[f.certainty]}`}>{L('Tier')} {WORD2LETTER[f.certainty]}</span> : <CertaintyChip certainty={f.certainty} label={f.certaintyLabel} />}
                             </div>
                             <div className="frow-plain">{rowSentence}</div>
                             {!CLIN && active && active.id===f.id && vm.whatItMeans && vm.whatItMeans.length>0 && (
                               <div className="frow-extra">
-                                <h4>What this may mean</h4>
+                                <h4>{L('What this may mean')}</h4>
                                 <ul className="sec-block" style={{marginTop:0}}>{vm.whatItMeans.map((w,idx)=><li key={idx}>{w}</li>)}</ul>
                               </div>
                             )}
@@ -2451,15 +2705,15 @@
                       <div className="legend-row">
                         {CLIN ? (
                           <>
-                            <span><span className="tier-badge tA" style={{marginRight:0}}>A</span> Confirmed</span>
-                            <span><span className="tier-badge tB" style={{marginRight:0}}>B</span> Likely</span>
-                            <span><span className="tier-badge tC" style={{marginRight:0}}>C</span> Possible</span>
+                            <span><span className="tier-badge tA" style={{marginRight:0}}>A</span> {L('Confirmed')}</span>
+                            <span><span className="tier-badge tB" style={{marginRight:0}}>B</span> {L('Likely')}</span>
+                            <span><span className="tier-badge tC" style={{marginRight:0}}>C</span> {L('Possible')}</span>
                           </>
                         ) : (
                           <>
-                            <span style={{color:'var(--accent)'}}><CertaintyGlyph certainty="Confirmed" /> Confirmed</span>
-                            <span style={{color:'var(--accent)'}}><CertaintyGlyph certainty="Likely" /> Likely</span>
-                            <span style={{color:'var(--slate)'}}><CertaintyGlyph certainty="Possible" /> Possible</span>
+                            <span style={{color:'var(--accent)'}}><CertaintyGlyph certainty="Confirmed" /> {L('Confirmed')}</span>
+                            <span style={{color:'var(--accent)'}}><CertaintyGlyph certainty="Likely" /> {L('Likely')}</span>
+                            <span style={{color:'var(--slate)'}}><CertaintyGlyph certainty="Possible" /> {L('Possible')}</span>
                           </>
                         )}
                       </div>
@@ -2470,14 +2724,14 @@
                           <FocusedEvidencePanel review={vm.cvSupportedReview} />
                           <ReferenceReviewPanel review={vm.referenceReview} />
                           {(vm.worthFlagging && vm.worthFlagging.length>0) && (
-                            <div className="sec-block"><h3>Ask your doctor about</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
+                            <div className="sec-block"><h3>{L('Ask your doctor about')}</h3><ul>{vm.worthFlagging.map((w,i)=><li key={i}>{w}</li>)}</ul></div>
                           )}
                           {vm.changeOverTime && (
-                            <div className="sec-block"><h3>Change over time</h3>
+                            <div className="sec-block"><h3>{L('Change over time')}</h3>
                               {vm.changeOverTime.points ? <ul>{vm.changeOverTime.points.map((p,i)=><li key={i}>{p}</li>)}</ul> : <p style={{fontSize:'13.5px', color:'var(--slate)', lineHeight:1.6}}>{vm.changeOverTime.plain}</p>}
                             </div>
                           )}
-                          <button className="clin-link" onClick={onClinician}>{I.info({width:15,height:15})} View technical detail</button>
+                          <button className="clin-link" onClick={onClinician}>{I.info({width:15,height:15})} {L('View technical detail')}</button>
                         </>
                       )}
                     </div>
@@ -2495,7 +2749,7 @@
             )}
           </div>
 
-          <div className="read-disclaimer"><strong>Important:</strong> {vm.disclaimer}</div>
+          <div className="read-disclaimer"><strong>{L('Important:')}</strong> {L(vm.disclaimer)}</div>
         </div>
       );
     }
@@ -2519,7 +2773,18 @@
       const [history, setHistory] = useState('');
       const [report, setReport] = useState(null);
       const [sequences, setSequences] = useState({ sequences:[] });
-      const [uiPrefs, setUiPrefs] = useState({ view: QS.get('view')==='clinician' ? 'clinician' : 'plain' });
+      const [uiPrefs, setUiPrefs] = useState({
+        view: QS.get('view')==='clinician' ? 'clinician' : 'plain',
+        lang: (QS.get('lang')==='ar' || (()=>{ try { return localStorage.getItem(UI_LANG_KEY)==='ar'; } catch(_) { return false; } })()) ? 'ar' : 'en',
+      });
+      // Drive UI_LANG (read during render by L()) + <html dir/lang> from the active language.
+      UI_LANG = uiPrefs.lang || 'en';
+      useEffect(() => {
+        const ar = uiPrefs.lang === 'ar';
+        document.documentElement.dir = ar ? 'rtl' : 'ltr';
+        document.documentElement.lang = ar ? 'ar' : 'en';
+        try { localStorage.setItem(UI_LANG_KEY, ar ? 'ar' : 'en'); } catch(_) {}
+      }, [uiPrefs.lang]);
       const [route, setRoute] = useState(null);   // null = job-derived screen (home/wait/read); 'recent' = nav overlay
       const [activeId, setActiveId] = useState(null);
       const [lightbox, setLightbox] = useState(null);
@@ -2663,13 +2928,28 @@
       // Fetch the finished Read. A completed run is precious — never discard it on a single failed
       // fetch. Retry transient failures (5xx / network) with backoff; only reset to Home on a
       // confirmed 404 (truly expired) after a couple of tries. (sm-03)
+      // Active language as a ref so fetchReport reads the current value without re-creating the callback.
+      const langRef = useRef(uiPrefs.lang);
+      langRef.current = uiPrefs.lang;
+      // Overlay the Arabic patient block (when present + fresh) onto the English payload — English fields
+      // not yet translated (e.g. reference review) stay English (the degradation floor). If the sidecar
+      // isn't built yet, lazily ask the backend to make it, then re-read. Never blocks the English path.
+      const applyArabic = useCallback(async (id, data) => {
+        if (!data || !data.ar) return data;
+        if (data.ar.patient) return { ...data, patient: { ...(data.patient||{}), ...data.ar.patient } };
+        const gen = await api.generateArabic(id);
+        if (gen && gen.status === 'ok' && gen.patient) return { ...data, patient: { ...(data.patient||{}), ...gen.patient } };
+        addToast('Arabic translation isn’t ready yet — showing the report in English.', 'warning');
+        return data;   // C floor: English
+      }, [addToast]);
       const fetchReport = useCallback(async (id, attempt = 0) => {
         let hardGone = false;
         try {
-          const r = await api.report(id);
+          const r = await api.report(id, langRef.current);
           if (r.ok) {
             stopStream();
-            const data = await r.json();
+            let data = await r.json();
+            if (langRef.current === 'ar') data = await applyArabic(id, data);
             setReport(data);
             setJob(j => ({ ...j, status:'complete', progress:100 }));
             try {   // index it so it can be reopened from Recent studies + survives a refresh
@@ -2685,7 +2965,13 @@
         if (attempt < 4) { setTimeout(() => fetchReport(id, attempt + 1), 700 * (attempt + 1)); return; }
         // Out of retries but the run did complete — keep the job so the user isn't bounced, and tell them.
         addToast('Your Read is ready but didn’t load — please refresh to view it.', 'error');
-      }, [addToast, stopStream]);
+      }, [addToast, stopStream, applyArabic]);
+      // Re-read the report in the new language when the user flips the AR/EN toggle on a finished study.
+      const firstLang = useRef(true);
+      useEffect(() => {
+        if (firstLang.current) { firstLang.current = false; return; }
+        if (job.id && job.status === 'complete') fetchReport(job.id);
+      }, [uiPrefs.lang]);
       const watch = useCallback((id) => {
         stopStream();
         let seqDone = false;
@@ -2896,7 +3182,8 @@
       const onDownload = useCallback((kind='patient') => {
         if (!job.id) return;
         const endpoint = kind === 'clinical' ? 'clinical-pdf' : 'pdf';
-        window.open(`${API_BASE}/api/report/${job.id}/${endpoint}`, '_blank');
+        const q = (kind !== 'clinical' && langRef.current === 'ar') ? '?lang=ar' : '';  // Arabic patient PDF
+        window.open(`${API_BASE}/api/report/${job.id}/${endpoint}${q}`, '_blank');
       }, [job.id]);
       const onNotify = useCallback(async () => {
         if (!('Notification' in window)) {
@@ -2914,7 +3201,7 @@
           addToast('Notifications were not enabled. Keep MIKA open to watch progress.', 'warning');
         }
       }, [addToast]);
-      const onClinician = useCallback(() => setUiPrefs({ view:'clinician' }), []);
+      const onClinician = useCallback(() => setUiPrefs(p => ({ ...p, view:'clinician' })), []);
 
       const _anatomyOverride = QS.get('anatomy');   // dev: ?anatomy=brain|msk to test precise pointing per region
       const _demoBase = dm==='read-empty' ? DEMO_REPORT_EMPTY
