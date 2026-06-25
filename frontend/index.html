@@ -345,15 +345,22 @@
 
     /* ════════════════════ WAIT ════════════════════ */
     /* status+slice viewer | body figure (tallest hero) | sequences + latest view — columns share one height */
-    .wait-grid { display:grid; grid-template-columns: minmax(0,1.14fr) minmax(240px,0.56fr) 300px; gap: var(--s-7); align-items:stretch; }
+    .wait-grid { display:grid; grid-template-columns: minmax(0,1fr) minmax(340px,0.9fr) 290px; gap: var(--s-7); align-items:stretch; }
     .page-wait { display:flex; flex-direction:column; }
     .page-wait .wait-grid { min-height:0; flex:1; }
     .page-wait .wait-left, .page-wait .wait-right { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
     .page-wait .wait-body { min-height:0; overflow:hidden; }
     .wait-left { display:flex; flex-direction:column; }
-    .wait-left .safe-leave { margin-top:auto; }   /* docks the reassurance to the bottom — fills the column, no gap */
+    /* the slice viewer grows to fill the column (no dead gap above the docked reassurance) and shows
+       a larger slice; the stage drops its fixed 4/3 ratio so the real slice fills the taller box. */
+    .page-wait .wait-left .reading-viewer { flex:1 1 auto; min-height:0; display:flex; }
+    .page-wait .wait-left .rv-stage { height:100%; aspect-ratio:auto; flex:1; }
+    .wait-left .safe-leave { margin-top: var(--s-3); }
     .wait-body { display:flex; align-items:center; justify-content:center; }
-    .wait-body .bodyfig { --bodyfig-max:330px; }
+    /* figure-as-hero: fill the column HEIGHT (aspect-correct → no top/bottom void). max-width:100%
+       escapes the small per-state inline cap; the small symmetric side void reads as intentional. */
+    .wait-body .bodyfig { width:100%; height:100%; max-width:100%; display:flex; align-items:center; justify-content:center; }
+    .wait-body .bodyfig-stage { height:100%; width:auto; max-width:100%; }
     .wait-right { display:flex; flex-direction:column; }
     .wait-heading { font-size:26px; line-height:1.3; font-weight:700; letter-spacing:-0.5px; color: var(--ink); max-width:440px; margin-bottom: var(--s-3); }
     .wait-facts { display:grid; grid-template-columns: repeat(4, minmax(86px, max-content)); gap: var(--s-2); margin-bottom: var(--s-6); }
