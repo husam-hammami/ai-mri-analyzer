@@ -2531,10 +2531,15 @@ def _estimate_agent_seconds(n_studies: int = 1, effort: str = "high") -> int:
     return int(min(max(est, 600), 5400))
 
 
-def _slice_thumbnails(file_list, dest_dir: str, key: str, max_n: int = 5, width: int = 360):
+def _slice_thumbnails(file_list, dest_dir: str, key: str, base_dir: Optional[str] = None,
+                      max_n: int = 5, width: int = 360):
     """Convert a few evenly-spaced slices of a sequence into small grayscale PNG thumbnails for the
     Wait viewer (real study images, percentile-windowed). Returns [(stem, path)]. Best-effort: any
-    failure yields fewer/zero thumbnails and the viewer simply falls back — never fabricated."""
+    failure yields fewer/zero thumbnails and the viewer simply falls back — never fabricated.
+
+    ``base_dir`` resolves the (often bare) filenames in ``file_list`` — the inventory stores names
+    relative to the dicom dir, so dcmread on the bare name fails ('No such file') and the viewer
+    showed nothing. Also falls back to PIL for non-DICOM inputs (PNG/JPG exports)."""
     files = [f for f in (file_list or []) if f]
     if not files:
         return []
@@ -2544,14 +2549,29 @@ def _slice_thumbnails(file_list, dest_dir: str, key: str, max_n: int = 5, width:
         from PIL import Image
     except Exception:
         return []
+
+    def _resolve(f):
+        f = str(f)
+        if os.path.exists(f):
+            return f
+        if base_dir:
+            for cand in (os.path.join(base_dir, os.path.basename(f)), os.path.join(base_dir, f)):
+                if os.path.exists(cand):
+                    return cand
+        return f
+
     n = len(files)
     idxs = sorted({int(i * (n - 1) / (max_n - 1)) for i in range(max_n)}) if n >= max_n else list(range(n))
     Path(dest_dir).mkdir(parents=True, exist_ok=True)
     out = []
     for j, i in enumerate(idxs):
         try:
-            ds = pydicom.dcmread(str(files[i]), force=True)
-            a = ds.pixel_array.astype("float32")
+            fp = _resolve(files[i])
+            try:
+                ds = pydicom.dcmread(fp, force=True)
+                a = ds.pixel_array.astype("float32")
+            except Exception:
+                a = np.asarray(Image.open(fp).convert("L"), dtype="float32")   # PNG/JPG export fallback
             if a.ndim > 2:                      # multi-frame / RGB → take a representative 2-D plane
                 a = a[a.shape[0] // 2] if a.ndim == 3 and a.shape[2] not in (3, 4) else a.mean(axis=-1)
             lo, hi = np.percentile(a, 1), np.percentile(a, 99)
@@ -2643,7 +2663,7 @@ async def _run_agent_pipeline(
             thumb_dir = str(Path(job.work_dir) / "seqthumbs")
             for nm, s in (inv.sequences or {}).items():
                 key = ("".join(c for c in nm if c.isalnum())[:24]) or f"seq{len(seq_catalog)}"
-                thumbs = _slice_thumbnails(getattr(s, "file_list", []), thumb_dir, key)
+                thumbs = _slice_thumbnails(getattr(s, "file_list", []), thumb_dir, key, base_dir=job.dicom_dir)
                 for stem, path in thumbs:
                     job.annotated_images[stem] = path     # served via /api/images/{job}/{stem}
                 seq_catalog.append({

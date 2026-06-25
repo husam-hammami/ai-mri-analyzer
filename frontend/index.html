@@ -1911,11 +1911,15 @@
       // a user-clicked sequence wins; else the one the agent is reading now; else the first.
       const activeSeq = (selectedSeq && seqs.find(s => s.name === selectedSeq))
         || (activeName ? seqs.find(s => s.name === activeName) : (seqs[0] || null));
-      // show ONLY the sequence currently being analyzed, flipping through ITS slices
-      const sliceImgs = !activeSeq ? []
-        : (activeSeq.slices && activeSeq.slices.length) ? activeSeq.slices
-        : (activeSeq.slice_stems && activeSeq.slice_stems.length) ? activeSeq.slice_stems.map(st => proofUrl(jobId, st)).filter(Boolean)
-        : (activeSeq.thumb ? [activeSeq.thumb] : []);
+      // show the sequence being analyzed, flipping through ITS slices
+      const seqImgs = (s) => !s ? []
+        : (s.slices && s.slices.length) ? s.slices
+        : (s.slice_stems && s.slice_stems.length) ? s.slice_stems.map(st => proofUrl(jobId, st)).filter(Boolean)
+        : (s.thumb ? [s.thumb] : []);
+      let sliceImgs = seqImgs(activeSeq);
+      // fallback: if the active sequence has no images, show slices from ANY sequence that does —
+      // the user just wants to see a real slice during the read, not necessarily the exact one.
+      if (!sliceImgs.length) { for (const s of seqs) { const im = seqImgs(s); if (im.length) { sliceImgs = im; break; } } }
       // Latest annotated view for the bottom-right (claim-free): the level map once mapped, else a
       // representative slice currently being read. Fills the rail and shows real, honest progress.
       const latestImage = (sequences && sequences.level_map) || (sliceImgs.length ? sliceImgs[Math.floor(sliceImgs.length/2)] : null);
@@ -1960,7 +1964,8 @@
                   return seqs.map((s,i) => {
                     const isActive = activeI === i;
                     const isDone = activeI >= 0 && i < activeI;     // only truthful once the agent reports position
-                    const thumb = s.thumb || (s.thumb_stem ? proofUrl(jobId, s.thumb_stem) : null);
+                    const thumb = s.thumb || (s.thumb_stem ? proofUrl(jobId, s.thumb_stem) : null)
+                      || ((s.slice_stems && s.slice_stems.length) ? proofUrl(jobId, s.slice_stems[0]) : null);
                     const isSelected = selectedSeq === s.name;
                     return (
                       <div className={`seq-row ${(isSelected || isActive)?'active':''}`} key={i}
