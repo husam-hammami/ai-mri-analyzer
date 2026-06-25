@@ -158,6 +158,9 @@ JOB_ID_RE = re.compile(r"^[0-9a-f]{8}$")
 # Cap a single upload so a malicious/accidental client can't exhaust disk (medical studies are big,
 # but 2 GB is a generous ceiling for one study). Overridable for large multi-series CT/PET.
 MAX_UPLOAD_BYTES = int(os.environ.get("MIKA_MAX_UPLOAD_BYTES", str(2 * 1024 * 1024 * 1024)))
+# Arabic presentation layer — flag-dark by default. English report.json is the only clinical
+# source of truth; Arabic is a derived view (see docs/Mika_Arabic_Plan.md).
+AR_ENABLED = os.environ.get("MIKA_AR_ENABLED", "0") == "1"
 
 # ── Application ──
 
@@ -1290,6 +1293,13 @@ def _persist_report(job: "AnalysisJob") -> None:
         jd.mkdir(parents=True, exist_ok=True)
         payload = _build_report_payload(job)
         (jd / "report.json").write_text(json.dumps(payload, default=str), encoding="utf-8")
+        # English just changed (e.g. a reconcile rewrite) → drop any stale Arabic sidecar so it
+        # can't assert what the updated English no longer says (regenerated lazily on next request).
+        try:
+            from services import arabic
+            arabic.invalidate_sidecar(jd)
+        except Exception:
+            pass
 
         images = {name: _rel_to_job(job.job_id, p) for name, p in (job.annotated_images or {}).items()}
         patient_pdf = _find_patient_pdf(job.job_id, job)
@@ -2286,20 +2296,63 @@ def _build_report_payload(job: "AnalysisJob") -> dict:
     return payload
 
 
-@app.get("/api/report/{job_id}")
-async def get_report(job_id: str):
-    """Get the completed analysis report — from the live job, or rehydrated from disk after a restart
-    so a finished study is never lost just because the server bounced."""
-    _validate_job_id(job_id)
+def _english_report_payload(job_id: str):
+    """Return (english_payload, job_or_None) for a completed job — live, or rehydrated from disk."""
     job = JOBS.get(job_id)
     if job:
         if job.status != "complete":
             raise HTTPException(400, f"Analysis not complete (status: {job.status})")
-        return _build_report_payload(job)
+        return _build_report_payload(job), job
     disk = _load_report(job_id)
     if disk:
-        return _normalize_loaded_report(job_id, disk)
+        return _normalize_loaded_report(job_id, disk), None
     raise HTTPException(404, "Report not found")
+
+
+def _attach_arabic(job_id: str, payload: dict) -> dict:
+    """Additively attach a FRESH Arabic patient block if one is cached; English stays untouched.
+    The frontend renders `ar.patient` when present, else falls back to the English `patient` (C floor)."""
+    from services import arabic
+    cached = arabic.read_sidecar(_job_dir(job_id), payload.get("patient") or {})
+    out = dict(payload)
+    out["lang"] = "ar"
+    out["ar"] = {"available": cached is not None, "patient": cached}
+    return out
+
+
+@app.get("/api/report/{job_id}")
+async def get_report(job_id: str, lang: str = "en"):
+    """Get the completed analysis report — from the live job, or rehydrated from disk after a restart
+    so a finished study is never lost just because the server bounced. `?lang=ar` additively attaches
+    a cached Arabic view (flag-gated); the English payload is byte-identical when off."""
+    _validate_job_id(job_id)
+    payload, _job = _english_report_payload(job_id)
+    if lang == "ar" and AR_ENABLED:
+        return _attach_arabic(job_id, payload)
+    return payload
+
+
+@app.post("/api/report/{job_id}/ar")
+async def generate_arabic_report(job_id: str):
+    """Lazily produce (or refresh) the Arabic sidecar for a completed study: translate ONLY the
+    patient prose via one claude pass, gate it deterministically, cache report.ar.json. The English
+    report is never mutated. NOTE: the live translate cannot be self-verified in a Claude session
+    (nested `claude -p` hangs) — it runs on a real deployment; a clinical translator audits the output."""
+    if not AR_ENABLED:
+        raise HTTPException(404, "Arabic layer disabled")
+    _validate_job_id(job_id)
+    from services import arabic
+    payload, _job = _english_report_payload(job_id)
+    patient = payload.get("patient") or {}
+    jd = _job_dir(job_id)
+    cached = arabic.read_sidecar(jd, patient)
+    if cached is not None:
+        return {"status": "ok", "patient": cached}
+    ar_patient = await asyncio.to_thread(arabic.build_ar_patient, patient)
+    if ar_patient.get("_degraded"):
+        return {"status": "degraded", "patient": None}   # client falls back to English (the C floor)
+    arabic.write_sidecar(jd, patient, ar_patient)
+    return {"status": "ok", "patient": ar_patient}
 
 
 @app.get("/api/reports")
@@ -2365,10 +2418,33 @@ async def reconcile_completed_report_upload(
     return _build_report_payload(job)
 
 
+async def _serve_arabic_pdf(job_id: str):
+    """Build (if needed) and serve the Arabic patient PDF from the cached/derived Arabic block."""
+    from services import arabic
+    from services.report_builder_ar import build_patient_report_ar
+    payload, job = _english_report_payload(job_id)
+    patient = payload.get("patient") or {}
+    jd = _job_dir(job_id)
+    ar_patient = arabic.read_sidecar(jd, patient)
+    if ar_patient is None:
+        ar_patient = await asyncio.to_thread(arabic.build_ar_patient, patient)
+        if ar_patient.get("_degraded"):
+            raise HTTPException(409, "Arabic translation unavailable; use the English report")
+        arabic.write_sidecar(jd, patient, ar_patient)
+    pp = _find_patient_pdf(job_id, job)
+    figs = Path(pp).parent if pp else jd
+    out = jd / "report.ar.pdf"
+    await asyncio.to_thread(build_patient_report_ar, ar_patient, figs, out)
+    return FileResponse(str(out), media_type="application/pdf", filename="mika_report_ar.pdf")
+
+
 @app.get("/api/report/{job_id}/pdf")
-async def get_report_pdf(job_id: str):
-    """Serve the patient-facing PDF report, from the live job or from disk."""
+async def get_report_pdf(job_id: str, lang: str = "en"):
+    """Serve the patient-facing PDF report, from the live job or from disk. `?lang=ar` builds and
+    serves the Arabic PDF instead (flag-gated); the English path is unchanged when off."""
     _validate_job_id(job_id)
+    if lang == "ar" and AR_ENABLED:
+        return await _serve_arabic_pdf(job_id)
     job = JOBS.get(job_id)
     if not job:
         # Restart / cache miss: serve the durable PDF recorded in the on-disk manifest.

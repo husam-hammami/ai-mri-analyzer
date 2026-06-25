@@ -12,3 +12,8 @@ reportlab==4.1.0
 # Multi-format input support — bounded so a transitive resolve can't pull a major bump.
 nibabel>=5.2.0,<6
 pynrrd>=1.0.0,<2
+# Arabic report layer (flag-dark MIKA_AR_ENABLED). PIN python-bidi==0.4.2: it is the LAST
+# pure-Python (py3-none-any) release; >=0.5 ships a compiled Rust/maturin wheel that needs a
+# per-target binary and would break the hashed Electron bundle lock (same class as the numpy pin).
+arabic-reshaper==3.0.0
+python-bidi==0.4.2
