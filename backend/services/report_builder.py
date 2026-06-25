@@ -184,7 +184,7 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
     def _img(fig_name, max_w=6.6 * inch, max_h=3.7 * inch):
         if not fig_name:
             return None
-        p = figures_dir / fig_name
+        p = figures_dir / Path(fig_name).name   # basename: the model sometimes writes a 'report/foo.png' prefix
         if not p.exists():
             return None
         try:

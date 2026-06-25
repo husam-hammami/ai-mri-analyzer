@@ -1021,7 +1021,9 @@
       if (!figureFilename) return null;
       if (figureFilename.startsWith('/') || figureFilename.startsWith('http')) return figureFilename; // demo / asset passthrough
       if (!jobId) return null;
-      const stem = String(figureFilename).replace(/\.[^.]+$/, '');
+      // basename only: the agent sometimes writes a 'report/foo.png' prefix, but images are served
+      // by stem and the name guard rejects '/', so a prefixed name 404s. Strip any dir + extension.
+      const stem = String(figureFilename).replace(/^.*[\\/]/, '').replace(/\.[^.]+$/, '');
       // Encode the stem — agent-authored figure names can contain spaces/parens/non-ASCII.
       return `${API_BASE}/api/images/${jobId}/${encodeURIComponent(stem)}`;
     }
@@ -1261,7 +1263,11 @@
       const findings = rawRows.map((r, i) => {
         const certainty = TIER_WORD[r.tier];           // D → null
         const plain = stripTier(r.text);
-        const loc = trustAllowsMarker(r) ? parseLandmark(anatomy, plain) : null;
+        // Body-DIAGRAM region pin: a categorical "which level" marker on a generic illustration,
+        // positioned by a hand-authored landmark. It makes NO scan-pixel-precision claim (the finding
+        // text already names the level), so it's driven by the level parsed from the text — NOT the
+        // calibration/scan trust flags the agent reflexively sets false on uncalibrated studies.
+        const loc = parseLandmark(anatomy, plain);
         return { id:`finding-${i}`, sourceIndex: i, plainSentence: plain, certainty, caption:'',
                  proofImageUrl: trustedFigure(report.job_id, r),
                  location: loc ? { label: loc } : null, measurement:null };
