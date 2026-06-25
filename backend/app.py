@@ -2525,10 +2525,14 @@ async def cancel_job(job_id: str):
 _EFFORT_FACTOR = {"low": 0.5, "medium": 0.7, "high": 1.0, "xhigh": 1.3, "max": 1.6}
 
 
-def _estimate_agent_seconds(n_studies: int = 1, effort: str = "high") -> int:
-    base = 900 + 400 * max(1, n_studies)
-    est = base * _EFFORT_FACTOR.get(effort, 1.0)
-    return int(min(max(est, 600), 5400))
+def _estimate_agent_seconds(n_images: int = 0, n_studies: int = 1, effort: str = "high") -> int:
+    # Scale with the ACTUAL study size — a 5-slice study must not show the same ~20-min estimate
+    # as an 80-slice one (the old fixed 900+400 base read "~22 min" for everything). base overhead
+    # + per-image cost; unknown size falls back to a mid-size assumption.
+    imgs = n_images if n_images and n_images > 0 else 40
+    base = 60 + 80 * max(1, n_studies)
+    est = (base + 9 * imgs) * _EFFORT_FACTOR.get(effort, 1.0)
+    return int(min(max(est, 90), 5400))
 
 
 def _slice_thumbnails(file_list, dest_dir: str, key: str, base_dir: Optional[str] = None,
@@ -2692,7 +2696,10 @@ async def _run_agent_pipeline(
         evidence_manifest = _prepare_evidence_pack(job, study_root)
 
         runner = AgentRunner(api_key=api_key, auth_token=auth_token)
-        est = _estimate_agent_seconds(n_studies=1, effort=runner.effort)
+        # total images in this study (from the inventory pre-step) so the ETA reflects real size
+        n_images = sum(int((s or {}).get("num_slices") or 1)
+                       for s in ((job.measurements or {}).get("sequence_catalog") or []))
+        est = _estimate_agent_seconds(n_images=n_images, n_studies=1, effort=runner.effort)
         job.est_total_seconds = est
         job.eta_seconds = est
         job.status = "interpreting"
