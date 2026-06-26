@@ -76,6 +76,10 @@
       --duration-fast: 150ms; --duration-normal: 250ms; --duration-slow: 420ms;
       --dur-breathe: 4200ms; --dur-scan: 3600ms; --dur-progress: 800ms;
       --stagger-step: 70ms; --draw-marker: 520ms;
+      /* One Pulse — shared reading-motion tokens (lab + imaging). :root ONLY — do not override locally. */
+      --dur-float: 10s; --dur-particle: 14s; --reading-period: 3.1s;
+      --float-amp: 1.4%; --float-rot: 0.35deg; --particle-opacity: .38;
+      --pulse-band: linear-gradient(180deg, transparent 0%, rgba(91,141,239,.08) 22%, rgba(91,141,239,.48) 48%, rgba(255,255,255,.68) 52%, rgba(91,141,239,.10) 76%, transparent 100%);
     }
 
     *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -103,6 +107,11 @@
         animation-duration:.01ms !important; animation-iteration-count:1 !important;
         transition-duration:.01ms !important; scroll-behavior:auto !important;
       }
+      /* One Pulse belt-and-suspenders (the * rule above is the load-bearing gate): zero the motion
+         tokens so any token-driven loop also collapses, and stop rvKen's `both` fill from leaving the
+         slice zoomed — evidence must settle at its natural scale. */
+      html { --dur-float:0s; --dur-particle:0s; --reading-period:0s; --float-amp:0%; --float-rot:0deg; --particle-opacity:0; }
+      .rv-slice.on { animation-fill-mode:none !important; }
     }
 
     /* ════════════════════ Shell ════════════════════ */
@@ -238,10 +247,14 @@
     }
     .state-home .bf-glow { opacity:.7; animation: regionGlow var(--dur-breathe) var(--ease-calm) infinite; }
     @keyframes regionGlow { 0%,100% { opacity:.55; transform:translate(-50%,-50%) scale(0.96);} 50% { opacity:.85; transform:translate(-50%,-50%) scale(1.06);} }
+    /* One Pulse — gentle ambient float on the HOME hero figure (decorative; the OUTER .bodyfig only, never
+       .bodyfig-stage which carries marker space — and home has no markers). Shares the lab artifact's feel. */
+    .bodyfig.state-home { animation: pulseFloat var(--dur-float) var(--ease-calm) infinite; }
+    @keyframes pulseFloat { 0%,100% { transform: translateY(0) rotateZ(calc(var(--float-rot) * -1)); } 50% { transform: translateY(calc(var(--float-amp) * -1)) rotateZ(var(--float-rot)); } }
 
     /* Wait: one calm scan-band sweeping the active region */
     .bf-scan { position:absolute; left:18%; right:18%; height:8%; top:0; pointer-events:none;
-      background: linear-gradient(180deg, transparent, var(--accent-glow) 45%, rgba(37,99,235,.45) 50%, var(--accent-glow) 55%, transparent);
+      background: var(--pulse-band);   /* One Pulse — shared reading-sweep signature (same band as the lab pulse) */
       filter: blur(1px); opacity:0; border-radius:40%; }
     .state-wait .bf-scan { opacity:.9; animation: scanSweep var(--dur-scan) var(--ease-calm) infinite; }
     @keyframes scanSweep { 0% { top:30%; opacity:.2;} 25%{opacity:.95;} 50% { top:60%; opacity:.95;} 75%{opacity:.95;} 100% { top:30%; opacity:.2;} }
@@ -410,8 +423,12 @@
     .reading-viewer { width:100%; max-width:430px; margin: var(--s-2) 0 var(--s-4); }
     .rv-stage { position:relative; aspect-ratio:4/3; border-radius:14px; overflow:hidden; background:#04070e;
       box-shadow: 0 10px 34px rgba(37,99,235,.20), inset 0 0 0 1px var(--accent-line); }
-    .rv-slice { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; transform: scale(1.0); transition: opacity 1300ms var(--ease-out); filter: contrast(1.06) brightness(1.02); will-change: opacity, transform; }
+    /* One Pulse split: wrapper MOVES (opacity cross-fade + rvKen zoom); inner <img> is STATIC and carries
+       the filter — a filtered layer is never animated (compositor-clean). Evidence stillness preserved:
+       the slice content itself only cross-fades/zooms as reading theater; under reduced motion it settles at 1.0. */
+    .rv-slice { position:absolute; inset:0; width:100%; height:100%; opacity:0; transform: scale(1.0); transition: opacity 1300ms var(--ease-out); will-change: opacity, transform; }
     .rv-slice.on { opacity:1; animation: rvKen 6000ms var(--ease-out) both; }   /* slow Ken-Burns zoom on the slice being read */
+    .rv-slice-content { width:100%; height:100%; object-fit:contain; display:block; filter: contrast(1.06) brightness(1.02); }
     @keyframes rvKen { from { transform: scale(1.0); } to { transform: scale(1.07); } }
     .rv-grid { position:absolute; inset:0; pointer-events:none; opacity:.10;
       background-image: linear-gradient(var(--accent) 1px, transparent 1px), linear-gradient(90deg, var(--accent) 1px, transparent 1px);
@@ -631,9 +648,13 @@
       radial-gradient(70% 62% at 50% 42%, rgba(91,141,239,.18), rgba(91,141,239,0) 64%),
       linear-gradient(180deg, #fbfdff 0%, #eef6ff 48%, #f8fafc 100%);
       border:1px solid var(--accent-line); box-shadow:0 12px 34px rgba(15,23,42,.10), inset 0 0 0 1px rgba(255,255,255,.74); perspective:900px; }
-    .lab-stream img { position:absolute; z-index:1; left:50%; top:50%; width:138%; height:auto; max-width:none; min-height:0; object-fit:contain; display:block;
-      transform:translate3d(-50%,-50%,0) rotateY(-3deg); transform-origin:center; opacity:.96;
-      filter:saturate(.96) contrast(1.02) drop-shadow(0 16px 26px rgba(49,78,128,.16)); animation:labStreamFloat 10s var(--ease-calm) infinite; }
+    /* One Pulse split: the WRAPPER moves (float, transform only; z-index:1 preserved for the blend stack);
+       the inner <img> is STATIC and carries the filter/drop-shadow — no filtered layer is ever animated. */
+    .lab-stream-fig { position:absolute; z-index:1; left:50%; top:50%; width:138%; height:auto; max-width:none; min-height:0;
+      transform:translate3d(-50%,-50%,0) rotateY(-3deg); transform-origin:center;
+      animation:labStreamFloat var(--dur-float) var(--ease-calm) infinite; }
+    .lab-stream-fig img { width:100%; height:auto; display:block; object-fit:contain; opacity:.96;
+      filter:saturate(.96) contrast(1.02) drop-shadow(0 16px 26px rgba(49,78,128,.16)); }
     .lab-stream::after { content:''; position:absolute; inset:0; z-index:4; pointer-events:none;
       background:linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,0) 31%, rgba(255,255,255,.34)),
         radial-gradient(78% 58% at 50% 50%, transparent 52%, rgba(248,250,252,.72) 100%); }
@@ -643,20 +664,22 @@
         radial-gradient(circle at 64% 34%, rgba(14,165,233,.36) 0 2px, transparent 3px),
         radial-gradient(circle at 46% 64%, rgba(148,163,184,.34) 0 1.5px, transparent 3px),
         radial-gradient(circle at 72% 76%, rgba(37,99,235,.34) 0 1.5px, transparent 3px);
-      background-size:92px 154px; animation:labParticleFlow 14s linear infinite;
+      background-size:92px 154px; animation:labParticleFlow var(--dur-particle) linear infinite;
       -webkit-mask-image:linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
       mask-image:linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%); }
+    /* One Pulse: the pulse MOVES, so no blur on it (moving a blurred layer re-rasters every frame) — the
+       softness now lives in the shared --pulse-band gradient. transform + opacity + blend only. */
     .lab-stream-pulse { position:absolute; z-index:3; top:-22%; bottom:-22%; left:42%; width:18%; pointer-events:none; opacity:0;
-      background:linear-gradient(180deg, transparent 0%, rgba(91,141,239,.08) 22%, rgba(91,141,239,.48) 48%, rgba(255,255,255,.68) 52%, rgba(91,141,239,.10) 76%, transparent 100%);
-      filter:blur(11px); transform:translateY(-120%) skewX(-8deg); mix-blend-mode:screen; }
-    .lab-stream.reading img { animation-duration:7s; }
-    .lab-stream.reading .lab-stream-particles { opacity:.38; animation-duration:6.5s; mix-blend-mode:multiply; }
+      background: var(--pulse-band);
+      transform:translateY(-120%) skewX(-8deg); mix-blend-mode:screen; }
+    .lab-stream.reading .lab-stream-fig { animation-duration:7s; }
+    .lab-stream.reading .lab-stream-particles { opacity:var(--particle-opacity); animation-duration:6.5s; mix-blend-mode:multiply; }
     .lab-stream.reading .lab-stream-pulse { animation:labStreamPulse 3.1s var(--ease-calm) infinite; }
     @keyframes labStreamFloat { 0%,100%{ transform:translate3d(-50%,-50%,0) rotateY(-3deg) rotateZ(-.35deg); } 50%{ transform:translate3d(-50%,-51.4%,18px) rotateY(3deg) rotateZ(.35deg); } }
     @keyframes labParticleFlow { from{ background-position:0 0, 0 0, 0 0, 0 0; } to{ background-position:0 -308px, 0 -308px, 0 -308px, 0 -308px; } }
     @keyframes labStreamPulse { 0%,18%{ opacity:0; transform:translateY(-120%) skewX(-8deg); } 46%{ opacity:.95; } 74%,100%{ opacity:0; transform:translateY(120%) skewX(-8deg); } }
     @media (prefers-reduced-motion: reduce) {
-      .lab-stream img, .lab-stream-particles, .lab-stream.reading .lab-stream-pulse { animation:none; }
+      .lab-stream-fig, .lab-stream-particles, .lab-stream.reading .lab-stream-pulse { animation:none; }
       .lab-stream-particles, .lab-stream-pulse { opacity:0; }
     }
 
@@ -2715,7 +2738,7 @@
       return (
         <div className="reading-viewer" role="img" aria-label={`The ${label || 'scan'} being read, image by image.`}>
           <div className="rv-stage">
-            {slices.map((s, i) => <img key={s + i} className={`rv-slice ${i === idx ? 'on' : ''}`} src={s} alt="" loading="lazy" />)}
+            {slices.map((s, i) => <div key={s + i} className={`rv-slice ${i === idx ? 'on' : ''}`}><img className="rv-slice-content" src={s} alt="" loading="lazy" /></div>)}
             <span className="rv-grid" aria-hidden="true" />
             <span className="rv-scan" aria-hidden="true" />
             <i className="rv-bk tl" aria-hidden="true" /><i className="rv-bk tr" aria-hidden="true" />
@@ -2731,7 +2754,7 @@
     function LabStreamVisual({ reading=false }) {
       return (
         <div className={`lab-stream ${reading?'reading':''}`} aria-hidden="true">
-          <img src="/assets/brand/lab-stream-evidence-artifact.webp" alt="" loading="lazy" />
+          <div className="lab-stream-fig"><img src="/assets/brand/lab-stream-evidence-artifact.webp" alt="" loading="lazy" /></div>
           <span className="lab-stream-particles" />
           <span className="lab-stream-pulse" />
         </div>
