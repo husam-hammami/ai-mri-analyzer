@@ -88,11 +88,12 @@ each analyte broadly is. You do NOT give a verdict, diagnosis, cause, or treatme
   cells that carries oxygen; low readings are commonly linked to anemia". Empty/short for normals.
 - `clarity`: 0.0-1.0, how clearly THIS row was legible on the image (1.0 = crisp, 0.3 = barely readable).
 - `analyte_raw`: the analyte name printed on the report, verbatim.
-- `plain_name`: the PLAINEST everyday descriptor a non-expert would understand — prefer a plain
-  phrase over the clinical term. E.g. "Vitamin D" (for "25-hydroxyvitamin D"), "'bad' cholesterol"
-  (for "LDL-C"), "oxygen-carrying level in blood" (for "Hemoglobin"), "average red-blood-cell size"
-  (for "MCV"). Keep `analyte_raw` as the exact printed term. If you genuinely can't simplify, reuse
-  `analyte_raw`.
+- `plain_name`: a SHORT, plain label — the everyday NAME of the test, ideally ≤3 words, NOT a long
+  descriptive sentence. Prefer the common name, with the lab abbreviation in parentheses when it helps.
+  E.g. "Vitamin D" (for "25-hydroxyvitamin D"), "'Bad' cholesterol (LDL)" (for "LDL-C"), "Hemoglobin"
+  (for "Hemoglobin"), "Red-cell size (MCV)" (for "MCV"), "Iron stores (ferritin)" (for "Ferritin"). Do
+  NOT expand into a phrase like "oxygen-carrying level in blood" — keep it short and scannable. Keep
+  `analyte_raw` as the exact printed term. If you genuinely can't simplify, reuse `analyte_raw`.
 - `analyte_key`: a short normalized lowercase slug for COMMON analytes, used to match well-known
   patterns. Use one of: hemoglobin, hematocrit, mcv, mch, rdw, ferritin, iron, tibc, transferrin_sat,
   vitamin_b12, folate, vitamin_d, ldl, hdl, total_cholesterol, triglycerides, glucose, hba1c, tsh, ft4,

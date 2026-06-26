@@ -856,6 +856,44 @@
     }
     @media (prefers-reduced-motion: reduce) { .lab-row { animation:none; } }
 
+    /* ══ Lab read — calm "one answer, details hidden" (v2.1) ══ */
+    /* Header = the one calm answer (left) + the bloodstream artifact as hero (right). */
+    .lab-verdict { display:grid; grid-template-columns:minmax(0,1fr) minmax(220px,300px); gap:var(--s-6); align-items:center; }
+    .lab-verdict-text { min-width:0; }
+    .lab-verdict-art { min-width:0; align-self:stretch; display:flex; }
+    .lab-verdict-art .lab-stream { min-height:200px; width:100%; border-radius:8px; }
+    .lab-assess-based { font-size:13px; line-height:1.5; color:var(--slate); margin:0; }
+    .lab-assess-based-k { font-size:10.5px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--slate-300); margin-inline-end:6px; }
+
+    /* The values: one calm toggle → a compact, low table. No cards/tiles/bars. */
+    .lab-other-note { font-size:13px; color:var(--slate); margin:0 0 var(--s-3); }
+    .lab-numbers-wrap { display:flex; flex-direction:column; gap:var(--s-3); }
+    .lab-numbers-toggle { align-self:flex-start; display:inline-flex; align-items:center; gap:10px; min-height:40px;
+      font-size:14px; font-weight:700; color:var(--accent-strong); background:var(--accent-soft);
+      border:1px solid var(--accent-line); border-radius:8px; padding:9px 16px; cursor:pointer; }
+    .lab-numbers-toggle:hover { border-color:var(--accent); }
+    .lab-numbers-count { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 6px;
+      border-radius:var(--r-full); background:var(--accent); color:#fff; font-size:12px; font-weight:800; }
+    .lab-numbers-table { background:var(--surface); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    .lnt-row { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.1fr) auto; align-items:center;
+      gap:var(--s-4); padding:11px var(--s-4); border-top:1px solid var(--line-soft); }
+    .lnt-row:first-child { border-top:none; }
+    .lnt-name { font-size:13.5px; font-weight:650; color:var(--ink); min-width:0; }
+    .lnt-val { font-size:14px; font-weight:750; color:var(--ink); }
+    .lnt-range { font-size:12px; color:var(--slate); }
+    .lnt-range-k { color:var(--slate-300); }
+    .lnt-dir { justify-self:end; font-size:11px; font-weight:800; letter-spacing:.3px; text-transform:uppercase;
+      color:var(--accent-strong); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line);
+      border-radius:var(--r-full); padding:3px 10px; min-width:46px; text-align:center; }
+    .lnt-dir:empty { display:none; }
+    .lnt-proof { padding:var(--s-3) var(--s-4) var(--s-4); border-top:1px solid var(--line-soft); }
+    .lnt-proof .lab-proof-img { margin-top:var(--s-3); }
+
+    /* Collapse the header to one column (drop the decorative artifact) when narrow or chat docks. */
+    @media (max-width: 1100px) { .lab-verdict { grid-template-columns:minmax(0,1fr); } .lab-verdict-art { display:none; } }
+    .shell.chat-open .page-lab-read .lab-verdict { grid-template-columns:minmax(0,1fr); }
+    .shell.chat-open .page-lab-read .lab-verdict-art { display:none; }
+
     .proof { background: var(--surface); border:1px solid var(--line); border-radius: var(--r-lg); overflow:hidden; box-shadow: var(--shadow-sm); }
     .proof-head { padding: var(--s-4) var(--s-5); border-bottom:1px solid var(--line-soft); }
     .proof-title { font-size:15px; font-weight:600; color: var(--ink); margin-bottom:6px; }
@@ -1286,10 +1324,11 @@
         errTitle: 'MIKA couldn’t read this report clearly',
         errBody: 'Try a clearer photo in good light, or upload the original PDF. MIKA won’t guess at values it can’t read.',
         proofUnavail: 'The report page isn’t available for this result.',
-        // v2 — named assessment + demographics + master/detail + chat
+        // v2 — named assessment + demographics + calm "details hidden" read + chat
         assessmentLead: 'You likely have',
-        assessmentSupport: 'What stands out',
-        detailEmpty: 'Select a result to see the numbers and where it sits in the normal range.',
+        assessmentBasedOn: 'Based on',
+        otherOutside: 'A few other values also read outside the normal range — see them below.',
+        hideNumbers: 'Hide the numbers',
         dirLow: 'Low', dirHigh: 'High', dirNormal: 'In range',
         demoAge: 'Age',
         askCta: 'Ask MIKA about your report',
@@ -1474,6 +1513,9 @@
       'Try a clearer photo in good light, or upload the original PDF. MIKA won’t guess at values it can’t read.':'جرّب صورة أوضح بإضاءة جيدة، أو ارفع ملف PDF الأصلي. لن تخمّن MIKA قيماً لا تستطيع قراءتها.',
       'The report page isn’t available for this result.':'صفحة التقرير غير متوفرة لهذه النتيجة.',
       'You likely have':'نتائجك تشير على الأرجح إلى',
+      'Based on':'استناداً إلى',
+      'A few other values also read outside the normal range — see them below.':'بعض القيم الأخرى أيضاً خارج النطاق الطبيعي — اطّلع عليها أدناه.',
+      'Hide the numbers':'إخفاء الأرقام',
       'What stands out':'ما يلفت النظر',
       'Select a result to see the numbers and where it sits in the normal range.':'اختر نتيجة لعرض الأرقام وموضعها ضمن النطاق الطبيعي.',
       'Low':'منخفض','High':'مرتفع','In range':'ضمن النطاق',
@@ -3421,74 +3463,42 @@
           <h1 className="lab-takeaway"><span className="lab-assess-lead">{L(COPY.lab.assessmentLead)} </span>{name}</h1>
           {expl && <p className="lab-assess-expl">{expl}</p>}
           {sup.length > 0 && (
-            <div className="lab-assess-support">
-              <span className="lab-assess-support-k">{L(COPY.lab.assessmentSupport)}</span>
-              <span className="lab-assess-chips">{sup.map((s, i) => <span className="lab-mk-chip" key={i}>{s}</span>)}</span>
-            </div>
+            <p className="lab-assess-based">
+              <span className="lab-assess-based-k">{L(COPY.lab.assessmentBasedOn)}</span> {sup.join(' · ')}
+            </p>
           )}
         </div>
       );
     }
 
-    // Master row — compact, no inline numbers (the numbers live in the detail pane → the page width is
-    // used, not the card height). Direction is a color-free caret + the severity phrase.
-    function LabResultRow({ r, n, selected, onSelect }) {
-      const valueText = [r.value, r.unit].filter(Boolean).join(' ');
-      const dir = r.status === 'low' ? 'low' : r.status === 'high' ? 'high' : 'abn';
-      return (
-        <button className={`lab-frow lab-row sev-${dir} ${selected?'active':''}`} aria-pressed={selected} onClick={onSelect}>
-          <span className="lab-card-index"><Num>{n}</Num></span>
-          <span className="lab-row-body">
-            <span className="lab-card-top">
-              <span className="lab-name">{r.plain_name}</span>
-              {r.severity_phrase && <span className="lab-name-sev">— {r.severity_phrase}</span>}
-            </span>
-            <span className="lab-result-line">
-              {valueText && <span className="lab-result-value"><Num>{valueText}</Num></span>}
-              {r.ref_range_text && <span className="lab-result-range">({L(COPY.lab.range)} <Num>{r.ref_range_text}</Num>)</span>}
-            </span>
-          </span>
-          <span className={`lab-dir lab-dir-${dir}`} aria-hidden="true">{dir === 'low' ? '▾' : dir === 'high' ? '▴' : '•'}</span>
-        </button>
-      );
-    }
-
-    // Detail pane — the selected result's numbers + range bar + plain meaning + an on-demand proof crop.
-    // This is the right column on desktop; it reflows below the list when the canvas is narrow / chat docks.
-    function LabDetailPane({ r, jobId }) {
+    // Compact numbers table — the calm "See the numbers" detail (hidden by default). One low row per
+    // flagged value: plain name, the result, the normal range, a color-free Low/High chip. Uses the page
+    // width; NO per-value cards / stat-tiles / detail pane (those overwhelmed). One shared "see it on
+    // your report" proof below, not per-row.
+    function LabNumbersTable({ rows, jobId }) {
       const [showProof, setShowProof] = useState(false);
       const [proofOk, setProofOk] = useState(true);
-      useEffect(() => { setShowProof(false); setProofOk(true); }, [r && r.source_text]);
-      if (!r) return <div className="lab-detail lab-detail-empty">{L(COPY.lab.detailEmpty)}</div>;
-      const proofSrc = jobId ? `${API_BASE}/api/report/${jobId}/page/${r.page_index||0}` : null;
-      const valueText = [r.value, r.unit].filter(Boolean).join(' ');
+      const proofSrc = jobId ? `${API_BASE}/api/report/${jobId}/page/0` : null;
       return (
-        <div className="lab-detail">
-          <div className="lab-detail-hd">
-            <span className="lab-detail-name">{r.plain_name}</span>
-            {r.severity_phrase && <span className="lab-name-sev">— {r.severity_phrase}</span>}
-          </div>
-          <div className="lab-detail-figures">
-            <div className="lab-detail-figure">
-              <span className="lab-detail-k">{L(COPY.lab.value)}</span>
-              <span className="lab-detail-v"><Num>{valueText || r.value}</Num></span>
-            </div>
-            {r.ref_range_text && (
-              <div className="lab-detail-figure">
-                <span className="lab-detail-k">{L(COPY.lab.range)}</span>
-                <span className="lab-detail-v"><Num>{r.ref_range_text}</Num></span>
+        <div className="lab-numbers-table">
+          {rows.map((r, i) => {
+            const dir = r.status === 'low' ? 'low' : r.status === 'high' ? 'high' : 'abn';
+            const valueText = [r.value, r.unit].filter(Boolean).join(' ');
+            return (
+              <div className="lnt-row" key={i}>
+                <span className="lnt-name">{r.plain_name}</span>
+                <span className="lnt-val"><Num>{valueText || r.value || '—'}</Num></span>
+                <span className="lnt-range">{r.ref_range_text ? <><span className="lnt-range-k">{L(COPY.lab.range)}</span> <Num>{r.ref_range_text}</Num></> : '—'}</span>
+                <span className={`lnt-dir lnt-dir-${dir}`}>{dir === 'low' ? L(COPY.lab.dirLow) : dir === 'high' ? L(COPY.lab.dirHigh) : ''}</span>
               </div>
-            )}
-          </div>
-          <LabRangeBar r={r} />
-          {r.plain_meaning && <div className="lab-mean">{r.plain_meaning}</div>}
-          <button className="lab-proof-toggle" aria-expanded={showProof} onClick={()=>setShowProof(s=>!s)}>{L(COPY.lab.seeReport)}</button>
-          {showProof && (
-            <div className="lab-proof">
-              <div className="lab-proof-quote">{L(COPY.lab.readAs)} <em>“{r.source_text}”</em></div>
-              {proofSrc && proofOk
+            );
+          })}
+          {proofSrc && (
+            <div className="lnt-proof">
+              <button className="lab-proof-toggle" aria-expanded={showProof} onClick={()=>setShowProof(s=>!s)}>{L(COPY.lab.seeReport)}</button>
+              {showProof && (proofOk
                 ? <div className="lab-proof-img"><img src={proofSrc} alt="" onError={()=>setProofOk(false)} /></div>
-                : <div className="lab-proof-na">{L(COPY.lab.proofUnavail)}</div>}
+                : <div className="lab-proof-na">{L(COPY.lab.proofUnavail)}</div>)}
             </div>
           )}
         </div>
@@ -3496,7 +3506,7 @@
     }
 
     function LabReadScreen({ report, jobId }) {
-      const [selIdx, setSelIdx] = useState(0);             // selected flagged result (top pre-selected)
+      const [numbersOpen, setNumbersOpen] = useState(false);   // the values are hidden by default (calm)
       const [normalsOpen, setNormalsOpen] = useState(false);
       const [otherOpen, setOtherOpen] = useState(false);
       const disclaimer = 'This is an AI-generated analysis, not a medical diagnosis — please discuss it with your doctor.';
@@ -3526,42 +3536,41 @@
       const other = rest.filter(r => (r.clarity ?? 1) < 0.7 || r.status === 'unknown' || !r.plain_name);
       const confLabel = overall.confidence === 'high' ? 'High' : overall.confidence === 'low' ? 'Low' : 'Moderate';
       const allClean = flagged.length === 0;
-      const selected = flagged[selIdx] || flagged[0] || null;
+      // Flagged values NOT folded into the named assessment (e.g. an unrelated low) → a quiet pointer line.
+      const supportingNames = assessment ? (assessment.supporting || []) : [];
+      const hasOther = !!assessment && flagged.some(r => !supportingNames.includes(r.plain_name));
 
       return (
         <div className="page-inner page-lab-read fade-up">
           <div className="read-topnote" title={L(disclaimer)}><strong>{L('Important:')}</strong> {L(disclaimer)}</div>
 
-          {/* Header (full width): demographics + the named assessment (or the verdict fallback) + confidence. */}
+          {/* Header: the ONE calm answer — demographics + named assessment (+ "based on" line) + confidence,
+              with the bloodstream artifact as the hero on the right (decorative; never over evidence). */}
           <div className="lab-verdict">
-            <div className="lab-eyebrow">{L(COPY.lab.nav)}</div>
-            <LabPatientHeader patient={patient} />
-            {assessment
-              ? <LabAssessment assessment={assessment} />
-              : <h1 className="lab-takeaway">{overall.takeaway}</h1>}
-            <div className="lab-verdict-meta">
-              <ConfidencePill label={confLabel} />
-              {allClean && <span className="lab-count clean">{I.check({width:15,height:15})} {L(COPY.lab.allClearTitle)}</span>}
+            <div className="lab-verdict-text">
+              <div className="lab-eyebrow">{L(COPY.lab.nav)}</div>
+              <LabPatientHeader patient={patient} />
+              {assessment
+                ? <LabAssessment assessment={assessment} />
+                : <h1 className="lab-takeaway">{overall.takeaway}</h1>}
+              <div className="lab-verdict-meta">
+                <ConfidencePill label={confLabel} />
+                {allClean && <span className="lab-count clean">{I.check({width:15,height:15})} {L(COPY.lab.allClearTitle)}</span>}
+              </div>
             </div>
+            <div className="lab-verdict-art"><LabStreamVisual /></div>
           </div>
 
-          {/* Workspace: master list (left) + detail pane (right). Reflows to one column when narrow / chat docks. */}
+          {/* The numbers are HIDDEN by default — one calm toggle opens a compact table. No per-value cards,
+              stat-tiles, or detail pane (those overwhelmed; this is the patient-simplicity register). */}
           {flagged.length > 0 ? (
-            <div className="lab-workspace">
-              <div className="lab-main">
-                <div className="lab-section-head">
-                  <div className="lab-section-title">{L(COPY.lab.flaggedTitle)}</div>
-                  <div className="lab-section-sub"><Num>{flagged.length}</Num> {L(COPY.lab.review)}</div>
-                </div>
-                <div className="lab-flags">
-                  {flagged.map((r, i) => (
-                    <LabResultRow key={i} r={r} n={i+1} selected={selected === r} onSelect={()=>setSelIdx(i)} />
-                  ))}
-                </div>
-              </div>
-              <aside className="lab-side">
-                <LabDetailPane r={selected} jobId={jobId} />
-              </aside>
+            <div className="lab-numbers-wrap">
+              {hasOther && <p className="lab-other-note">{L(COPY.lab.otherOutside)}</p>}
+              <button className="lab-numbers-toggle" aria-expanded={numbersOpen} onClick={()=>setNumbersOpen(o=>!o)}>
+                <span>{numbersOpen ? L(COPY.lab.hideNumbers) : L(COPY.lab.seeNumbers)}</span>
+                <span className="lab-numbers-count"><Num>{flagged.length}</Num></span>
+              </button>
+              {numbersOpen && <LabNumbersTable rows={flagged} jobId={jobId} />}
             </div>
           ) : (
             <div className="lab-clean-panel">{L(COPY.lab.allClearTitle)}. {L(COPY.lab.normalsHint)}</div>
@@ -4445,30 +4454,30 @@
       // Microcytic anemia panel (mirrors a real CBC) — exercises the named assessment with several
       // supporting markers, plus one unrelated low (Vitamin D) to show the gate picks the PRIMARY pattern.
       const flagged = [
-        { plain_name:'oxygen-carrying level in blood (hemoglobin)', analyte_raw:'Hemoglobin', analyte_key:'hemoglobin',
+        { plain_name:'Hemoglobin', analyte_raw:'Hemoglobin', analyte_key:'hemoglobin',
           value:'10.6', unit:'g/dL', ref_range_text:'12-15', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'a bit low', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'Your blood is a little low on the part that carries oxygen, which can leave you feeling tired.',
           source_text:'Hemoglobin 10.6 g/dL (12-15)' },
-        { plain_name:'share of blood that is red cells (hematocrit)', analyte_raw:'Hematocrit', analyte_key:'hematocrit',
+        { plain_name:'Hematocrit', analyte_raw:'Hematocrit', analyte_key:'hematocrit',
           value:'35', unit:'%', ref_range_text:'36-46', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'slightly low', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'This is the portion of your blood made up of red cells, and it reads just under the normal range.',
           source_text:'Hematocrit 35 % (36-46)' },
-        { plain_name:'average red-blood-cell size (MCV)', analyte_raw:'MCV', analyte_key:'mcv',
+        { plain_name:'Red-cell size (MCV)', analyte_raw:'MCV', analyte_key:'mcv',
           value:'74', unit:'fL', ref_range_text:'80-96', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'Your red blood cells are smaller than usual on average.', source_text:'MCV 74 fL (80-96)' },
-        { plain_name:'oxygen-carrier amount per red cell (MCH)', analyte_raw:'MCH', analyte_key:'mch',
+        { plain_name:'Hemoglobin per cell (MCH)', analyte_raw:'MCH', analyte_key:'mch',
           value:'23', unit:'pg', ref_range_text:'27-32', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'Each red blood cell is carrying a little less of the oxygen-carrying part than usual.',
           source_text:'MCH 23 pg (27-32)' },
-        { plain_name:'iron stores (ferritin)', analyte_raw:'Ferritin', analyte_key:'ferritin',
+        { plain_name:'Iron stores (ferritin)', analyte_raw:'Ferritin', analyte_key:'ferritin',
           value:'8', unit:'ng/mL', ref_range_text:'30-300', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'This reflects the iron your body has in reserve, and it reads low.', source_text:'Ferritin 8 ng/mL (30-300)' },
-        { plain_name:'red-cell size variation (RDW)', analyte_raw:'RDW', analyte_key:'rdw',
+        { plain_name:'Red-cell variation (RDW)', analyte_raw:'RDW', analyte_key:'rdw',
           value:'17.7', unit:'%', ref_range_text:'11.5-14.5', range_type:'two_sided_numeric', status:'high',
           severity_phrase:'high', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'Your red blood cells vary more than usual in size.', source_text:'RDW 17.7 % (11.5-14.5)' },
@@ -4495,8 +4504,8 @@
             name_en:'iron-deficiency anemia', name_ar:'فقر الدم الناتج عن نقص الحديد',
             explanation_en:'This usually means the blood is low on iron, which can leave you feeling tired.',
             explanation_ar:'يعني هذا عادةً أن الدم منخفض في الحديد، وقد يسبّب الشعور بالتعب.',
-            supporting:['oxygen-carrying level in blood (hemoglobin)','average red-blood-cell size (MCV)',
-              'oxygen-carrier amount per red cell (MCH)','iron stores (ferritin)'],
+            supporting:['Hemoglobin','Red-cell size (MCV)',
+              'Hemoglobin per cell (MCH)','Iron stores (ferritin)'],
             lead_key:'consistent_with', source_indices:[0,2,3,4],
           },
         },
