@@ -26,6 +26,7 @@ if _BACKEND not in sys.path:
 
 from services.lab_reader import (  # noqa: E402
     CLARITY_FLAG_FLOOR,
+    _CONDITION_ADVICE,
     _CONDITION_WHITELIST,
     _REDFLAG_TERMS,
     _TREATMENT_TERMS,
@@ -124,6 +125,15 @@ def test_whitelist_table_has_no_redflag_or_treatment_terms():
         blob = " ".join(str(entry.get(f, "")) for f in ("name_en", "name_ar", "expl_en", "expl_ar")).lower()
         for term in _REDFLAG_TERMS + _TREATMENT_TERMS:
             assert term not in blob, (entry["key"], term)
+
+
+def test_advice_notes_have_no_redflag_or_drug_terms():
+    """The curated 'what can help' notes are general lifestyle info only — never a drug, dose, or
+    red-flag term (e.g. no 'supplement', 'medication', 'statin')."""
+    for key, adv in _CONDITION_ADVICE.items():
+        blob = (str(adv.get("en", "")) + " " + str(adv.get("ar", ""))).lower()
+        for term in _REDFLAG_TERMS + _TREATMENT_TERMS:
+            assert term not in blob, (key, term)
 
 
 # ── null / fallback ──

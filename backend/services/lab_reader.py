@@ -892,6 +892,52 @@ _CONDITION_AR_ALIASES = {
     "low_platelets": ["نقص الصفائح", "انخفاض الصفائح"],
 }
 
+# CURATED, SAFE per-condition "what can help" notes — concise + reassuring general lifestyle info ONLY.
+# NO drugs, NO doses, NO "this fixes it / no need to check further". For conditions where a generic
+# diet/lifestyle tip could HARM or imply self-cure over a needed work-up (thyroid, kidney, white cells,
+# platelets), the note is reassurance ONLY — no specific "eat/drink/do X". Curated, never LLM-generated.
+_CONDITION_ADVICE = {
+    "iron_deficiency_anemia": {
+        "en": "Good news — this is common and very treatable. Iron-rich foods like red meat, lentils, beans, and dark leafy greens help your body rebuild its iron.",
+        "ar": "خبر جيد — هذا شائع وقابل للعلاج تماماً. الأطعمة الغنية بالحديد مثل اللحم الأحمر والعدس والفاصولياء والخضروات الورقية الداكنة تساعد جسمك على تعويض الحديد."},
+    "anemia": {
+        "en": "This is common and usually very manageable. Iron- and vitamin-rich foods help support healthy blood.",
+        "ar": "هذا شائع وقابل للتحسّن عادةً. الأطعمة الغنية بالحديد والفيتامينات تساعد على دعم صحة الدم."},
+    "low_vitamin_d": {
+        "en": "Very common and easy to top up — a little daily sunlight and vitamin-D-rich foods like oily fish, eggs, and fortified milk help.",
+        "ar": "شائع جداً ويسهل تعويضه — القليل من ضوء الشمس يومياً والأطعمة الغنية بفيتامين د مثل الأسماك الدهنية والبيض والحليب المدعّم تساعد."},
+    "low_vitamin_b12": {
+        "en": "Common and easy to address — B12-rich foods like meat, fish, eggs, and dairy help.",
+        "ar": "شائع ويسهل معالجته — الأطعمة الغنية بفيتامين ب12 مثل اللحوم والأسماك والبيض ومنتجات الألبان تساعد."},
+    "high_cholesterol": {
+        "en": "Often improves with everyday habits — more fiber from oats, beans, and vegetables, regular movement, and less fried and processed food.",
+        "ar": "غالباً ما يتحسّن بعادات يومية — مزيد من الألياف من الشوفان والبقول والخضار، والحركة المنتظمة، وتقليل الأطعمة المقلية والمصنّعة."},
+    "high_blood_sugar": {
+        "en": "Often improves with everyday habits — more whole foods and fiber, fewer sugary drinks and refined carbs, and staying active.",
+        "ar": "غالباً ما يتحسّن بعادات يومية — مزيد من الأطعمة الكاملة والألياف، وتقليل المشروبات السكرية والنشويات المكرّرة، والبقاء نشيطاً."},
+    "underactive_thyroid": {
+        "en": "This is common and very manageable once it's looked into.",
+        "ar": "هذا شائع وقابل للتحكّم تماماً بعد المتابعة."},
+    "overactive_thyroid": {
+        "en": "This is common and manageable once it's looked into.",
+        "ar": "هذا شائع وقابل للتحكّم بعد المتابعة."},
+    "reduced_kidney_function": {
+        "en": "This is often manageable, and the right next steps depend on your full picture.",
+        "ar": "هذا قابل للتحكّم غالباً، وتعتمد الخطوات المناسبة على صورتك الكاملة."},
+    "elevated_liver_enzymes": {
+        "en": "Often improves by easing back on alcohol and very rich, fatty foods.",
+        "ar": "غالباً ما يتحسّن بتقليل الكحول والأطعمة الدسمة جداً."},
+    "high_white_cells": {
+        "en": "This is best understood alongside your other results and how you're feeling.",
+        "ar": "يُفهَم هذا بشكل أفضل مع بقية نتائجك وكيف تشعر."},
+    "low_white_cells": {
+        "en": "This is best understood alongside your other results and how you're feeling.",
+        "ar": "يُفهَم هذا بشكل أفضل مع بقية نتائجك وكيف تشعر."},
+    "low_platelets": {
+        "en": "This is best understood alongside your other results and how you're feeling.",
+        "ar": "يُفهَم هذا بشكل أفضل مع بقية نتائجك وكيف تشعر."},
+}
+
 
 def _contains_any(text: str, terms) -> bool:
     t = _norm_text(text)
@@ -984,12 +1030,15 @@ def compose_assessment(results: list, signals: dict = None, proposal: Optional[d
                 supporting.append(nm)
             source_indices.append(i)
 
+    advice = _CONDITION_ADVICE.get(entry["key"], {})
     return {
         "condition_key": entry["key"],
         "name_en": entry["name_en"],
         "name_ar": entry["name_ar"],
         "explanation_en": entry["expl_en"],
         "explanation_ar": entry["expl_ar"],
+        "advice_en": advice.get("en", ""),
+        "advice_ar": advice.get("ar", ""),
         "supporting": supporting,
         "lead_key": "consistent_with",
         "source_indices": source_indices,

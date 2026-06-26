@@ -867,6 +867,7 @@
 
     /* The values: one calm toggle → a compact, low table. No cards/tiles/bars. */
     .lab-other-note { font-size:13px; color:var(--slate); margin:0 0 var(--s-3); }
+    .lab-todo-text { font-size:14px; line-height:1.6; color:var(--ink); margin:0; max-width:84ch; }
     .lab-numbers-wrap { display:flex; flex-direction:column; gap:var(--s-3); }
     .lab-numbers-toggle { align-self:flex-start; display:inline-flex; align-items:center; gap:10px; min-height:40px;
       font-size:14px; font-weight:700; color:var(--accent-strong); background:var(--accent-soft);
@@ -1347,6 +1348,8 @@
         // v2 — named assessment + demographics + calm "details hidden" read + chat
         assessmentLead: 'You likely have',
         assessmentBasedOn: 'Based on',
+        helpTitle: 'What can help',
+        helpGeneric: 'Your report is saved here whenever you want to look again — and you can ask MIKA about anything that stands out.',
         otherOutside: 'A few other values also read outside the normal range — see them below.',
         hideNumbers: 'Hide the numbers',
         dirLow: 'Low', dirHigh: 'High', dirNormal: 'In range',
@@ -1534,6 +1537,8 @@
       'The report page isn’t available for this result.':'صفحة التقرير غير متوفرة لهذه النتيجة.',
       'You likely have':'نتائجك تشير على الأرجح إلى',
       'Based on':'استناداً إلى',
+      'What can help':'ما الذي يساعد',
+      'Your report is saved here whenever you want to look again — and you can ask MIKA about anything that stands out.':'تقريرك محفوظ هنا متى أردت مراجعته — ويمكنك سؤال MIKA عن أي شيء يلفت انتباهك.',
       'A few other values also read outside the normal range — see them below.':'بعض القيم الأخرى أيضاً خارج النطاق الطبيعي — اطّلع عليها أدناه.',
       'Hide the numbers':'إخفاء الأرقام',
       'What stands out':'ما يلفت النظر',
@@ -3627,14 +3632,16 @@
             <div className="lab-clean-panel">{L(COPY.lab.allClearTitle)}. {L(COPY.lab.normalsHint)}</div>
           )}
 
-          {/* Calm, fixed, NON-medical next-steps — never LLM-generated advice. */}
+          {/* What can help — concise, reassuring, CURATED general lifestyle guidance keyed to the named
+              condition (deterministic whitelist; no drugs/doses; reassurance-only where specifics could
+              harm). The standing disclaimer banner carries the "discuss with your doctor" frame, so it's
+              not repeated here. */}
           <div className="lab-todo">
-            <div className="lab-todo-h">{L('What to do')}</div>
-            <ul className="lab-todo-list">
-              <li>{L('Show this to your doctor — they know your history and can tell you what it means for you.')}</li>
-              <li>{L('Take the full original report with you to your appointment.')}</li>
-              <li>{L('This only looks at the values on this report, not your overall health.')}</li>
-            </ul>
+            <div className="lab-todo-h">{L(COPY.lab.helpTitle)}</div>
+            <p className="lab-todo-text">{
+              (assessment && (UI_LANG === 'ar' ? assessment.advice_ar : assessment.advice_en))
+                || L(COPY.lab.helpGeneric)
+            }</p>
           </div>
 
           {/* Collapsed normals + low-clarity "Other results" — full width below the workspace. */}
@@ -4555,6 +4562,8 @@
             name_en:'iron-deficiency anemia', name_ar:'فقر الدم الناتج عن نقص الحديد',
             explanation_en:'This usually means the blood is low on iron, which can leave you feeling tired.',
             explanation_ar:'يعني هذا عادةً أن الدم منخفض في الحديد، وقد يسبّب الشعور بالتعب.',
+            advice_en:'Good news — this is common and very treatable. Iron-rich foods like red meat, lentils, beans, and dark leafy greens help your body rebuild its iron.',
+            advice_ar:'خبر جيد — هذا شائع وقابل للعلاج تماماً. الأطعمة الغنية بالحديد مثل اللحم الأحمر والعدس والفاصولياء والخضروات الورقية الداكنة تساعد جسمك على تعويض الحديد.',
             supporting:['Hemoglobin','Red-cell size (MCV)',
               'Hemoglobin per cell (MCH)','Iron stores (ferritin)'],
             lead_key:'consistent_with', source_indices:[0,2,3,4],
