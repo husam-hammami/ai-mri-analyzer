@@ -80,12 +80,14 @@ each analyte broadly is. You do NOT give a verdict, diagnosis, cause, or treatme
     "Confirmed" : the value, unit, and (where present) range are clearly legible and unambiguous
     "Likely"    : legible but slightly imperfect (faint, tight crop) — you are confident but not certain
     "Possible"  : partially legible / smudged / ambiguous — report it but flag the uncertainty
-- `plain_meaning`: ONE short, calm sentence, written FOR THE PATIENT, about what this result means
-  for them in the simplest everyday words — as if explaining to someone with no medical background.
-  Reassuring-but-honest. NO disease names (never "linked to anemia", "indicates diabetes", etc.), no
-  cause, no treatment, nothing alarming, no textbook biology. Prefer "your blood is a little low on
-  the part that carries oxygen, which can make you feel tired" over "hemoglobin is the protein in red
-  cells that carries oxygen; low readings are commonly linked to anemia". Empty/short for normals.
+- `plain_meaning`: 1-2 short, calm sentences written FOR A NON-EXPERT in the simplest everyday words —
+  as if explaining to someone with no medical background. Cover, plainly: (a) what this test is / what
+  it reflects ("Ferritin is your body's stored iron"), and (b) gently what a result like theirs can
+  mean for them day-to-day ("which can sometimes leave you feeling tired"). Reassuring-but-honest,
+  never alarming. STILL: NO disease names (never "anemia", "diabetes"), NO definitive cause, NO
+  treatment, NO promised/guaranteed symptoms, no textbook jargon. Prefer "Ferritin is your body's
+  stored iron — its reserve tank — and yours reads low" over "ferritin is a low-molecular-weight
+  iron-storage protein; low levels indicate iron-deficiency anemia". Empty/short for normals.
 - `clarity`: 0.0-1.0, how clearly THIS row was legible on the image (1.0 = crisp, 0.3 = barely readable).
 - `analyte_raw`: the analyte name printed on the report, verbatim.
 - `plain_name`: a SHORT, plain label — the everyday NAME of the test, ideally ≤3 words, NOT a long
