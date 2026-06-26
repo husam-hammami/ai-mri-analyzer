@@ -35,9 +35,15 @@ LAB_BASE_RULES = """
    Preserve the printed language verbatim — do not translate analyte names or values.
 4. NEVER strengthen a hedged or faint reading. If a value is smudged, cut off, or only partially
    visible, that is `Possible` at best with low `clarity`; it is not `Confirmed`.
-5. Do NOT compute a verdict, a "you are healthy / see a doctor" judgement, a diagnosis, a cause, or
-   any treatment/medication. You report the printed data and per-value status only. The takeaway is
-   composed elsewhere, deterministically, from your structured output.
+5. Do NOT compose the verdict/takeaway or any "you are healthy / see a doctor" judgement — that is
+   composed elsewhere, deterministically. Do NOT put a diagnosis, condition name, cause, or treatment in
+   any PER-ANALYTE field (keep `plain_meaning`/`severity_phrase` neutral-descriptive). You MAY propose a
+   single likely condition in the dedicated top-level `assessment` field (see schema) — but ONLY as a
+   plain, common, value-defined pattern (e.g. "iron-deficiency anemia", "high cholesterol", "low vitamin
+   D"), NEVER a serious or red-flag diagnosis (NO cancer, leukaemia, lymphoma, myeloma, tumour, sepsis,
+   or anything like it), and NEVER any treatment, medication, or dose. If unsure, set it null. This
+   proposal is ADVISORY — a deterministic Python gate validates it against the flagged values and the
+   final wording shown to the patient is generated there, not from your text.
 6. If the page is too degraded to read reliably, say so via `render_quality: "unreadable"` and the
    per-analyte `clarity` scores — never fabricate analytes to fill the page.
 """
@@ -74,13 +80,38 @@ each analyte broadly is. You do NOT give a verdict, diagnosis, cause, or treatme
     "Confirmed" : the value, unit, and (where present) range are clearly legible and unambiguous
     "Likely"    : legible but slightly imperfect (faint, tight crop) — you are confident but not certain
     "Possible"  : partially legible / smudged / ambiguous — report it but flag the uncertainty
-- `plain_meaning`: one plain sentence on what this analyte broadly indicates, descriptive and
-  non-diagnostic (e.g. "vitamin D supports bone health; low readings are common"). NEVER name a
-  disease as a conclusion, a cause, or a treatment.
+- `plain_meaning`: ONE short, calm sentence, written FOR THE PATIENT, about what this result means
+  for them in the simplest everyday words — as if explaining to someone with no medical background.
+  Reassuring-but-honest. NO disease names (never "linked to anemia", "indicates diabetes", etc.), no
+  cause, no treatment, nothing alarming, no textbook biology. Prefer "your blood is a little low on
+  the part that carries oxygen, which can make you feel tired" over "hemoglobin is the protein in red
+  cells that carries oxygen; low readings are commonly linked to anemia". Empty/short for normals.
 - `clarity`: 0.0-1.0, how clearly THIS row was legible on the image (1.0 = crisp, 0.3 = barely readable).
 - `analyte_raw`: the analyte name printed on the report, verbatim.
-- `plain_name`: a short everyday name for the analyte (e.g. "Vitamin D" for "25-hydroxyvitamin D").
-  If you are unsure, reuse `analyte_raw`.
+- `plain_name`: the PLAINEST everyday descriptor a non-expert would understand — prefer a plain
+  phrase over the clinical term. E.g. "Vitamin D" (for "25-hydroxyvitamin D"), "'bad' cholesterol"
+  (for "LDL-C"), "oxygen-carrying level in blood" (for "Hemoglobin"), "average red-blood-cell size"
+  (for "MCV"). Keep `analyte_raw` as the exact printed term. If you genuinely can't simplify, reuse
+  `analyte_raw`.
+- `analyte_key`: a short normalized lowercase slug for COMMON analytes, used to match well-known
+  patterns. Use one of: hemoglobin, hematocrit, mcv, mch, rdw, ferritin, iron, tibc, transferrin_sat,
+  vitamin_b12, folate, vitamin_d, ldl, hdl, total_cholesterol, triglycerides, glucose, hba1c, tsh, ft4,
+  ft3, creatinine, egfr, urea, alt, ast, alp, bilirubin, wbc, platelets, potassium, sodium, calcium.
+  Set "" (empty) if the analyte isn't one of these. (If you omit it, the server derives it from the
+  name — but fill it when you can.)
+
+## PATIENT HEADER (top-level `patient`) — read ONLY what is printed; never infer
+Read the patient's name, age, and sex/gender from the report header ONLY if they are clearly printed.
+Put them in the top-level `patient` object: `{ "name", "age", "sex" }`. Use null for any field that is
+not clearly printed — NEVER guess a name, age, or sex. These are DISPLAY-ONLY; they MUST NOT change how
+you classify any value (status is judged ONLY against the printed range, never re-derived from age/sex).
+
+## ASSESSMENT (top-level `assessment`) — advisory proposal, bounded
+Optionally propose ONE likely condition the flagged values fit, as a plain value-defined pattern, in
+`assessment`: `{ "proposed_condition", "supporting_analytes", "model_confidence" }`. `proposed_condition`
+is a plain name (e.g. "iron-deficiency anemia") or null; `supporting_analytes` are analyte names you
+marked abnormal that support it; `model_confidence` is "probable" | "possible" | "unconfirmed". NEVER a
+red-flag/serious diagnosis, NEVER treatment. If nothing clearly fits, set `proposed_condition` null.
 
 ## READ-LEVEL SIGNALS (you MUST return these)
 - `extraction_confidence` (0.0-1.0): your overall confidence that you transcribed the readable
@@ -92,10 +123,12 @@ each analyte broadly is. You do NOT give a verdict, diagnosis, cause, or treatme
 Return ONE JSON object and NOTHING ELSE (no commentary, no markdown prose around it). It MUST match:
 
 {
+  "patient": { "name": "Jane Doe", "age": "34", "sex": "Female" },
   "results": [
     {
       "plain_name": "Vitamin D",
       "analyte_raw": "25-hydroxyvitamin D",
+      "analyte_key": "vitamin_d",
       "value": "18",
       "unit": "ng/mL",
       "ref_range_text": "30-100",
@@ -109,6 +142,11 @@ Return ONE JSON object and NOTHING ELSE (no commentary, no markdown prose around
       "source_text": "Vitamin D 18 (30-100)"
     }
   ],
+  "assessment": {
+    "proposed_condition": "low vitamin D",
+    "supporting_analytes": ["Vitamin D"],
+    "model_confidence": "probable"
+  },
   "signals": {
     "extraction_confidence": 0.93,
     "analytes_parsed": 24,
@@ -124,10 +162,21 @@ above. Do not include any verdict, summary line, diagnosis, cause, or recommenda
 # validator object — lab_reader does shallow key validation — but kept here as the single source of
 # truth for the expected shape (mirrors the schema embedded in the prompt above).
 LAB_OUTPUT_SCHEMA = {
+    "patient": {
+        "name": "str|null",
+        "age": "str|null",
+        "sex": "str|null",
+    },
+    "assessment": {
+        "proposed_condition": "str|null",
+        "supporting_analytes": ["str"],
+        "model_confidence": "probable|possible|unconfirmed",
+    },
     "results": [
         {
             "plain_name": "str",
             "analyte_raw": "str",
+            "analyte_key": "str",
             "value": "str|null",
             "unit": "str|null",
             "ref_range_text": "str|null",

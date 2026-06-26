@@ -665,6 +665,11 @@
     .lab-section-sub { font-size:12.5px; color:var(--slate); }
     .lab-flags { display:flex; flex-direction:column; gap:var(--s-3); }
     .lab-clean-panel { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:var(--s-5); color:var(--slate); font-size:13.5px; line-height:1.6; }
+    /* "What to do" — a calm, friendly guide (soft accent, not an alert). Plain language, 3 lines max. */
+    .lab-todo { background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:8px; padding:var(--s-5); }
+    .lab-todo-h { font-size:15px; font-weight:700; color:var(--ink); margin-bottom:var(--s-3); }
+    .lab-todo-list { margin:0; padding-inline-start:18px; display:flex; flex-direction:column; gap:8px; }
+    .lab-todo-list li { font-size:13.5px; line-height:1.5; color:var(--slate); }
     .lab-frow { padding:0; cursor:default; overflow:hidden; border-radius:8px; background:var(--surface); }
     .lab-frow.active { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
     .lab-frow-hd { width:100%; text-align:start; background:transparent; border:none; cursor:pointer; padding:var(--s-4); display:block; }
@@ -678,7 +683,8 @@
     .lab-result-value { font-size:21px; line-height:1.1; font-weight:750; color:var(--ink); }
     .lab-result-range { font-size:12.5px; color:var(--slate); }
     .lab-severity { font-size:12.5px; color:var(--accent-strong); font-weight:650; }
-    .lab-mean { font-size:13px; color:var(--slate); line-height:1.5; margin-top:0; max-width:62ch; }
+    .lab-name-sev { font-size:15px; font-weight:650; color:var(--accent-strong); }
+    .lab-mean { font-size:13.5px; color:var(--slate); line-height:1.55; margin-top:2px; max-width:62ch; }
     .lab-frow .frow-extra { margin:0 var(--s-4) var(--s-4) calc(var(--s-4) + 46px); padding-top:var(--s-3); border-top:1px solid var(--line-soft); }
     .lab-reveal-tabs { display:flex; gap:var(--s-2); margin-bottom:var(--s-3); }
     .lab-reveal-tabs button { min-height:32px; font-size:12px; font-weight:700; color:var(--slate); background:var(--surface);
@@ -731,6 +737,99 @@
       .lab-stat-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
       .lab-frow .frow-extra { margin-inline-start:var(--s-4); }
     }
+
+    /* ══ Lab read v2 — scroll fix + named assessment + master/detail + color-free range bar ══ */
+    /* SCROLL FIX: .page-lab-read IS the .page-inner element (which is overflow:hidden). Give the lab read
+       its own scroll region so tall content is reachable at any zoom (the bug: content cropped, unscrollable). */
+    .page-lab-read { overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; scrollbar-gutter:stable;
+      display:flex; flex-direction:column; gap:var(--s-5); }
+    .page-lab-read > * + * { margin-top:0; }
+
+    /* Header: demographics + named assessment */
+    .lab-demo { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) var(--s-4); margin-bottom:var(--s-3); }
+    .lab-demo-item { font-size:13px; font-weight:600; color:var(--slate); }
+    .lab-demo-item:not(:last-child)::after { content:'·'; margin-inline-start:var(--s-4); color:var(--slate-300); }
+    .lab-assess .lab-takeaway { margin-bottom:var(--s-3); }
+    .lab-assess-lead { display:block; font-size:15px; font-weight:600; letter-spacing:0; color:var(--slate); margin-bottom:6px; }
+    .lab-assess-expl { font-size:14.5px; line-height:1.55; color:var(--slate); max-width:64ch; margin:0 0 var(--s-4); }
+    .lab-assess-support { display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap; }
+    .lab-assess-support-k { font-size:10.5px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--slate-300); }
+    .lab-assess-chips { display:flex; gap:var(--s-2); flex-wrap:wrap; }
+    .lab-mk-chip { font-size:12.5px; font-weight:600; color:var(--accent-strong); background:var(--accent-soft);
+      box-shadow:inset 0 0 0 1px var(--accent-line); border-radius:var(--r-full); padding:4px 11px; }
+
+    /* Workspace: master list + detail pane (wider detail than the old stream rail) */
+    .lab-workspace { grid-template-columns:minmax(0,1fr) minmax(320px, 380px); gap:var(--s-6); align-items:start; }
+    .lab-side { position:sticky; top:var(--s-4); align-self:start; }
+
+    /* Master rows — compact; numbers live in the detail pane, not inline (frees the page width) */
+    .lab-flags { display:flex; flex-direction:column; gap:var(--s-2); }
+    .lab-row { width:100%; display:grid; grid-template-columns:26px minmax(0,1fr) auto; align-items:center; gap:var(--s-3);
+      text-align:start; cursor:pointer; background:var(--surface); border:1px solid var(--line); border-radius:8px;
+      padding:var(--s-3) var(--s-4);
+      transition:border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+      animation:labRowIn var(--duration-fast) var(--ease-out) both; }
+    .lab-row:hover { border-color:var(--accent-line); }
+    .lab-row.active { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+    .lab-row .lab-card-index { width:26px; height:26px; }
+    .lab-row.active .lab-card-index { background:var(--accent); color:#fff; box-shadow:none; }
+    .lab-row-body { min-width:0; display:flex; flex-direction:column; gap:2px; }
+    .lab-row .lab-card-top { display:flex; align-items:baseline; gap:var(--s-2); flex-wrap:wrap; margin:0; }
+    .lab-row .lab-name { font-size:14px; line-height:1.3; font-weight:700; color:var(--ink); }
+    .lab-row .lab-result-line { display:flex; align-items:baseline; gap:var(--s-2); flex-wrap:wrap; margin:0; }
+    .lab-row .lab-result-value { font-size:14.5px; line-height:1.2; font-weight:750; color:var(--ink); }
+    .lab-row .lab-result-range { font-size:12px; color:var(--slate); }
+    .lab-dir { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:6px;
+      font-size:13px; font-weight:800; color:var(--accent-strong); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line); }
+    @keyframes labRowIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+    .lab-flags .lab-row:nth-child(2){animation-delay:40ms}
+    .lab-flags .lab-row:nth-child(3){animation-delay:80ms}
+    .lab-flags .lab-row:nth-child(4){animation-delay:120ms}
+    .lab-flags .lab-row:nth-child(5){animation-delay:160ms}
+    .lab-flags .lab-row:nth-child(6){animation-delay:200ms}
+    .lab-flags .lab-row:nth-child(n+7){animation-delay:240ms}
+
+    /* Detail pane */
+    .lab-detail { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:var(--s-5); box-shadow:var(--shadow-sm); }
+    .lab-detail-empty { color:var(--slate); font-size:13.5px; line-height:1.55; }
+    .lab-detail-hd { display:flex; align-items:baseline; gap:var(--s-2); flex-wrap:wrap; margin-bottom:var(--s-4); }
+    .lab-detail-name { font-size:17px; line-height:1.3; font-weight:700; color:var(--ink); }
+    .lab-detail-figures { display:flex; gap:var(--s-3); margin-bottom:var(--s-2); }
+    .lab-detail-figure { flex:1; min-width:0; border:1px solid var(--line-soft); background:var(--surface-2); border-radius:8px; padding:10px 12px; }
+    .lab-detail-k { display:block; font-size:10.5px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--slate-300); margin-bottom:4px; }
+    .lab-detail-v { display:block; font-size:20px; line-height:1.1; font-weight:750; color:var(--ink); }
+    .lab-detail .lab-mean { margin-top:var(--s-3); font-size:13.5px; line-height:1.55; color:var(--slate); }
+    .lab-proof-toggle { margin-top:var(--s-4); min-height:34px; font-size:12.5px; font-weight:700; color:var(--accent-strong);
+      background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:7px; padding:7px 13px; cursor:pointer; }
+    .lab-proof-toggle:hover { border-color:var(--accent); }
+    .lab-detail .lab-proof { margin-top:var(--s-3); }
+
+    /* Range bar v2 — color-free: direction label + caret + tick position carry low/high (no traffic lights) */
+    .lrange { margin-top:var(--s-4); }
+    .lrange-head { margin-bottom:var(--s-2); }
+    .lrange-dir { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:800; letter-spacing:.3px;
+      text-transform:uppercase; padding:3px 10px; border-radius:var(--r-full); color:var(--accent-strong);
+      background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line); }
+    .lrange-dir-normal { color:var(--slate); background:var(--surface-2); box-shadow:inset 0 0 0 1px var(--line); }
+    .lrange-caret { font-size:11px; line-height:1; }
+    .lrange-rail { position:relative; height:8px; border-radius:var(--r-full); background:var(--surface-2); box-shadow:inset 0 0 0 1px var(--line); }
+    .lrange-band { position:absolute; inset-block:0; background:var(--accent-softer); box-shadow:inset 0 0 0 1px var(--accent-line); border-radius:var(--r-full); }
+    .lrange-tick { position:absolute; inset-block:-5px; inline-size:4px; transform:translateX(-50%); background:var(--accent);
+      border-radius:var(--r-full); box-shadow:0 0 0 3px var(--accent-glow); }
+    [dir="rtl"] .lrange-tick { transform:translateX(50%); }
+    .lrange-scale { display:flex; justify-content:space-between; align-items:center; font-size:10.5px; color:var(--slate-300); margin-top:6px; }
+    .lrange-scale-mid { font-size:9.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--accent-strong); opacity:.65; }
+    .lrange-cap { font-size:11.5px; font-weight:700; color:var(--accent-strong); margin-top:6px; }
+
+    /* Chat-dock reflow (must-have #5): no .shell.chat-open .page-lab-read rule existed → the detail pane
+       would overflow under margin-inline-end:var(--chat-w). Collapse to one column when chat docks/narrow. */
+    .shell.chat-open .page-lab-read .lab-workspace { grid-template-columns:minmax(0,1fr); }
+    .shell.chat-open .page-lab-read .lab-side { position:static; }
+    @media (max-width: 1100px) {
+      .lab-workspace { grid-template-columns:minmax(0,1fr); }
+      .lab-side { position:static; }
+    }
+    @media (prefers-reduced-motion: reduce) { .lab-row { animation:none; } }
 
     .proof { background: var(--surface); border:1px solid var(--line); border-radius: var(--r-lg); overflow:hidden; box-shadow: var(--shadow-sm); }
     .proof-head { padding: var(--s-4) var(--s-5); border-bottom:1px solid var(--line-soft); }
@@ -1162,6 +1261,16 @@
         errTitle: 'MIKA couldn’t read this report clearly',
         errBody: 'Try a clearer photo in good light, or upload the original PDF. MIKA won’t guess at values it can’t read.',
         proofUnavail: 'The report page isn’t available for this result.',
+        // v2 — named assessment + demographics + master/detail + chat
+        assessmentLead: 'You likely have',
+        assessmentSupport: 'What stands out',
+        detailEmpty: 'Select a result to see the numbers and where it sits in the normal range.',
+        dirLow: 'Low', dirHigh: 'High', dirNormal: 'In range',
+        demoAge: 'Age',
+        askCta: 'Ask MIKA about your report',
+        chatTitle: 'Ask about your report',
+        chatScope: 'this report only',
+        chatEmpty: 'Ask me anything about this report — I’ll keep it plain.',
       },
     };
 
@@ -1192,6 +1301,12 @@
       'Your scan is processed securely and is never shared.':'تُعالَج دراستك بأمان ولا تُشارك أبداً.',
       'Need help?':'تحتاج مساعدة؟',
       'Read a new scan':'اقرأ دراسة جديدة','Recent scans':'الدراسات الأخيرة','Read complete':'اكتملت القراءة',
+      // Lab "Verdict" — simplified patient view (what-to-do + softened normals label)
+      'What to do':'الخطوات التالية',
+      'Show this to your doctor — they know your history and can tell you what it means for you.':'أطلِع طبيبك على هذا — فهو يعرف تاريخك الصحي ويمكنه أن يخبرك بما يعنيه لك.',
+      'Take the full original report with you to your appointment.':'خذ التقرير الأصلي كاملاً معك إلى موعدك.',
+      'This only looks at the values on this report, not your overall health.':'هذا ينظر فقط إلى القيم في هذا التقرير، وليس إلى صحتك العامة.',
+      'The rest look normal':'الباقي يبدو طبيعياً',
       'Plain language':'لغة مبسّطة','Clinician':'للطبيب',
       'Download report':'تنزيل التقرير','Download clinical report':'تنزيل التقرير السريري',
       'Sign in with Claude':'تسجيل الدخول عبر Claude','Checking sign-in…':'جارٍ التحقق…',
@@ -1333,6 +1448,15 @@
       'MIKA couldn’t read this report clearly':'لم تتمكّن MIKA من قراءة هذا التقرير بوضوح',
       'Try a clearer photo in good light, or upload the original PDF. MIKA won’t guess at values it can’t read.':'جرّب صورة أوضح بإضاءة جيدة، أو ارفع ملف PDF الأصلي. لن تخمّن MIKA قيماً لا تستطيع قراءتها.',
       'The report page isn’t available for this result.':'صفحة التقرير غير متوفرة لهذه النتيجة.',
+      'You likely have':'نتائجك تشير على الأرجح إلى',
+      'What stands out':'ما يلفت النظر',
+      'Select a result to see the numbers and where it sits in the normal range.':'اختر نتيجة لعرض الأرقام وموضعها ضمن النطاق الطبيعي.',
+      'Low':'منخفض','High':'مرتفع','In range':'ضمن النطاق',
+      'Age':'العمر',
+      'Ask MIKA about your report':'اسأل MIKA عن تقريرك',
+      'Ask about your report':'اسأل عن تقريرك',
+      'this report only':'هذا التقرير فقط',
+      'Ask me anything about this report — I’ll keep it plain.':'اسألني أي شيء عن هذا التقرير — سأبسّط لك الأمر.',
     };
     // Translate a UI chrome string (English fallback). NOT for medical content.
     function L(s){ return UI_LANG === 'ar' && AR_UI[s] != null ? AR_UI[s] : s; }
@@ -2243,7 +2367,15 @@
               <span className="topbar-title">{L(COPY.lab.topbarRead)}</span>
               <span className="topbar-meta">{L(COPY.lab.topbarReadMeta)}</span>
             </div>
-            <div className="topbar-r">{langToggle}</div>
+            <div className="topbar-r">
+              {chatAvail && (
+                <button className={`btn-ask-focus${chatOpen ? ' on' : ''}`} onClick={onAsk} aria-pressed={chatOpen}>
+                  <img src="/assets/brand/mika-mark.png" alt="" aria-hidden="true" className="ask-coin" />
+                  {chatOpen ? L('Close') : L(COPY.lab.askCta)}
+                </button>
+              )}
+              {langToggle}
+            </div>
           </div>
         );
       }
@@ -3190,29 +3322,45 @@
       return { lo, hi };
     }
 
-    // Range bar — renders ONLY for two_sided_numeric with a parseable range + numeric value. Clamps
-    // out-of-range to a labelled end-cap; never fabricates a tick beyond the rail. (concept §4 / plan)
+    // Clarity flag-floor — MUST stay == lab_reader.CLARITY_FLAG_FLOOR (backend). A pure-Python test
+    // (test_lab_assessment.test_clarity_floor_in_sync_with_frontend) scrapes this literal and asserts
+    // equality — the only sync mechanism for a no-build single-file SPA.
+    const LAB_CLARITY_FLAG_FLOOR = 0.5;
+
+    // Range bar — renders ONLY for two_sided_numeric with a parseable range + numeric value. Color-free
+    // (no traffic-light hues): direction is carried by an explicit Low/High text label + a caret +
+    // tick position (WCAG 1.4.1), accent blue only. Clamps out-of-range to the rail edge with a labelled
+    // end-cap; never fabricates a tick beyond the rail. Degrades to nothing for one-sided/qualitative.
     function LabRangeBar({ r }) {
       if (r.range_type !== 'two_sided_numeric') return null;
       const bounds = parseTwoSided(r.ref_range_text);
       const val = parseFloat(String(r.value).replace(/[^0-9.\-]/g, ''));
       if (!bounds || !isFinite(val)) return null;
       const { lo, hi } = bounds;
-      const span = hi - lo;
+      const span = (hi - lo) || 1;
       const pad = span;                         // show one band-width of head-room each side
       const min = lo - pad, max = hi + pad;
       const pct = (x) => Math.max(0, Math.min(100, ((x - min) / (max - min)) * 100));
       const bandL = pct(lo), bandR = pct(hi);
       const tick = pct(val);
+      const dir = val < lo ? 'low' : val > hi ? 'high' : 'normal';
       const farBelow = val < lo - 1.5 * span, farAbove = val > hi + 1.5 * span;
+      const dirLabel = dir === 'low' ? L(COPY.lab.dirLow) : dir === 'high' ? L(COPY.lab.dirHigh) : L(COPY.lab.dirNormal);
       return (
         <div className="lrange">
+          <div className="lrange-head">
+            <span className={`lrange-dir lrange-dir-${dir}`}>
+              <span className="lrange-caret" aria-hidden="true">{dir === 'low' ? '▾' : dir === 'high' ? '▴' : '•'}</span>
+              {dirLabel}
+            </span>
+          </div>
           <div className="lrange-rail">
             <div className="lrange-band" style={{ insetInlineStart:`${bandL}%`, inlineSize:`${bandR - bandL}%` }} />
-            <div className="lrange-tick" style={{ insetInlineStart:`${tick}%` }} aria-hidden="true" />
+            <div className={`lrange-tick lrange-tick-${dir}`} style={{ insetInlineStart:`${tick}%` }} aria-hidden="true" />
           </div>
           <div className="lrange-scale">
             <span className="num" dir="ltr">{lo}</span>
+            <span className="lrange-scale-mid">{L(COPY.lab.dirNormal)}</span>
             <span className="num" dir="ltr">{hi}</span>
           </div>
           {(farBelow || farAbove) && <div className="lrange-cap">{L(farAbove ? COPY.lab.wellAbove : COPY.lab.wellBelow)}</div>}
@@ -3220,54 +3368,102 @@
       );
     }
 
-    function LabFlagCard({ r, n, jobId, open, onToggle }) {
-      const [tab, setTab] = useState(open ? 'numbers' : null);   // 'numbers' | 'report'
-      const proofSrc = jobId ? `${API_BASE}/api/report/${jobId}/page/${r.page_index||0}` : null;
+    // Patient demographics header — display-only, shown only when the report actually printed them.
+    // NEVER used to compute status (status is bound to the printed range); read from report.patient.
+    function LabPatientHeader({ patient }) {
+      if (!patient) return null;
+      const bits = [];
+      if (patient.name) bits.push(patient.name);
+      if (patient.age) bits.push(`${L(COPY.lab.demoAge)} ${patient.age}`);
+      if (patient.sex) bits.push(patient.sex);
+      if (!bits.length) return null;
+      return (
+        <div className="lab-demo">
+          {bits.map((b, i) => <span className="lab-demo-item" key={i}>{b}</span>)}
+        </div>
+      );
+    }
+
+    // The named assessment — the deterministic, whitelist-gated likely condition (overall.assessment).
+    // Name + explanation are bilingual CANONICALS from the backend (picked by UI_LANG, NOT via L() — the
+    // condition text is content, not chrome). The supporting markers are the "X and Y".
+    function LabAssessment({ assessment }) {
+      const name = (UI_LANG === 'ar' ? assessment.name_ar : assessment.name_en) || assessment.name_en;
+      const expl = (UI_LANG === 'ar' ? assessment.explanation_ar : assessment.explanation_en) || assessment.explanation_en;
+      const sup = assessment.supporting || [];
+      return (
+        <div className="lab-assess">
+          <h1 className="lab-takeaway"><span className="lab-assess-lead">{L(COPY.lab.assessmentLead)} </span>{name}</h1>
+          {expl && <p className="lab-assess-expl">{expl}</p>}
+          {sup.length > 0 && (
+            <div className="lab-assess-support">
+              <span className="lab-assess-support-k">{L(COPY.lab.assessmentSupport)}</span>
+              <span className="lab-assess-chips">{sup.map((s, i) => <span className="lab-mk-chip" key={i}>{s}</span>)}</span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Master row — compact, no inline numbers (the numbers live in the detail pane → the page width is
+    // used, not the card height). Direction is a color-free caret + the severity phrase.
+    function LabResultRow({ r, n, selected, onSelect }) {
+      const valueText = [r.value, r.unit].filter(Boolean).join(' ');
+      const dir = r.status === 'low' ? 'low' : r.status === 'high' ? 'high' : 'abn';
+      return (
+        <button className={`lab-frow lab-row sev-${dir} ${selected?'active':''}`} aria-pressed={selected} onClick={onSelect}>
+          <span className="lab-card-index"><Num>{n}</Num></span>
+          <span className="lab-row-body">
+            <span className="lab-card-top">
+              <span className="lab-name">{r.plain_name}</span>
+              {r.severity_phrase && <span className="lab-name-sev">— {r.severity_phrase}</span>}
+            </span>
+            <span className="lab-result-line">
+              {valueText && <span className="lab-result-value"><Num>{valueText}</Num></span>}
+              {r.ref_range_text && <span className="lab-result-range">({L(COPY.lab.range)} <Num>{r.ref_range_text}</Num>)</span>}
+            </span>
+          </span>
+          <span className={`lab-dir lab-dir-${dir}`} aria-hidden="true">{dir === 'low' ? '▾' : dir === 'high' ? '▴' : '•'}</span>
+        </button>
+      );
+    }
+
+    // Detail pane — the selected result's numbers + range bar + plain meaning + an on-demand proof crop.
+    // This is the right column on desktop; it reflows below the list when the canvas is narrow / chat docks.
+    function LabDetailPane({ r, jobId }) {
+      const [showProof, setShowProof] = useState(false);
       const [proofOk, setProofOk] = useState(true);
-      useEffect(() => {
-        if (open && tab == null) setTab('numbers');
-      }, [open, tab]);
+      useEffect(() => { setShowProof(false); setProofOk(true); }, [r && r.source_text]);
+      if (!r) return <div className="lab-detail lab-detail-empty">{L(COPY.lab.detailEmpty)}</div>;
+      const proofSrc = jobId ? `${API_BASE}/api/report/${jobId}/page/${r.page_index||0}` : null;
       const valueText = [r.value, r.unit].filter(Boolean).join(' ');
       return (
-        <div className={`frow lab-frow ${open?'active':''}`}>
-          <button className="lab-frow-hd" aria-expanded={open} onClick={onToggle}>
-            <div className="lab-card-grid">
-              <span className="lab-card-index"><Num>{n}</Num></span>
-              <div>
-                <div className="lab-card-top">
-                  <span className="lab-name">{r.plain_name}</span>
-                  <CertaintyChip certainty={r.confidence} />
-                </div>
-                <div className="lab-result-line">
-                  {valueText && <span className="lab-result-value"><Num>{valueText}</Num></span>}
-                  {r.ref_range_text && <span className="lab-result-range">{L(COPY.lab.range)} <Num>{r.ref_range_text}</Num></span>}
-                  {r.severity_phrase && <span className="lab-severity">{r.severity_phrase}</span>}
-                </div>
-                {r.plain_meaning && <div className="lab-mean">{r.plain_meaning}</div>}
-              </div>
+        <div className="lab-detail">
+          <div className="lab-detail-hd">
+            <span className="lab-detail-name">{r.plain_name}</span>
+            {r.severity_phrase && <span className="lab-name-sev">— {r.severity_phrase}</span>}
+          </div>
+          <div className="lab-detail-figures">
+            <div className="lab-detail-figure">
+              <span className="lab-detail-k">{L(COPY.lab.value)}</span>
+              <span className="lab-detail-v"><Num>{valueText || r.value}</Num></span>
             </div>
-          </button>
-          {open && (
-            <div className="frow-extra">
-              <div className="lab-reveal-tabs">
-                <button className={tab==='numbers'?'on':''} onClick={()=>setTab(t=>t==='numbers'?null:'numbers')}>{L(COPY.lab.seeNumbers)}</button>
-                <button className={tab==='report'?'on':''} onClick={()=>setTab(t=>t==='report'?null:'report')}>{L(COPY.lab.seeReport)}</button>
+            {r.ref_range_text && (
+              <div className="lab-detail-figure">
+                <span className="lab-detail-k">{L(COPY.lab.range)}</span>
+                <span className="lab-detail-v"><Num>{r.ref_range_text}</Num></span>
               </div>
-              {tab==='numbers' && (
-                <div className="lab-numbers">
-                  <div className="lab-kv"><span>{L(COPY.lab.value)}</span><span><Num>{r.value}</Num>{r.unit?<> <Num>{r.unit}</Num></>:''}</span></div>
-                  {r.ref_range_text && <div className="lab-kv"><span>{L(COPY.lab.range)}</span><span><Num>{r.ref_range_text}</Num></span></div>}
-                  <LabRangeBar r={r} />
-                </div>
-              )}
-              {tab==='report' && (
-                <div className="lab-proof">
-                  <div className="lab-proof-quote">{L(COPY.lab.readAs)} <em>“{r.source_text}”</em></div>
-                  {proofSrc && proofOk
-                    ? <div className="lab-proof-img"><img src={proofSrc} alt="" onError={()=>setProofOk(false)} /></div>
-                    : <div className="lab-proof-na">{L(COPY.lab.proofUnavail)}</div>}
-                </div>
-              )}
+            )}
+          </div>
+          <LabRangeBar r={r} />
+          {r.plain_meaning && <div className="lab-mean">{r.plain_meaning}</div>}
+          <button className="lab-proof-toggle" aria-expanded={showProof} onClick={()=>setShowProof(s=>!s)}>{L(COPY.lab.seeReport)}</button>
+          {showProof && (
+            <div className="lab-proof">
+              <div className="lab-proof-quote">{L(COPY.lab.readAs)} <em>“{r.source_text}”</em></div>
+              {proofSrc && proofOk
+                ? <div className="lab-proof-img"><img src={proofSrc} alt="" onError={()=>setProofOk(false)} /></div>
+                : <div className="lab-proof-na">{L(COPY.lab.proofUnavail)}</div>}
             </div>
           )}
         </div>
@@ -3275,7 +3471,7 @@
     }
 
     function LabReadScreen({ report, jobId }) {
-      const [openId, setOpenId] = useState(0);             // top card pre-expanded
+      const [selIdx, setSelIdx] = useState(0);             // selected flagged result (top pre-selected)
       const [normalsOpen, setNormalsOpen] = useState(false);
       const [otherOpen, setOtherOpen] = useState(false);
       const disclaimer = 'This is an AI-generated analysis, not a medical diagnosis — please discuss it with your doctor.';
@@ -3296,88 +3492,95 @@
 
       const results = report.results || [];
       const overall = report.overall || {};
-      // Split: flagged cards = non-normal/unknown, high-confidence, clear enough (most-off NOT inferred —
-      // order preserved from the backend, which sorts most-off first). Everything else collapses.
-      const flagged = results.filter(r => !['normal','unknown'].includes(r.status) && ['Confirmed','Likely'].includes(r.confidence) && (r.clarity ?? 0) >= 0.7);
+      const assessment = overall.assessment || null;       // gated named condition (or null → verdict)
+      const patient = report.patient || {};
+      // Flagged = non-normal/unknown, high-confidence, clear enough. LAB_CLARITY_FLAG_FLOOR MUST stay ==
+      // lab_reader.CLARITY_FLAG_FLOOR (a scrape test enforces it). Order preserved from the backend.
+      const flagged = results.filter(r => !['normal','unknown'].includes(r.status) && ['Confirmed','Likely'].includes(r.confidence) && (r.clarity ?? 0) >= LAB_CLARITY_FLAG_FLOOR);
       const rest = results.filter(r => !flagged.includes(r));
       const other = rest.filter(r => (r.clarity ?? 1) < 0.7 || r.status === 'unknown' || !r.plain_name);
-      const normalsN = (typeof overall.normal_count === 'number') ? overall.normal_count : rest.filter(r => r.status === 'normal').length;
-      const checkedN = (typeof overall.checked_count === 'number') ? overall.checked_count : results.length;
       const confLabel = overall.confidence === 'high' ? 'High' : overall.confidence === 'low' ? 'Low' : 'Moderate';
       const allClean = flagged.length === 0;
+      const selected = flagged[selIdx] || flagged[0] || null;
 
       return (
         <div className="page-inner page-lab-read fade-up">
           <div className="read-topnote" title={L(disclaimer)}><strong>{L('Important:')}</strong> {L(disclaimer)}</div>
 
-          <div className="lab-workspace">
-            <div className="lab-main">
-              <div className="lab-verdict">
-                <div className="lab-verdict-main">
-              <div className="lab-eyebrow">{L(COPY.lab.nav)}</div>
-              <h1 className="lab-takeaway">{overall.takeaway}</h1>
-              <div className="lab-verdict-meta">
-                <ConfidencePill label={confLabel} />
-                {allClean
-                  ? <span className="lab-count clean">{I.check({width:15,height:15})} {L(COPY.lab.allClearTitle)}</span>
-                  : <span className="lab-count"><span className="lab-count-n"><Num>{flagged.length}</Num></span> {L(COPY.lab.review)}</span>}
-              </div>
-              <div className="lab-ratio"><Num>{normalsN}</Num> {L(COPY.lab.ratio).replace('{checked}', String(checkedN))}</div>
-              <div className="lab-stat-grid" aria-label="Lab report summary">
-                <div className="lab-stat"><span className="lab-stat-k">{L('To review')}</span><span className="lab-stat-v"><Num>{flagged.length}</Num></span></div>
-                <div className="lab-stat"><span className="lab-stat-k">{L('Look normal')}</span><span className="lab-stat-v"><Num>{normalsN}</Num></span></div>
-                <div className="lab-stat"><span className="lab-stat-k">{L('Checked')}</span><span className="lab-stat-v"><Num>{checkedN}</Num></span></div>
-              </div>
-                </div>
-              </div>
-
-              {flagged.length > 0 ? (
-                <div className="lab-flags">
-                  <div className="lab-section-head">
-                    <div className="lab-section-title">{L(COPY.lab.flaggedTitle)}</div>
-                    <div className="lab-section-sub"><Num>{flagged.length}</Num> {L(COPY.lab.review)}</div>
-                  </div>
-                  {flagged.map((r, i) => (
-                    <LabFlagCard key={i} r={r} n={i+1} jobId={jobId} open={openId===i} onToggle={()=>setOpenId(o=>o===i?-1:i)} />
-                  ))}
-                </div>
-              ) : (
-                <div className="lab-clean-panel">{L(COPY.lab.allClearTitle)}. {L(COPY.lab.normalsHint)}</div>
-              )}
+          {/* Header (full width): demographics + the named assessment (or the verdict fallback) + confidence. */}
+          <div className="lab-verdict">
+            <div className="lab-eyebrow">{L(COPY.lab.nav)}</div>
+            <LabPatientHeader patient={patient} />
+            {assessment
+              ? <LabAssessment assessment={assessment} />
+              : <h1 className="lab-takeaway">{overall.takeaway}</h1>}
+            <div className="lab-verdict-meta">
+              <ConfidencePill label={confLabel} />
+              {allClean && <span className="lab-count clean">{I.check({width:15,height:15})} {L(COPY.lab.allClearTitle)}</span>}
             </div>
-
-            <aside className="lab-side">
-              <LabStreamVisual />
-              <div className="lab-drawers">
-                <div className="lab-normals">
-            <button className="cov-row lab-cov" aria-expanded={normalsOpen} onClick={()=>setNormalsOpen(o=>!o)}>
-              <span className="cov-ico">{I.check({})}</span>
-              <span className="cov-name"><Num>{normalsN}</Num> {L('of')} <Num>{checkedN}</Num> {L(COPY.lab.normalsTitle)}</span>
-            </button>
-            {normalsOpen && (
-              <div className="lab-normals-body">
-                <div className="lab-other-hint">{L(COPY.lab.normalsHint)}</div>
-                <ul>{rest.filter(r => r.status === 'normal' && r.plain_name).map((r, i) => <li key={i}>{r.plain_name}</li>)}</ul>
-              </div>
-            )}
           </div>
 
-          {other.length > 0 && (
-            <div className="lab-other">
-              <button className="cov-row lab-cov" aria-expanded={otherOpen} onClick={()=>setOtherOpen(o=>!o)}>
-                <span className="cov-ico">{I.info({})}</span>
-                <span className="cov-name">{L(COPY.lab.otherTitle)} · <Num>{other.length}</Num></span>
+          {/* Workspace: master list (left) + detail pane (right). Reflows to one column when narrow / chat docks. */}
+          {flagged.length > 0 ? (
+            <div className="lab-workspace">
+              <div className="lab-main">
+                <div className="lab-section-head">
+                  <div className="lab-section-title">{L(COPY.lab.flaggedTitle)}</div>
+                  <div className="lab-section-sub"><Num>{flagged.length}</Num> {L(COPY.lab.review)}</div>
+                </div>
+                <div className="lab-flags">
+                  {flagged.map((r, i) => (
+                    <LabResultRow key={i} r={r} n={i+1} selected={selected === r} onSelect={()=>setSelIdx(i)} />
+                  ))}
+                </div>
+              </div>
+              <aside className="lab-side">
+                <LabDetailPane r={selected} jobId={jobId} />
+              </aside>
+            </div>
+          ) : (
+            <div className="lab-clean-panel">{L(COPY.lab.allClearTitle)}. {L(COPY.lab.normalsHint)}</div>
+          )}
+
+          {/* Calm, fixed, NON-medical next-steps — never LLM-generated advice. */}
+          <div className="lab-todo">
+            <div className="lab-todo-h">{L('What to do')}</div>
+            <ul className="lab-todo-list">
+              <li>{L('Show this to your doctor — they know your history and can tell you what it means for you.')}</li>
+              <li>{L('Take the full original report with you to your appointment.')}</li>
+              <li>{L('This only looks at the values on this report, not your overall health.')}</li>
+            </ul>
+          </div>
+
+          {/* Collapsed normals + low-clarity "Other results" — full width below the workspace. */}
+          <div className="lab-drawers">
+            <div className="lab-normals">
+              <button className="cov-row lab-cov" aria-expanded={normalsOpen} onClick={()=>setNormalsOpen(o=>!o)}>
+                <span className="cov-ico">{I.check({})}</span>
+                <span className="cov-name">{L('The rest look normal')}</span>
               </button>
-              {otherOpen && (
-                <div className="lab-other-body">
-                  <div className="lab-other-hint">{L(COPY.lab.otherHint)}</div>
-                  <ul>{other.map((r, i) => <li key={i}><Num>{r.source_text || r.plain_name || '—'}</Num></li>)}</ul>
+              {normalsOpen && (
+                <div className="lab-normals-body">
+                  <div className="lab-other-hint">{L(COPY.lab.normalsHint)}</div>
+                  <ul>{rest.filter(r => r.status === 'normal' && r.plain_name).map((r, i) => <li key={i}>{r.plain_name}</li>)}</ul>
                 </div>
               )}
             </div>
-          )}
+
+            {other.length > 0 && (
+              <div className="lab-other">
+                <button className="cov-row lab-cov" aria-expanded={otherOpen} onClick={()=>setOtherOpen(o=>!o)}>
+                  <span className="cov-ico">{I.info({})}</span>
+                  <span className="cov-name">{L(COPY.lab.otherTitle)} · <Num>{other.length}</Num></span>
+                </button>
+                {otherOpen && (
+                  <div className="lab-other-body">
+                    <div className="lab-other-hint">{L(COPY.lab.otherHint)}</div>
+                    <ul>{other.map((r, i) => <li key={i}><Num>{r.source_text || r.plain_name || '—'}</Num></li>)}</ul>
+                  </div>
+                )}
               </div>
-            </aside>
+            )}
           </div>
         </div>
       );
@@ -3567,12 +3770,16 @@
     // cropped from the logo raster), answers are markdown-typeset notes, the thinking state is the coin breathing.
     const CHAT_MARK = <img src="/assets/brand/mika-mark.png" alt="" aria-hidden="true" />;
     const CHAT_CHIPS = ['What does my result mean in simple terms?', 'Is it serious?', 'What should I do now?'];
-    function ChatDrawer({ jobId, studyLabel, onClose }) {
+    function ChatDrawer({ jobId, studyLabel, onClose, kind }) {
       const [msgs, setMsgs] = useState([]);     // [{role:'user'|'assistant', text}]
       const [busy, setBusy] = useState(false);
       const [err, setErr] = useState(false);
       const [q, setQ] = useState('');
       const threadRef = useRef(null);
+      // Lab vs imaging copy — "report" vs "scan/read/study".
+      const T = kind === 'lab'
+        ? { title:L(COPY.lab.chatTitle), scope:L(COPY.lab.chatScope), empty:L(COPY.lab.chatEmpty) }
+        : { title:L('Ask about your read'), scope:L('this study only'), empty:L("Ask me anything about this scan — I'll keep it plain.") };
       useEffect(() => { const t = threadRef.current; if (t) t.scrollTop = t.scrollHeight; }, [msgs, busy]);
       const send = async (text) => {
         text = (text || '').trim(); if (!text || busy) return;
@@ -3584,21 +3791,21 @@
         finally { setBusy(false); }
       };
       return (
-        <div className="chat-drawer" role="dialog" aria-label={L('Ask about your read')}>
+        <div className="chat-drawer" role="dialog" aria-label={T.title}>
           <div className="chat-head">
             <span className="chat-mark">{CHAT_MARK}</span>
             <div className="chat-head-t">
-              <div className="chat-head-title">{L('Ask about your read')}</div>
+              <div className="chat-head-title">{T.title}</div>
               {studyLabel && <div className="chat-head-sub">{studyLabel}</div>}
             </div>
-            <span className="chat-scope">{L('this study only')}</span>
+            <span className="chat-scope">{T.scope}</span>
             <button className="chat-x" onClick={onClose} aria-label="Close">×</button>
           </div>
           <div className="chat-thread" ref={threadRef}>
             {msgs.length === 0 && !busy && (
               <div className="chat-empty">
                 <span className="chat-mark chat-mark-lg">{CHAT_MARK}</span>
-                <div className="chat-empty-line">{L("Ask me anything about this scan — I'll keep it plain.")}</div>
+                <div className="chat-empty-line">{T.empty}</div>
               </div>
             )}
             {msgs.map((m, i) => m.role === 'user'
@@ -3830,9 +4037,19 @@
           if (r.ok) {
             stopStream();
             let data = await r.json();
+            // Lab report: route to the Verdict screen (screenFor keys on job.kind) and index a lab
+            // recent entry. NEVER run the DICOM-shaped buildViewModel/applyArabic on a lab payload —
+            // without setting kind here, a lab reopened from Recent rendered through the imaging Read.
+            if (data && data.kind === 'lab') {
+              setReport(data);
+              setJob(j => ({ ...j, kind:'lab', status:'complete', progress:100 }));
+              pushRecent({ jobId: id, label: 'Lab report', anatomy: 'lab', date: new Date().toISOString() });
+              return;
+            }
             if (langRef.current === 'ar') data = await applyArabic(id, data);
             setReport(data);
-            setJob(j => ({ ...j, status:'complete', progress:100 }));
+            // Set kind explicitly so reopening an imaging scan after a lab job clears the stale kind.
+            setJob(j => ({ ...j, kind:'dicom', status:'complete', progress:100 }));
             try {   // index it so it can be reopened from Recent studies + survives a refresh
               const tmp = buildViewModel(data);
               const label = (tmp && tmp.study && tmp.study.body_part) || data.detected_anatomy || 'Scan';
@@ -4150,7 +4367,9 @@
             </div>
           </div>
           {showAbout && <AboutModal onClose={()=>setShowAbout(false)} />}
-          {chatOpen && !dm && job.id && <ChatDrawer jobId={job.id} studyLabel={(effVm && effVm.study) ? [effVm.study.body_part, effVm.study.modality].filter(Boolean).join(' · ') : ''} onClose={()=>setChatOpen(false)} />}
+          {chatOpen && !dm && job.id && <ChatDrawer jobId={job.id} kind={job.kind === 'lab' ? 'lab' : 'imaging'}
+            studyLabel={job.kind === 'lab' ? L(COPY.lab.topbarRead) : ((effVm && effVm.study) ? [effVm.study.body_part, effVm.study.modality].filter(Boolean).join(' · ') : '')}
+            onClose={()=>setChatOpen(false)} />}
           {showConnect && <ConnectModal connection={connection} authSession={authSession} checking={checkingConn}
             onConnect={()=>connectClaude('browser')} onUseCode={()=>retryAuth('code')} onSubmitCode={submitAuthCode}
             onRetry={()=>retryAuth('browser')} onCancel={cancelAuth} onRecheck={checkConnection}
@@ -4191,37 +4410,71 @@
     // high LDL two-sided), a qualitative result, ~22 normals, and one low-clarity item for "Other results".
     const DEMO_LAB_REPORT = (() => {
       const normalNames = ['Sodium','Potassium','Chloride','Calcium','Glucose (fasting)','Creatinine','eGFR',
-        'Hemoglobin','Hematocrit','White cell count','Platelets','ALT','AST','Total bilirubin','Albumin',
-        'TSH','HbA1c','Total cholesterol','HDL','Triglycerides','Ferritin','Vitamin B12'];
-      const normals = normalNames.map((nm, i) => ({
-        plain_name:nm, analyte_raw:nm, value:'—', unit:'', ref_range_text:'within range',
+        'White cell count','Platelets','ALT','AST','Total bilirubin','Albumin',
+        'TSH','HbA1c','Total cholesterol','HDL','Triglycerides','Vitamin B12'];
+      const normals = normalNames.map((nm) => ({
+        plain_name:nm, analyte_raw:nm, analyte_key:'', value:'—', unit:'', ref_range_text:'within range',
         range_type:'two_sided_numeric', status:'normal', severity_phrase:'normal', confidence:'Confirmed',
         plain_meaning:'within the normal range.', clarity:0.95, page_index:0, source_text:`${nm} — normal`,
       }));
+      // Microcytic anemia panel (mirrors a real CBC) — exercises the named assessment with several
+      // supporting markers, plus one unrelated low (Vitamin D) to show the gate picks the PRIMARY pattern.
       const flagged = [
-        { plain_name:'Vitamin D', analyte_raw:'25-hydroxyvitamin D', value:'18', unit:'ng/mL',
-          ref_range_text:'30-100', range_type:'two_sided_numeric', status:'low', severity_phrase:'a bit low',
-          confidence:'Likely', plain_meaning:'Low vitamin D is common and can leave you feeling tired.',
-          clarity:0.92, page_index:0, source_text:'Vitamin D (25-OH) 18 ng/mL (30-100)' },
-        { plain_name:'LDL cholesterol', analyte_raw:'LDL-C, calculated', value:'182', unit:'mg/dL',
-          ref_range_text:'0-130', range_type:'two_sided_numeric', status:'high', severity_phrase:'clearly high',
-          confidence:'Confirmed', plain_meaning:'A higher LDL is one of several things that affect heart health over time.',
-          clarity:0.96, page_index:0, source_text:'LDL Cholesterol 182 mg/dL (<130)' },
+        { plain_name:'oxygen-carrying level in blood (hemoglobin)', analyte_raw:'Hemoglobin', analyte_key:'hemoglobin',
+          value:'10.6', unit:'g/dL', ref_range_text:'12-15', range_type:'two_sided_numeric', status:'low',
+          severity_phrase:'a bit low', confidence:'Confirmed', clarity:0.95, page_index:0,
+          plain_meaning:'Your blood is a little low on the part that carries oxygen, which can leave you feeling tired.',
+          source_text:'Hemoglobin 10.6 g/dL (12-15)' },
+        { plain_name:'share of blood that is red cells (hematocrit)', analyte_raw:'Hematocrit', analyte_key:'hematocrit',
+          value:'35', unit:'%', ref_range_text:'36-46', range_type:'two_sided_numeric', status:'low',
+          severity_phrase:'slightly low', confidence:'Confirmed', clarity:0.95, page_index:0,
+          plain_meaning:'This is the portion of your blood made up of red cells, and it reads just under the normal range.',
+          source_text:'Hematocrit 35 % (36-46)' },
+        { plain_name:'average red-blood-cell size (MCV)', analyte_raw:'MCV', analyte_key:'mcv',
+          value:'74', unit:'fL', ref_range_text:'80-96', range_type:'two_sided_numeric', status:'low',
+          severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
+          plain_meaning:'Your red blood cells are smaller than usual on average.', source_text:'MCV 74 fL (80-96)' },
+        { plain_name:'oxygen-carrier amount per red cell (MCH)', analyte_raw:'MCH', analyte_key:'mch',
+          value:'23', unit:'pg', ref_range_text:'27-32', range_type:'two_sided_numeric', status:'low',
+          severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
+          plain_meaning:'Each red blood cell is carrying a little less of the oxygen-carrying part than usual.',
+          source_text:'MCH 23 pg (27-32)' },
+        { plain_name:'iron stores (ferritin)', analyte_raw:'Ferritin', analyte_key:'ferritin',
+          value:'8', unit:'ng/mL', ref_range_text:'30-300', range_type:'two_sided_numeric', status:'low',
+          severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
+          plain_meaning:'This reflects the iron your body has in reserve, and it reads low.', source_text:'Ferritin 8 ng/mL (30-300)' },
+        { plain_name:'red-cell size variation (RDW)', analyte_raw:'RDW', analyte_key:'rdw',
+          value:'17.7', unit:'%', ref_range_text:'11.5-14.5', range_type:'two_sided_numeric', status:'high',
+          severity_phrase:'high', confidence:'Confirmed', clarity:0.95, page_index:0,
+          plain_meaning:'Your red blood cells vary more than usual in size.', source_text:'RDW 17.7 % (11.5-14.5)' },
+        { plain_name:'Vitamin D', analyte_raw:'25-hydroxyvitamin D', analyte_key:'vitamin_d',
+          value:'18', unit:'ng/mL', ref_range_text:'30-100', range_type:'two_sided_numeric', status:'low',
+          severity_phrase:'a bit low', confidence:'Likely', clarity:0.92, page_index:0,
+          plain_meaning:'Low vitamin D is common and can leave you feeling tired.', source_text:'Vitamin D (25-OH) 18 ng/mL (30-100)' },
       ];
-      const qualitative = { plain_name:'Urine culture', analyte_raw:'Urine culture', value:'No growth', unit:'',
-        ref_range_text:'No growth', range_type:'qualitative', status:'normal', severity_phrase:'normal',
-        confidence:'Confirmed', plain_meaning:'No bacteria grew in the sample.', clarity:0.9, page_index:0,
-        source_text:'Urine culture: no growth at 48h' };
-      const lowClarity = { plain_name:'Handwritten note', analyte_raw:'', value:'', unit:'', ref_range_text:null,
+      const lowClarity = { plain_name:'Handwritten note', analyte_raw:'', analyte_key:'', value:'', unit:'', ref_range_text:null,
         range_type:'qualitative', status:'unknown', severity_phrase:'', confidence:'Possible',
         plain_meaning:'', clarity:0.4, page_index:0, source_text:'(unclear handwriting)' };
-      const results = [...flagged, ...normals, qualitative, lowClarity];
+      const results = [...flagged, ...normals, lowClarity];
       const checked = results.length;
-      const normal_count = normals.length + 1;   // normals + the qualitative no-growth
+      const normal_count = normals.length;
       return {
         kind:'lab',
-        overall:{ takeaway:'2 things worth a look.', confidence:'moderate',
-          checked_count:checked, normal_count, flagged_count:flagged.length, verdict_key:'FEW' },
+        patient:{ name:'Sarah Ahmed', age:'29', sex:'Female' },
+        overall:{
+          takeaway:'Several things stand out — here are the ones worth a look.', confidence:'high',
+          checked_count:checked, normal_count, flagged_count:flagged.length, verdict_key:'SEVERAL',
+          // The whitelist-gated named condition (compose_assessment output shape). Bilingual canonicals.
+          assessment:{
+            condition_key:'iron_deficiency_anemia',
+            name_en:'iron-deficiency anemia', name_ar:'فقر الدم الناتج عن نقص الحديد',
+            explanation_en:'This usually means the blood is low on iron, which can leave you feeling tired.',
+            explanation_ar:'يعني هذا عادةً أن الدم منخفض في الحديد، وقد يسبّب الشعور بالتعب.',
+            supporting:['oxygen-carrying level in blood (hemoglobin)','average red-blood-cell size (MCV)',
+              'oxygen-carrier amount per red cell (MCH)','iron stores (ferritin)'],
+            lead_key:'consistent_with', source_indices:[0,2,3,4],
+          },
+        },
         results,
         signals:{ extraction_confidence:0.93, analytes_parsed:checked, render_quality:'clear' },
       };

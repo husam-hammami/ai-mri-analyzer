@@ -1438,7 +1438,16 @@ def _list_reports() -> list[dict]:
     """Index every completed study on disk for the Recent list (durable, not browser-only)."""
     out = []
     try:
-        for d in DATA_DIR.iterdir():
+        entries = sorted(DATA_DIR.iterdir())
+    except Exception as e:
+        logger.warning(f"Could not enumerate reports dir: {e}")
+        return out
+    for d in entries:
+        # PER-DIR isolation (durable-persistence invariant): one malformed/legacy report.json must
+        # NEVER drop the rest of the list. A loop-level try used to abort the WHOLE listing at the
+        # first bad dir, silently hiding every job after it — including recent lab reads. Now a bad
+        # dir skips only its own entry.
+        try:
             if not d.is_dir() or not JOB_ID_RE.match(d.name):
                 continue
             meta = _load_meta(d.name)
@@ -1491,8 +1500,9 @@ def _list_reports() -> list[dict]:
                 "auth_state": meta.get("auth_state"),
                 "progress_phase": _normalized_progress_phase(meta.get("status", "complete"), meta.get("progress_phase")),
             })
-    except Exception as e:
-        logger.warning(f"Could not list reports: {e}")
+        except Exception as e:
+            logger.warning(f"Skipping report {d.name} in Recent list: {e}")
+            continue
     out.sort(key=lambda r: r.get("completed_at") or r.get("created_at") or "", reverse=True)
     return out
 
@@ -2513,17 +2523,30 @@ async def case_chat_endpoint(job_id: str, body: ChatRequest):
     if not CHAT_ENABLED:
         raise HTTPException(404, "Not found")
     _validate_job_id(job_id)            # JOB_ID_RE — anti-traversal
-    # Case-chat is DISABLED for lab reports in v1 (an ungated claude -p must never free-narrate the
-    # verdict). Return a clean, explicit message — not an ambiguous 404 (docs/PLAN_lab_report.md §3).
-    if _is_lab_job(job_id):
-        raise HTTPException(400, "Chat isn't available for lab reports yet.")
     q = (body.question or "").strip()
     if not q:
         raise HTTPException(400, "Empty question")
     if len(q) > CHAT_MAX_Q:
         raise HTTPException(413, "Question too long")
-    # Load the SAME normalized payload the UI renders — raw report.json has an EMPTY top-level patient block on
-    # most studies (real findings live under agent.summary.patient; _normalize_loaded_report backfills it).
+
+    # Lab reports: ground in the structured lab payload + the gated named assessment, and answer through
+    # the lab-specific deterministic ANSWER-REPLACEMENT gate (services.lab_chat) — NEVER the imaging
+    # case-chat (which is imaging-shaped and has no condition gate). _english_report_payload serves the
+    # lab report.json verbatim (raising 400/404 as appropriate), reused so we don't re-resolve the job.
+    if _is_lab_job(job_id):
+        payload, _job = _english_report_payload(job_id)
+        from services.lab_chat import answer_lab_question
+        text, err = await asyncio.to_thread(
+            answer_lab_question, job_id, payload, q, body.history[-CHAT_MAX_TURNS:],
+            model=CHAT_MODEL, effort=CHAT_EFFORT, timeout_s=CHAT_TIMEOUT, data_dir=DATA_DIR,
+        )
+        if err:
+            raise HTTPException(503, "Chat is unavailable right now")
+        return ChatResponse(answer=text)
+
+    # Imaging path: load the SAME normalized payload the UI renders — raw report.json has an EMPTY top-level
+    # patient block on most studies (real findings live under agent.summary.patient; _normalize_loaded_report
+    # backfills it).
     job = JOBS.get(job_id)
     if job and job.status == "complete":
         report = _build_report_payload(job)
@@ -2959,31 +2982,42 @@ async def _run_lab_pipeline(
         if not upload:
             raise ValueError("No lab report file found for this job (expected a PDF/PNG/JPG upload).")
 
-        # 1. Render pages (offline, deterministic).
+        # 1. Render pages (offline, deterministic). Used for the "See it on your report" proof view
+        #    and as the vision fallback when a PDF has no text layer.
         pages_dir = _job_dir(job.job_id) / "work" / "lab_pages"
         page_pngs = await asyncio.to_thread(lab_reader.render_pages, upload, pages_dir)
         job.progress = 25
         job.progress_message = "Reading the values"
         _write_status_heartbeat(job)
 
-        # 2. Live Opus vision read (worker-only). Mirrors the imaging credential source.
-        parsed = await asyncio.to_thread(
-            lab_reader.read_labs, job.job_id, page_pngs, api_key=api_key, auth_token=auth_token
+        # 2. Live Opus read (worker-only). TEXT-FIRST: a digital PDF is read from its exact text
+        #    layer; photos / scanned PDFs fall back to a vision read of the page images.
+        parsed, read_mode = await asyncio.to_thread(
+            lab_reader.read_lab_report, job.job_id, upload, page_pngs,
+            api_key=api_key, auth_token=auth_token,
         )
         results = parsed.get("results", [])
         signals = parsed.get("signals", {})
+        patient = parsed.get("patient") or {}
+        proposal = parsed.get("assessment_proposal")
+        logger.info(f"[lab {job.job_id}] read mode={read_mode}, {len(results)} analyte rows")
         job.progress = 80
         job.progress_message = "Finding what stands out"
         _write_status_heartbeat(job)
 
         # 3. Deterministic safety gate (pure Python — composes the verdict; never an LLM string).
+        #    compose_verdict stays the SOLE writer of takeaway/counts. compose_assessment is ADDITIVE:
+        #    it derives the likely named condition from the flagged-marker pattern (the model proposal is
+        #    advisory only), or returns None → the page keeps the honest grouped verdict.
         verdict = lab_reader.compose_verdict(results, signals, lang="en")
+        assessment = lab_reader.compose_assessment(results, signals, proposal)
         job.progress = 92
         job.progress_message = "Putting it in plain words"
         _write_status_heartbeat(job)
 
         # 4. Persist via the dedicated lab path (NOT _persist_report — that is DICOM-coupled).
-        payload = lab_reader.build_lab_payload(verdict, results, signals)
+        #    `patient` is persisted in report.json only; persist_lab_report keeps it out of meta.json.
+        payload = lab_reader.build_lab_payload(verdict, results, signals, assessment=assessment, patient=patient)
         await asyncio.to_thread(
             lab_reader.persist_lab_report, job.job_id, DATA_DIR, payload, page_pngs,
             created_at=job.created_at, title="Lab report",
