@@ -3526,7 +3526,9 @@
       const onLabFiles = useCallback(async (files) => {
         const list = Array.from(files).filter(f => { const n=f.name.toLowerCase(); return LAB_SUP.some(e=>n.endsWith(e)); });
         if (!list.length) { addToast(L(COPY.lab.badFile), 'error'); return; }
-        const fd = new FormData(); list.forEach(f => fd.append('files', f));
+        // kind=lab tells /api/upload to accept a PDF/photo and keep it verbatim — WITHOUT it the
+        // backend defaults to kind=dicom and rejects the PDF with the imaging "No supported files" error.
+        const fd = new FormData(); list.forEach(f => fd.append('files', f)); fd.append('kind', 'lab');
         try {
           const data = await api.upload(fd);
           if (data.job_id) {
