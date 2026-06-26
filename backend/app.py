@@ -161,9 +161,10 @@ MAX_UPLOAD_BYTES = int(os.environ.get("MIKA_MAX_UPLOAD_BYTES", str(2 * 1024 * 10
 # Arabic presentation layer — flag-dark by default. English report.json is the only clinical
 # source of truth; Arabic is a derived view (see docs/Mika_Arabic_Plan.md).
 AR_ENABLED = os.environ.get("MIKA_AR_ENABLED", "0") == "1"
-# Case chat — flag-dark by default (docs/Mika_Chat_Plan.md). Answers ONLY from the patient's own report,
-# in plain language, never as medical advice. Inert (endpoint 404s, button hidden) until flipped.
-CHAT_ENABLED = os.environ.get("MIKA_CHAT_ENABLED", "0") == "1"
+# Case chat — answers ONLY from the patient's own report, in plain language, never as medical advice.
+# Default ON for the release (same subscription `claude -p` transport as the imaging read + lab read).
+# Set MIKA_CHAT_ENABLED=0 to hide the surface (endpoint 404s, button hidden).
+CHAT_ENABLED = os.environ.get("MIKA_CHAT_ENABLED", "1") == "1"
 CHAT_MODEL = os.environ.get("MIKA_CHAT_MODEL", os.environ.get("MIKA_AGENT_MODEL", "opus"))
 CHAT_EFFORT = os.environ.get("MIKA_CHAT_EFFORT", "low")
 CHAT_TIMEOUT = int(os.environ.get("MIKA_CHAT_TIMEOUT_S", "90"))
