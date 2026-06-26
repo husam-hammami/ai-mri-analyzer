@@ -875,19 +875,39 @@
     .lab-numbers-count { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 6px;
       border-radius:var(--r-full); background:var(--accent); color:#fff; font-size:12px; font-weight:800; }
     .lab-numbers-table { background:var(--surface); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
-    .lnt-row { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1.1fr) auto; align-items:center;
-      gap:var(--s-4); padding:11px var(--s-4); border-top:1px solid var(--line-soft); }
+    .lnt-row { padding:12px var(--s-4); border-top:1px solid var(--line-soft); }
     .lnt-row:first-child { border-top:none; }
+    .lnt-main { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(60px,auto) minmax(130px,1.4fr) auto;
+      gap:var(--s-4); align-items:center; }
     .lnt-name { font-size:13.5px; font-weight:650; color:var(--ink); min-width:0; }
-    .lnt-val { font-size:14px; font-weight:750; color:var(--ink); }
-    .lnt-range { font-size:12px; color:var(--slate); }
+    .lnt-val { font-size:14px; font-weight:750; color:var(--ink); white-space:nowrap; }
+    .lnt-desc { margin-top:6px; font-size:12.5px; line-height:1.5; color:var(--slate); max-width:88ch; }
+    .lnt-rangetext { font-size:12px; color:var(--slate); }
     .lnt-range-k { color:var(--slate-300); }
+    /* compact per-row range indicator */
+    .lnt-bar { display:flex; flex-direction:column; gap:3px; min-width:0; }
+    .lnt-bar-rail { position:relative; height:7px; border-radius:var(--r-full); background:var(--surface-2); box-shadow:inset 0 0 0 1px var(--line); }
+    .lnt-bar-band { position:absolute; inset-block:0; background:var(--accent-softer); box-shadow:inset 0 0 0 1px var(--accent-line); border-radius:var(--r-full); }
+    .lnt-bar-tick { position:absolute; inset-block:-4px; inline-size:3px; transform:translateX(-50%); background:var(--accent); border-radius:var(--r-full); box-shadow:0 0 0 3px var(--accent-glow); }
+    [dir="rtl"] .lnt-bar-tick { transform:translateX(50%); }
+    .lnt-bar-scale { display:flex; justify-content:space-between; align-items:center; font-size:9.5px; color:var(--slate-300); }
+    .lnt-bar-normal { font-size:9px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:var(--accent-strong); opacity:.6; }
     .lnt-dir { justify-self:end; font-size:11px; font-weight:800; letter-spacing:.3px; text-transform:uppercase;
       color:var(--accent-strong); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line);
       border-radius:var(--r-full); padding:3px 10px; min-width:46px; text-align:center; }
     .lnt-dir:empty { display:none; }
     .lnt-proof { padding:var(--s-3) var(--s-4) var(--s-4); border-top:1px solid var(--line-soft); }
     .lnt-proof .lab-proof-img { margin-top:var(--s-3); }
+
+    /* Header artifact — visibly alive: float (on .lab-stream img) + drifting particles + a soft
+       breathing accent-glow ring on the frame. Decorative only (per One-Pulse). Off for reduced-motion. */
+    .lab-verdict-art .lab-stream { animation: labArtBreathe 5.5s var(--ease-calm) infinite; }
+    .lab-verdict-art .lab-stream-particles { opacity:.34; }
+    @keyframes labArtBreathe {
+      0%,100% { transform: translateY(0); box-shadow: 0 12px 34px rgba(15,23,42,.10), inset 0 0 0 1px rgba(255,255,255,.74), 0 0 0 0 var(--accent-glow); }
+      50%     { transform: translateY(-4px); box-shadow: 0 16px 40px rgba(15,23,42,.14), inset 0 0 0 1px rgba(255,255,255,.74), 0 0 0 8px var(--accent-glow); }
+    }
+    @media (prefers-reduced-motion: reduce) { .lab-verdict-art .lab-stream { animation:none; } }
 
     /* Collapse the header to one column (drop the decorative artifact) when narrow or chat docks. */
     @media (max-width: 1100px) { .lab-verdict { grid-template-columns:minmax(0,1fr); } .lab-verdict-art { display:none; } }
@@ -3475,6 +3495,34 @@
     // flagged value: plain name, the result, the normal range, a color-free Low/High chip. Uses the page
     // width; NO per-value cards / stat-tiles / detail pane (those overwhelmed). One shared "see it on
     // your report" proof below, not per-row.
+    // Compact range indicator for a table row — rail + normal band + value tick + tiny lo/hi labels, so
+    // the patient SEES where their value sits vs normal. Falls back to the printed range text for
+    // one-sided/qualitative ranges (never fabricates a tick). Color-free (accent only).
+    function LabMiniBar({ r }) {
+      const bounds = r.range_type === 'two_sided_numeric' ? parseTwoSided(r.ref_range_text) : null;
+      const val = bounds ? parseFloat(String(r.value).replace(/[^0-9.\-]/g, '')) : NaN;
+      if (!bounds || !isFinite(val)) {
+        return <span className="lnt-rangetext">{r.ref_range_text ? <><span className="lnt-range-k">{L(COPY.lab.range)}</span> <Num>{r.ref_range_text}</Num></> : '—'}</span>;
+      }
+      const { lo, hi } = bounds;
+      const span = (hi - lo) || 1;
+      const min = lo - span, max = hi + span;
+      const pct = (x) => Math.max(0, Math.min(100, ((x - min) / (max - min)) * 100));
+      return (
+        <span className="lnt-bar">
+          <span className="lnt-bar-rail">
+            <span className="lnt-bar-band" style={{ insetInlineStart:`${pct(lo)}%`, inlineSize:`${pct(hi) - pct(lo)}%` }} />
+            <span className="lnt-bar-tick" style={{ insetInlineStart:`${pct(val)}%` }} aria-hidden="true" />
+          </span>
+          <span className="lnt-bar-scale">
+            <span className="num" dir="ltr">{lo}</span>
+            <span className="lnt-bar-normal">{L(COPY.lab.dirNormal)}</span>
+            <span className="num" dir="ltr">{hi}</span>
+          </span>
+        </span>
+      );
+    }
+
     function LabNumbersTable({ rows, jobId }) {
       const [showProof, setShowProof] = useState(false);
       const [proofOk, setProofOk] = useState(true);
@@ -3486,10 +3534,13 @@
             const valueText = [r.value, r.unit].filter(Boolean).join(' ');
             return (
               <div className="lnt-row" key={i}>
-                <span className="lnt-name">{r.plain_name}</span>
-                <span className="lnt-val"><Num>{valueText || r.value || '—'}</Num></span>
-                <span className="lnt-range">{r.ref_range_text ? <><span className="lnt-range-k">{L(COPY.lab.range)}</span> <Num>{r.ref_range_text}</Num></> : '—'}</span>
-                <span className={`lnt-dir lnt-dir-${dir}`}>{dir === 'low' ? L(COPY.lab.dirLow) : dir === 'high' ? L(COPY.lab.dirHigh) : ''}</span>
+                <div className="lnt-main">
+                  <span className="lnt-name">{r.plain_name}</span>
+                  <span className="lnt-val"><Num>{valueText || r.value || '—'}</Num></span>
+                  <LabMiniBar r={r} />
+                  <span className={`lnt-dir lnt-dir-${dir}`}>{dir === 'low' ? L(COPY.lab.dirLow) : dir === 'high' ? L(COPY.lab.dirHigh) : ''}</span>
+                </div>
+                {r.plain_meaning && <div className="lnt-desc">{r.plain_meaning}</div>}
               </div>
             );
           })}
@@ -4457,34 +4508,34 @@
         { plain_name:'Hemoglobin', analyte_raw:'Hemoglobin', analyte_key:'hemoglobin',
           value:'10.6', unit:'g/dL', ref_range_text:'12-15', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'a bit low', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:'Your blood is a little low on the part that carries oxygen, which can leave you feeling tired.',
+          plain_meaning:'Hemoglobin is the part of your blood that carries oxygen. Yours is a little low, which can sometimes leave you feeling tired or low on energy.',
           source_text:'Hemoglobin 10.6 g/dL (12-15)' },
         { plain_name:'Hematocrit', analyte_raw:'Hematocrit', analyte_key:'hematocrit',
           value:'35', unit:'%', ref_range_text:'36-46', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'slightly low', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:'This is the portion of your blood made up of red cells, and it reads just under the normal range.',
+          plain_meaning:'This is how much of your blood is made up of red cells. It reads just under normal, which fits the low-iron picture.',
           source_text:'Hematocrit 35 % (36-46)' },
         { plain_name:'Red-cell size (MCV)', analyte_raw:'MCV', analyte_key:'mcv',
           value:'74', unit:'fL', ref_range_text:'80-96', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:'Your red blood cells are smaller than usual on average.', source_text:'MCV 74 fL (80-96)' },
+          plain_meaning:'This is the average size of your red blood cells. Smaller-than-usual cells are a classic sign of low iron.', source_text:'MCV 74 fL (80-96)' },
         { plain_name:'Hemoglobin per cell (MCH)', analyte_raw:'MCH', analyte_key:'mch',
           value:'23', unit:'pg', ref_range_text:'27-32', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:'Each red blood cell is carrying a little less of the oxygen-carrying part than usual.',
+          plain_meaning:'This is how much oxygen-carrying hemoglobin each red cell holds. Yours is a bit low, in line with low iron.',
           source_text:'MCH 23 pg (27-32)' },
         { plain_name:'Iron stores (ferritin)', analyte_raw:'Ferritin', analyte_key:'ferritin',
           value:'8', unit:'ng/mL', ref_range_text:'30-300', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:'This reflects the iron your body has in reserve, and it reads low.', source_text:'Ferritin 8 ng/mL (30-300)' },
+          plain_meaning:"Ferritin is your body's stored iron — its reserve tank. Yours is low, which is usually the root of this kind of anemia.", source_text:'Ferritin 8 ng/mL (30-300)' },
         { plain_name:'Red-cell variation (RDW)', analyte_raw:'RDW', analyte_key:'rdw',
           value:'17.7', unit:'%', ref_range_text:'11.5-14.5', range_type:'two_sided_numeric', status:'high',
           severity_phrase:'high', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:'Your red blood cells vary more than usual in size.', source_text:'RDW 17.7 % (11.5-14.5)' },
+          plain_meaning:'This measures how much your red cells vary in size. A higher value often shows up when iron is low.', source_text:'RDW 17.7 % (11.5-14.5)' },
         { plain_name:'Vitamin D', analyte_raw:'25-hydroxyvitamin D', analyte_key:'vitamin_d',
           value:'18', unit:'ng/mL', ref_range_text:'30-100', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'a bit low', confidence:'Likely', clarity:0.92, page_index:0,
-          plain_meaning:'Low vitamin D is common and can leave you feeling tired.', source_text:'Vitamin D (25-OH) 18 ng/mL (30-100)' },
+          plain_meaning:'Vitamin D supports your bones and energy. Yours is a bit low — common, and easy to follow up on with your doctor.', source_text:'Vitamin D (25-OH) 18 ng/mL (30-100)' },
       ];
       const lowClarity = { plain_name:'Handwritten note', analyte_raw:'', analyte_key:'', value:'', unit:'', ref_range_text:null,
         range_type:'qualitative', status:'unknown', severity_phrase:'', confidence:'Possible',
