@@ -18,10 +18,8 @@ from validation import second_reader_prompt as srp     # noqa: E402
 
 
 def _hunt_for(anatomy: str) -> str:
-    if anatomy == "prostate":
-        return srp.HUNT_BLOCKS["prostate"]
-    if anatomy == "abdomen":
-        return srp.HUNT_BLOCKS["abdomen"]
+    if anatomy in srp.HUNT_BLOCKS:
+        return srp.HUNT_BLOCKS[anatomy]   # prostate / abdomen / chest get a dedicated hunt
     return srp.HUNT_BLOCKS["generic"]
 
 

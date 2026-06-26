@@ -36,9 +36,26 @@ if str(BACKEND) not in sys.path:
 
 from services.agent_runner import AgentRunner          # noqa: E402
 from validation import validate                        # noqa: E402
+from validation.chest_cxr_protocol import CHEST_CXR_PROTOCOL  # noqa: E402
 
 DATA = REPO / "test_data" / "chexpert"
 CACHE = HERE / "cache_chexpert"
+
+# Well-powered findings (dozens of positives each) the headline sensitivity delta rests on, and the
+# rare "canary" findings (single-digit positives) that are DIRECTIONAL only — never a decision gate.
+POWERED = ["Consolidation", "Pleural Effusion", "Cardiomegaly", "Edema", "Atelectasis"]
+RARE = ["Pneumothorax", "Lung Lesion"]
+
+
+def _cache_dir(key: str, arm: str) -> Path:
+    # baseline reuses the legacy (un-suffixed) cache so the existing paid run is free; every other
+    # arm gets its OWN dir, so a changed prompt is never silently served a stale cached read.
+    suffix = "" if arm == "baseline" else f"__{arm}"
+    return CACHE / (key.replace("/", "__") + suffix)
+
+
+def _has_baseline_cache(key: str) -> bool:
+    return (_cache_dir(key, "baseline") / "summary.json").exists()
 
 # The 14 CheXpert observations.
 LABELS = [
@@ -110,8 +127,8 @@ def report_text_of(summary: dict) -> str:
     return "\n".join(x for x in parts if x)
 
 
-def read_study(key: str, images: list, tmp: Path):
-    cdir = CACHE / key.replace("/", "__")
+def read_study(key: str, images: list, tmp: Path, arm: str = "baseline", protocol: str = None):
+    cdir = _cache_dir(key, arm)
     sfile = cdir / "summary.json"
     if sfile.exists():
         return json.loads(sfile.read_text(encoding="utf-8")), 0.0, True
@@ -124,7 +141,8 @@ def read_study(key: str, images: list, tmp: Path):
             shutil.copy(im, up / im.name)
     dicom = validate.prepare_study(up, tmp / "p")
     runner = AgentRunner()
-    res = runner.run(study_dir=str(dicom), work_dir=str(cdir / "work"), anatomy="chest", require_pdf=False)
+    res = runner.run(study_dir=str(dicom), work_dir=str(cdir / "work"), anatomy="chest",
+                     require_pdf=False, protocol_override=protocol)
     summary = res.summary or {}
     if not summary:
         f = cdir / "work" / "report" / "summary.json"
@@ -135,9 +153,90 @@ def read_study(key: str, images: list, tmp: Path):
     return summary, (res.cost_usd or 0.0), False
 
 
+def select_pinned(studies: dict, target: int = 30, normals: int = 8):
+    """Deterministic, stratified subset for the arm comparison. Drawn ONLY from studies whose baseline
+    read is already cached (so the baseline arm costs $0 and the same subset is reproducible across arms),
+    over-including the rare canary findings, then the well-powered findings, then a few normals."""
+    cached = [k for k in studies if _has_baseline_cache(k)]
+    allk = list(studies)
+    cache_first = cached + [k for k in allk if k not in cached]  # prefer free (cached) reads
+    chosen: list = []
+
+    def take(k):
+        if k not in chosen:
+            chosen.append(k)
+
+    # 1) ALL rare-finding positives from the FULL set — only ~6 pneumothorax + 1 nodule exist, so the
+    #    subset must include them even if a few aren't cached, or the subtle-finding canary is empty.
+    for k in allk:
+        if any(studies[k]["labels"].get(l) == 1 for l in RARE):
+            take(k)
+    # 2) well-powered positives, preferring already-cached studies (free baseline), up to target - normals.
+    for k in cache_first:
+        if len(chosen) >= target - normals:
+            break
+        if any(studies[k]["labels"].get(l) == 1 for l in POWERED):
+            take(k)
+    # 3) a few normals (specificity), preferring cached.
+    for k in [x for x in cache_first if studies[x]["labels"].get("No Finding") == 1][:normals]:
+        take(k)
+    # 4) deterministic fill, cached first.
+    for k in cache_first:
+        if len(chosen) >= target:
+            break
+        take(k)
+    return chosen[:target]
+
+
+def _sens(d):
+    tp, fn = d.get("tp", 0), d.get("fn", 0)
+    return (tp / (tp + fn)) if (tp + fn) else None
+
+
+def _fpr(d):
+    fp, tn = d.get("fp", 0), d.get("tn", 0)
+    return (fp / (fp + tn)) if (fp + tn) else None
+
+
+def compare_arms(base_arm: str, arm: str):
+    """Print the cross-arm decision table: per-finding sensitivity (as k/N) and false-positive rate
+    over the LARGE negative pool. The Gate-1 ship rule is: powered-finding sensitivity rose AND no
+    finding's FP-rate got materially worse. Rare findings are directional only (tiny n)."""
+    bf, af = HERE / f"chexpert_results_{base_arm}.json", HERE / f"chexpert_results_{arm}.json"
+    if not (bf.exists() and af.exists()):
+        print(f"\n(compare skipped: run `--arm {base_arm}` first to produce {bf.name})")
+        return
+    b = json.loads(bf.read_text(encoding="utf-8"))["per_label"]
+    a = json.loads(af.read_text(encoding="utf-8"))["per_label"]
+    pct = lambda x: f"{100*x:.0f}%" if x is not None else "  -"  # noqa: E731
+    kn = lambda d: f"{d.get('tp',0)}/{d.get('tp',0)+d.get('fn',0)}"  # noqa: E731
+    print(f"\n=== {arm} vs {base_arm}: sensitivity (k/N) and false-positive rate per finding ===")
+    print(f"{'finding':24} {'sens('+base_arm+')':>16} {'sens('+arm+')':>16}  {'FPR('+base_arm+')':>12} {'FPR('+arm+')':>10}  flag")
+    worse = []
+    for lab in LABELS:
+        bl, al = b.get(lab, {}), a.get(lab, {})
+        bfp, afp = _fpr(bl), _fpr(al)
+        tag = ""
+        if bfp is not None and afp is not None and afp > bfp + 1e-9:
+            tag = "WORSE-FP"
+            worse.append(lab)
+        canary = " (directional)" if lab in RARE else ""
+        print(f"{lab:24} {pct(_sens(bl))+' '+kn(bl):>16} {pct(_sens(al))+' '+kn(al):>16}  "
+              f"{pct(bfp):>12} {pct(afp):>10}  {tag}{canary}")
+    print(f"\nGate-1 guardrail: {'PASS — no finding worsened FP-rate' if not worse else 'CHECK — FP-rate rose on: ' + ', '.join(worse)}.")
+    print("Ship the arm only if the POWERED findings' sensitivity rose with no material FP-rate regression. "
+          "Pneumothorax / Lung Lesion are DIRECTIONAL only (single-digit n), never a ship/no-ship gate.")
+
+
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--arm", choices=["baseline", "hunt"], default="baseline",
+                    help="baseline = current read (reuses the existing cache → free); "
+                         "hunt = radiograph search protocol (a fresh, separately-cached re-spend)")
     ap.add_argument("--limit", type=int, default=0, help="score only the first N studies (0 = all)")
+    ap.add_argument("--pinned", action="store_true",
+                    help="use a deterministic ~30-study stratified subset of already-cached studies "
+                         "(over-includes pneumothorax/nodule + powered findings + normals)")
     ap.add_argument("--uncertain", choices=["zero", "exclude"], default="exclude",
                     help="how to treat ground-truth uncertain (-1) labels")
     args = ap.parse_args()
@@ -148,8 +247,15 @@ def main():
         sys.exit(1)
 
     studies = load_studies(valid_csv)
-    keys = list(studies)[: args.limit] if args.limit else list(studies)
-    print(f"CheXpert benchmark — {len(keys)} studies (of {len(studies)})\n")
+    if args.pinned:
+        keys = select_pinned(studies)
+    elif args.limit:
+        keys = list(studies)[: args.limit]
+    else:
+        keys = list(studies)
+    protocol = CHEST_CXR_PROTOCOL if args.arm == "hunt" else None
+    print(f"CheXpert benchmark [arm={args.arm}{' · PINNED' if args.pinned else ''}] — "
+          f"{len(keys)} studies (of {len(studies)})\n")
 
     stats = {lab: {"tp": 0, "fp": 0, "tn": 0, "fn": 0} for lab in LABELS}
     tmp = Path(tempfile.mkdtemp(prefix="mika_chx_"))
@@ -157,9 +263,10 @@ def main():
     for i, key in enumerate(keys, 1):
         st = studies[key]
         try:
-            summary, cost, cached = read_study(key, st["images"], tmp / key.replace("/", "__"))
+            summary, cost, cached = read_study(key, st["images"], tmp / key.replace("/", "__"),
+                                               arm=args.arm, protocol=protocol)
             total_cost += cost
-            lfile = CACHE / key.replace("/", "__") / "labels.json"
+            lfile = _cache_dir(key, args.arm) / "labels.json"
             if lfile.exists():
                 pred = json.loads(lfile.read_text(encoding="utf-8"))
             else:
@@ -189,21 +296,26 @@ def main():
         acc = (tp + tn) / n if n else None
         return sens, spec, acc, n
 
-    print("\n=== CheXpert per-finding (vs radiologist-consensus labels) ===")
+    print(f"\n=== CheXpert per-finding [arm={args.arm}] (vs radiologist-consensus labels) ===")
     print(f"{'finding':30} {'sens':>6} {'spec':>6} {'acc':>6}  n")
     accs = []
+    per_label = {}
     for lab in LABELS:
         sens, spec, acc, n = metrics(stats[lab])
         if acc is not None:
             accs.append(acc)
         f = lambda x: f"{100*x:.0f}%" if x is not None else "  -"  # noqa: E731
         print(f"{lab:30} {f(sens):>6} {f(spec):>6} {f(acc):>6}  {n}")
+        # persist RAW confusion counts (the cross-arm FP-rate guardrail needs them) alongside the rates
+        per_label[lab] = {**stats[lab], "sens": sens, "spec": spec, "acc": acc, "n": n}
     overall = sum(accs) / len(accs) if accs else 0
     print(f"\nmacro accuracy across findings: {100*overall:.0f}%  |  credits spent: ${total_cost:.2f}")
-    out = {"per_label": {lab: dict(zip(("sens", "spec", "acc", "n"), metrics(stats[lab]))) for lab in LABELS},
+    out = {"arm": args.arm, "pinned": args.pinned, "per_label": per_label,
            "macro_accuracy": overall, "studies": len(keys), "cost_usd": round(total_cost, 2)}
-    (HERE / "chexpert_results.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
-    print("wrote validation/chexpert_results.json")
+    (HERE / f"chexpert_results_{args.arm}.json").write_text(json.dumps(out, indent=2), encoding="utf-8")
+    print(f"wrote validation/chexpert_results_{args.arm}.json")
+    if args.arm != "baseline":
+        compare_arms("baseline", args.arm)
     shutil.rmtree(tmp, ignore_errors=True)
 
 

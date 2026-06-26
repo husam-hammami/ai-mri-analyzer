@@ -341,7 +341,7 @@ def build_patient_report(patient: dict, figures_dir, out_pdf) -> str:
         canvas.setStrokeColor(c(HAIRLINE)); canvas.setLineWidth(0.6)
         canvas.line(0.9 * inch, 0.62 * inch, w - 0.9 * inch, 0.62 * inch)
         canvas.setFont("Helvetica", 7.5); canvas.setFillColor(c(MUTED))
-        canvas.drawString(0.9 * inch, 0.46 * inch, "MIKA  ·  Clinical Imaging Intelligence")
+        canvas.drawString(0.9 * inch, 0.46 * inch, "MIKA  ·  Understand your medical imaging")
         canvas.drawRightString(w - 0.9 * inch, 0.46 * inch, f"Page {doc_.page}")
         canvas.restoreState()
 
