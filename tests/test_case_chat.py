@@ -65,7 +65,7 @@ def test_build_prompt_contains_rules_report_and_history():
                                           {"role": "assistant", "text": "hello"}], "what now?")
     assert "Use ONLY the report above" in prompt and ctx in prompt
     assert "Q: hi" in prompt and "A: hello" in prompt and prompt.rstrip().endswith("Q: what now?\nA:")
-    assert "HELP FIRST" in prompt  # the help-first rule 2 is present
+    assert "Help first" in prompt  # the help-first rule (now rule 4) is present
 
 
 # ── scope invariant (no tool/file access) ───────────────────────────────────────────────────
