@@ -878,21 +878,26 @@
     .lab-numbers-table { background:var(--surface); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
     .lnt-row { padding:12px var(--s-4); border-top:1px solid var(--line-soft); }
     .lnt-row:first-child { border-top:none; }
-    .lnt-main { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(60px,auto) minmax(130px,1.4fr) auto;
+    .lnt-main { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(56px,auto) minmax(132px,1.3fr) auto;
       gap:var(--s-4); align-items:center; }
-    .lnt-name { font-size:13.5px; font-weight:650; color:var(--ink); min-width:0; }
-    .lnt-val { font-size:14px; font-weight:750; color:var(--ink); white-space:nowrap; }
+    /* Hierarchy: NAME leads, the LOW/HIGH chip + dot-position carry the meaning, the raw number is kept
+       but quiet (de-emphasised — not "thrown" at the patient). */
+    .lnt-name { font-size:14px; font-weight:700; color:var(--ink); min-width:0; }
+    .lnt-val { font-size:13px; font-weight:600; color:var(--slate); white-space:nowrap; text-align:end; }
     .lnt-desc { margin-top:6px; font-size:12.5px; line-height:1.5; color:var(--slate); max-width:88ch; }
     .lnt-rangetext { font-size:12px; color:var(--slate); }
     .lnt-range-k { color:var(--slate-300); }
-    /* compact per-row range indicator */
-    .lnt-bar { display:flex; flex-direction:column; gap:3px; min-width:0; }
-    .lnt-bar-rail { position:relative; height:7px; border-radius:var(--r-full); background:var(--surface-2); box-shadow:inset 0 0 0 1px var(--line); }
-    .lnt-bar-band { position:absolute; inset-block:0; background:var(--accent-softer); box-shadow:inset 0 0 0 1px var(--accent-line); border-radius:var(--r-full); }
-    .lnt-bar-tick { position:absolute; inset-block:-4px; inline-size:3px; transform:translateX(-50%); background:var(--accent); border-radius:var(--r-full); box-shadow:0 0 0 3px var(--accent-glow); }
-    [dir="rtl"] .lnt-bar-tick { transform:translateX(50%); }
-    .lnt-bar-scale { display:flex; justify-content:space-between; align-items:center; font-size:9.5px; color:var(--slate-300); }
-    .lnt-bar-normal { font-size:9px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:var(--accent-strong); opacity:.6; }
+    /* Per-row read-out — a dot on a soft number line (NOT a slider): no borders, soft normal band, a
+       small plotted accent dot, lo/hi numerals under the band edges. Position alone reads low/high. */
+    .lnt-ind { display:block; min-width:0; }
+    .lnt-ind-rail { display:block; position:relative; height:5px; margin-top:5px; border-radius:var(--r-full); background:var(--surface-2); }
+    .lnt-ind-band { display:block; position:absolute; inset-block:0; background:var(--accent-softer); border-radius:var(--r-full); }
+    .lnt-ind-dot { display:block; position:absolute; top:50%; inline-size:9px; block-size:9px; transform:translate(-50%,-50%);
+      border-radius:50%; background:var(--accent); box-shadow:0 0 0 2px var(--surface), 0 0 0 4px var(--accent-glow); }
+    [dir="rtl"] .lnt-ind-dot { transform:translate(50%,-50%); }
+    .lnt-ind-scale { display:block; position:relative; height:11px; margin-top:6px; }
+    .lnt-ind-lo, .lnt-ind-hi { position:absolute; top:0; transform:translateX(-50%); font-size:10px; line-height:1; color:var(--slate); white-space:nowrap; }
+    [dir="rtl"] .lnt-ind-lo, [dir="rtl"] .lnt-ind-hi { transform:translateX(50%); }
     .lnt-dir { justify-self:end; font-size:11px; font-weight:800; letter-spacing:.3px; text-transform:uppercase;
       color:var(--accent-strong); background:var(--accent-soft); box-shadow:inset 0 0 0 1px var(--accent-line);
       border-radius:var(--r-full); padding:3px 10px; min-width:46px; text-align:center; }
@@ -3513,16 +3518,19 @@
       const span = (hi - lo) || 1;
       const min = lo - span, max = hi + span;
       const pct = (x) => Math.max(0, Math.min(100, ((x - min) / (max - min)) * 100));
+      const bandL = pct(lo), bandR = pct(hi);
+      const dot = Math.max(3, Math.min(97, pct(val)));   // keep the marker fully visible when clamped
+      // A plotted dot on a soft number line (NOT a slider): borderless rail, a soft normal band, a small
+      // accent dot for the value, and lo/hi numerals sitting UNDER the band edges (where they actually are).
       return (
-        <span className="lnt-bar">
-          <span className="lnt-bar-rail">
-            <span className="lnt-bar-band" style={{ insetInlineStart:`${pct(lo)}%`, inlineSize:`${pct(hi) - pct(lo)}%` }} />
-            <span className="lnt-bar-tick" style={{ insetInlineStart:`${pct(val)}%` }} aria-hidden="true" />
+        <span className="lnt-ind" aria-hidden="true">
+          <span className="lnt-ind-rail">
+            <span className="lnt-ind-band" style={{ insetInlineStart:`${bandL}%`, inlineSize:`${bandR - bandL}%` }} />
+            <span className="lnt-ind-dot" style={{ insetInlineStart:`${dot}%` }} />
           </span>
-          <span className="lnt-bar-scale">
-            <span className="num" dir="ltr">{lo}</span>
-            <span className="lnt-bar-normal">{L(COPY.lab.dirNormal)}</span>
-            <span className="num" dir="ltr">{hi}</span>
+          <span className="lnt-ind-scale">
+            <span className="lnt-ind-lo num" dir="ltr" style={{ insetInlineStart:`${bandL}%` }}>{lo}</span>
+            <span className="lnt-ind-hi num" dir="ltr" style={{ insetInlineStart:`${bandR}%` }}>{hi}</span>
           </span>
         </span>
       );
