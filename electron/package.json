@@ -1,13 +1,82 @@
 {
   "name": "mika-desktop",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "MIKA desktop shell (P0: dev sidecar bring-up — spawns the system Python backend + Claude CLI, loads the localhost app in a window).",
+  "description": "MIKA desktop app — spawns the Python backend + Claude CLI as a localhost sidecar and loads the MIKA web app in a native window.",
+  "author": "Husam Hammami",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "postinstall": "electron-builder install-app-deps"
   },
   "devDependencies": {
-    "electron": "^31.7.7"
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.orbia.mika",
+    "productName": "MIKA",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "build/icon.ico"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc",
+          "!**/.pytest_cache/**",
+          "!tests/**",
+          "!data/**",
+          "!**/_archive/**"
+        ]
+      },
+      {
+        "from": "../frontend",
+        "to": "frontend",
+        "filter": [
+          "**/*",
+          "!**/_archive/**",
+          "!assets/_demo/**",
+          "!assets/bloodwork*.png"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "MIKA"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "build/icon.png",
+      "category": "public.app-category.medical"
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "icon": "build/icon.png",
+      "category": "Science"
+    }
   }
 }

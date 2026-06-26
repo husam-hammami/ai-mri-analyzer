@@ -8,12 +8,11 @@
   <!-- mika-mark (recolorable helix) as favicon -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 56 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%232563EB' stroke-linecap='round'%3E%3Cg opacity='0.4' stroke-width='3'%3E%3Cpath d='M12 24 Q28 15 44 24'/%3E%3Cpath d='M12 40 Q28 31 44 40'/%3E%3Cpath d='M12 56 Q28 47 44 56'/%3E%3C/g%3E%3Cg stroke-width='4'%3E%3Cpath d='M12 24 Q28 33 44 24'/%3E%3Cpath d='M12 40 Q28 49 44 40'/%3E%3Cpath d='M12 56 Q28 65 44 56'/%3E%3C/g%3E%3C/g%3E%3Ccircle cx='28' cy='40' r='4.2' fill='%231D4ED8'/%3E%3C/svg%3E" />
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <!-- Vendored locally so the desktop app runs fully offline (no CDN dependency). -->
+  <script src="/assets/vendor/react.production.min.js"></script>
+  <script src="/assets/vendor/react-dom.production.min.js"></script>
+  <script src="/assets/vendor/babel.min.js"></script>
+  <link href="/assets/vendor/dmsans.css" rel="stylesheet" />
 
   <style>
     /* ══════════════════════════════════════════════════════════════

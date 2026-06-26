@@ -2026,11 +2026,37 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
     if job.kind == "lab":
         if not LAB_ENABLED:
             raise HTTPException(404, "Lab reports are not enabled")
-        # Same credential source the imaging interpret/"lite" path uses (api_key, else subscription
-        # auth_token, else env profile). The default desktop posture (claude /login only) gives the
-        # SDK no token — see lab_reader's Phase-0 note for the documented fallback obligation.
+        # The lab read runs on the subscription `claude -p` CLI (like the imaging agent): the default
+        # desktop posture (claude /login only) needs NO token. An explicit per-user api_key/auth_token
+        # is still forwarded and honoured if present, but is not required.
         api_key = request.api_key or ANTHROPIC_API_KEY
         auth_token = request.auth_token or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+        # Same subscription transport as the imaging agent → same preflight: surface a clean
+        # "sign in with Claude" error up-front instead of letting the background read fail. The lab
+        # read needs the CLI + a connected login, but NOT the spine skill, so check those two only.
+        if not (api_key or auth_token):
+            avail = AgentRunner().availability()
+            job.auth_state = avail.get("auth_state")
+            if not (avail.get("claude_cli_found") and avail.get("connected")):
+                job.status = "error"
+                job.progress = 0
+                job.progress_phase = "auth"
+                job.error_code = avail.get("error_code") or "CLAUDE_NOT_READY"
+                job.error = avail.get("error_message") or "Claude is not ready. Sign in and retry."
+                job.progress_message = job.error
+                _write_status_heartbeat(job)
+                return JSONResponse(
+                    {
+                        "detail": job.error,
+                        "job_id": job.job_id,
+                        "status": "error",
+                        "kind": "lab",
+                        "error_code": job.error_code,
+                        "error_message": job.error,
+                        "auth_state": job.auth_state,
+                    },
+                    status_code=400,
+                )
         job.status = "interpreting"
         job.progress = 0
         job.progress_phase = "interpreting"
@@ -3703,13 +3729,13 @@ ASSETS_DIR = FRONTEND_DIR / "assets"
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
-# Security headers for the served app shell. CSP allows the CDN React/Babel/fonts the single-file
-# frontend depends on, and same-origin XHR/SSE/images; everything else is denied. Framing is blocked.
+# Security headers for the served app shell. React/Babel/fonts are vendored locally (offline desktop
+# build), so the CSP is now fully same-origin — no CDN allowances. Framing is blocked.
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' https://unpkg.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; "
-    "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-    "font-src 'self' https://fonts.gstatic.com data:; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "font-src 'self' data:; "
     "img-src 'self' data: blob:; "
     "connect-src 'self'; "
     "frame-ancestors 'none'; base-uri 'self'"

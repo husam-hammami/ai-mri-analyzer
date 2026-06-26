@@ -49,6 +49,18 @@ test_data/
 backend/_verify_agent_run.py
 .firecrawl/
 
+# Prompt scratchpads (working notes, not part of the app)
+Prmpt.txt
+Prompt_Claude.txt
+codex_Prompt.txt
+
+# Loose lab/bloodwork test uploads dropped in assets — never ship/commit these
+frontend/assets/bloodwork*.png
+
+# Electron build output
+electron/dist/
+electron/dist-res/
+
 # Validation harness outputs (the code is committed; results/cache are local)
 backend/validation/cache/
 backend/validation/validation_results.json
@@ -63,3 +75,4 @@ backend/validation/chexpert_results_*.json
 backend/validation/cache_spine/
 backend/validation/spine_results_*.json
 backend/validation/spine_report_*.md
+test_uploads/

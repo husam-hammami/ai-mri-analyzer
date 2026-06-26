@@ -2,58 +2,55 @@
 MIKA — Lab / Bloodwork reader service
 =====================================
 The focused, DICOM-free read path for a lab/bloodwork report (PDF or photo). It renders the report
-to page PNGs, sends those page images to Claude Opus via the SDK vision path, parses strict
-structured per-analyte JSON, and then composes "The Verdict" DETERMINISTICALLY in Python (the safety
-gate — never an LLM string).
+to page PNGs, hands those page images to Claude Opus via the SAME subscription `claude -p` CLI
+transport the imaging agent and the case-chat already use, parses strict structured per-analyte
+JSON, and then composes "The Verdict" DETERMINISTICALLY in Python (the safety gate — never an LLM
+string).
 
 This module is purely additive and shares nothing with the DICOM/imaging pipeline.
 
 -------------------------------------------------------------------------------------------------
+AUTH — subscription CLI, no token required (matches agent_runner / case_chat)
+  `read_labs()` drives the installed `claude` CLI in headless mode (`claude -p --output-format json`)
+  with the page PNGs granted via `--add-dir`, authenticated by the user's normal Claude login
+  (`claude /login` / subscription). By default the child has ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
+  STRIPPED so the host's subscription OAuth login is used — the desktop app "only needs the
+  subscription", and no token has to be surfaced. An explicit per-user `api_key` (metered) or
+  subscription `auth_token` is still honoured if passed (mirrors AgentRunner._child_env), but is no
+  longer required for the read to work.
+
 INCIDENTS #2 — the live Claude call must run on a REAL worker/terminal, never nested in a Claude
-session. `read_labs()` performs a live network `messages.create` and needs a valid credential; it is
-NOT executed during the build/verification session (a nested `claude -p`/SDK self-call hangs and
-cannot self-verify). The build ships the transport + the deterministic gate; the live read is a
-documented manual step run from the running server worker. `compose_verdict()` and `render_pages()`
-are pure / offline and ARE safe to run in-session (and are unit-tested).
+session. `read_labs()` spawns `claude -p` and is NOT executed during the build/verification session
+(a nested `claude -p` self-call hangs and cannot self-verify). The build ships the transport + the
+deterministic gate; the live read runs from the running server worker. `compose_verdict()` and
+`render_pages()` are pure / offline and ARE safe to run in-session (and are unit-tested).
 -------------------------------------------------------------------------------------------------
-PHASE-0 token-origin finding (where the SDK auth_token comes from in THIS app):
-  - `read_labs()` is wired by app.py's `/api/analyze` lab branch with the SAME credential source the
-    imaging interpret/"lite" path uses: `request.api_key` / `request.auth_token` (the per-user
-    sign-in credential), falling back to env `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`
-    (app.py ~2024-2027, mirrored for lab). `build_anthropic_client(api_key, auth_token)`
-    (claude_interpreter.py:32) accepts a subscription OAuth `auth_token` (Bearer + oauth beta
-    header) with NO api key.
-  - HOWEVER: in MIKA's DEFAULT desktop posture (`claude /login` only, NO api key, NO
-    ANTHROPIC_AUTH_TOKEN in env), `build_anthropic_client` gets NO credential and the SDK cannot
-    authenticate. Only the agentic `claude -p` worker reads its own `~/.claude` login token-free.
-    So the SDK-primary lab read holds ONLY when the deployment actually surfaces a token (e.g.
-    `claude setup-token` -> ANTHROPIC_AUTH_TOKEN, or a per-user api_key/auth_token passed on
-    /api/analyze). If no token source exists, the deployment must surface one, ELSE the lab read
-    must fall back to the agentic `claude -p` worker-only disk-read path.
-  - TODO (documented, NOT implemented here per scope): an agentic `claude -p` fallback that renders
-    page PNGs to the job dir, `--add-dir`s them, and instructs a tightly-constrained JSON-only read.
-    Implementing a nested `claude -p` call is explicitly out of scope and must run worker-only.
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
+import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Optional
 
 try:
     from backend.prompts.lab_master import LAB_MASTER_PROMPT
-    from backend.services.claude_interpreter import build_anthropic_client
+    from backend.services.agent_runner import _resolve_claude_bin
 except ImportError:  # running with backend/ on sys.path (uvicorn app:app from backend/)
     from prompts.lab_master import LAB_MASTER_PROMPT
-    from services.claude_interpreter import build_anthropic_client
+    from services.agent_runner import _resolve_claude_bin
 
 logger = logging.getLogger("mika.lab")
 
-LAB_MODEL = "claude-opus-4-8"
+# CLI model alias — mirrors AgentRunner's DEFAULT_MODEL ("opus"); the headless CLI resolves the alias
+# to the current Opus, so we don't pin a dated id here. Overridable for testing/cost tuning.
+LAB_MODEL = os.environ.get("MIKA_LAB_MODEL", "opus")
+LAB_EFFORT = os.environ.get("MIKA_LAB_EFFORT", "high")
+LAB_TIMEOUT_S = int(os.environ.get("MIKA_LAB_TIMEOUT_S", "600"))  # 10 min cap for a page-image read
 MAX_PAGES = 8           # cap how many pages we send to Opus (cost + latency)
 HARD_PAGE_LIMIT = 20    # reject reports larger than this with a clear error
 
@@ -133,16 +130,47 @@ def render_pages(upload_path, out_dir) -> list[Path]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 2. The live Opus read (worker/terminal-only — see INCIDENTS #2 note above)
+# 2. The live Opus read (worker/terminal-only — see INCIDENTS #2 / AUTH note above)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _image_block(png_path: Path) -> dict:
-    """Base64 image content block (image/png) for the Messages API."""
-    data = base64.b64encode(Path(png_path).read_bytes()).decode("ascii")
-    return {
-        "type": "image",
-        "source": {"type": "base64", "media_type": "image/png", "data": data},
-    }
+def _lab_auth_env(api_key: str = "", auth_token: str = "") -> dict:
+    """Child env for the headless `claude -p` lab read — IDENTICAL policy to AgentRunner._child_env.
+
+    Default desktop posture (no per-user credential): strip ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN
+    so the CLI uses the host's subscription OAuth login (`claude /login`). An explicit per-user
+    api_key (metered) or subscription auth_token is honoured when passed. MIKA_AGENT_USE_API_KEY=1
+    lets an ambient env API key through (shared with the imaging agent)."""
+    env = dict(os.environ)
+    if api_key:
+        env["ANTHROPIC_API_KEY"] = api_key
+        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    elif auth_token:
+        env["ANTHROPIC_AUTH_TOKEN"] = auth_token
+        env.pop("ANTHROPIC_API_KEY", None)
+    elif not os.environ.get("MIKA_AGENT_USE_API_KEY"):
+        env.pop("ANTHROPIC_API_KEY", None)
+        env.pop("ANTHROPIC_AUTH_TOKEN", None)
+    return env
+
+
+def _build_cli_prompt(page_pngs: list[Path]) -> str:
+    """Fold the lab master prompt + the explicit page-image file list into a single headless prompt.
+    The CLI agent reads each PNG with its Read tool (granted via --add-dir) and returns STRICT JSON."""
+    file_lines = "\n".join(
+        f"  - Report page {i} (page_index {i}): {p}" for i, p in enumerate(page_pngs)
+    )
+    return f"""{LAB_MASTER_PROMPT}
+
+## YOUR TASK NOW
+Read the following lab/blood report page image file(s) with your Read tool, in the order listed.
+Pages are 0-indexed in this order — use the stated page_index for each row's `page_index`.
+
+PAGE IMAGE FILES:
+{file_lines}
+
+Open and read EVERY page image above before answering. Then return STRICT JSON ONLY (one object
+matching the schema in the rules above) and NOTHING ELSE — no preamble, no markdown prose, no code
+fence commentary. Do not use any tool other than Read. Do not write any files."""
 
 
 def _parse_lab_json(raw_text: str) -> dict:
@@ -220,39 +248,71 @@ def _parse_lab_json(raw_text: str) -> dict:
 
 
 def read_labs(job_id: str, page_pngs, *, api_key: str = "", auth_token: str = "") -> dict:
-    """Send the rendered page images + the lab_master prompt to Claude Opus and return the parsed,
-    validated lab dict ({"results": [...], "signals": {...}}).
+    """Hand the rendered page images + the lab_master prompt to Claude Opus via the subscription
+    `claude -p` CLI and return the parsed, validated lab dict ({"results": [...], "signals": {...}}).
 
-    LIVE NETWORK CALL — worker/terminal-only, never nested in a Claude session (INCIDENTS #2).
-    Credentials mirror the imaging interpret path: an explicit api_key, else a subscription
-    auth_token (oauth bearer, no api key), else the env profile (see the module docstring /
-    Phase-0 token-origin finding for the default-desktop caveat).
+    LIVE CALL — worker/terminal-only, never nested in a Claude session (INCIDENTS #2).
+    Auth mirrors the imaging agent exactly: default desktop posture uses the host's Claude
+    subscription login (tokens stripped); an explicit api_key/auth_token is honoured if passed.
+    No ANTHROPIC_AUTH_TOKEN is required for the read to work (the prior SDK path needed one).
     """
     page_pngs = [Path(p) for p in page_pngs]
     if not page_pngs:
         raise ValueError("read_labs called with no page images")
 
-    client = build_anthropic_client(api_key=api_key, auth_token=auth_token)
+    binp = _resolve_claude_bin()
+    if not binp:
+        raise RuntimeError(
+            "Claude Code CLI not found. The MIKA app should bundle it; if running from source, "
+            "install Claude Code and run `claude /login` once to sign in on your subscription."
+        )
 
-    content_blocks: list[dict] = [{
-        "type": "text",
-        "text": (
-            "Read the following lab/blood report page image(s) and return STRICT JSON ONLY, "
-            "matching the schema in the system prompt. Pages are 0-indexed in the order shown."
-        ),
-    }]
-    for i, png in enumerate(page_pngs):
-        content_blocks.append({"type": "text", "text": f"\n### Report page {i}\n"})
-        content_blocks.append(_image_block(png))
+    # Grant the headless agent read access to the directory the page PNGs live in.
+    pages_dir = page_pngs[0].parent
+    prompt = _build_cli_prompt(page_pngs)
+    cmd = [
+        binp, "-p",
+        "--output-format", "json",
+        "--model", LAB_MODEL,
+        "--effort", LAB_EFFORT,
+        # File tools needed (Read the page PNGs) → bypassPermissions + scoped --add-dir, exactly like
+        # the imaging agent. This is intentionally NOT the no-tools chat path (chat reads no files).
+        "--permission-mode", "bypassPermissions",
+        "--add-dir", str(pages_dir),
+    ]
 
-    logger.info(f"[lab {job_id}] sending {len(page_pngs)} page image(s) to {LAB_MODEL}")
-    response = client.messages.create(
-        model=LAB_MODEL,
-        max_tokens=16000,
-        system=LAB_MASTER_PROMPT,
-        messages=[{"role": "user", "content": content_blocks}],
+    logger.info(
+        f"[lab {job_id}] reading {len(page_pngs)} page image(s) via claude -p "
+        f"(model={LAB_MODEL}, auth={'api_key' if api_key else ('auth_token' if auth_token else 'subscription')})"
     )
-    raw_text = response.content[0].text
+    try:
+        proc = subprocess.run(
+            cmd,
+            cwd=str(pages_dir),
+            input=prompt,            # prompt on stdin (Windows claude.CMD argv is capped at 8191 chars)
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_lab_auth_env(api_key, auth_token),
+            timeout=LAB_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"Lab read timed out after {LAB_TIMEOUT_S}s") from e
+    except FileNotFoundError as e:
+        raise RuntimeError(f"Claude Code CLI not found ({binp})") from e
+
+    # Parse the --output-format json envelope (final result + error flag).
+    raw_out = (proc.stdout or "").strip()
+    try:
+        envelope = json.loads(raw_out) if raw_out else {}
+    except json.JSONDecodeError:
+        envelope = {}
+    if proc.returncode != 0 or envelope.get("is_error"):
+        detail = (envelope.get("result") or proc.stderr or raw_out or "claude -p exited non-zero").strip()
+        raise RuntimeError(f"Lab read failed: {detail[:500]}")
+
+    raw_text = envelope.get("result", "") if envelope else raw_out
     parsed = _parse_lab_json(raw_text)
     logger.info(
         f"[lab {job_id}] parsed {len(parsed['results'])} analyte rows "
