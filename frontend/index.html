@@ -458,7 +458,7 @@
     /* Natural top-aligned columns; the page scrolls if content is tall. Figure sits at a comfortable
        fixed size (no height-fill gymnastics). */
     .read-grid { display:grid; grid-template-columns: minmax(0,1.12fr) minmax(0,0.88fr); gap: var(--s-10); align-items:start; }
-    .page-read { display:grid; grid-template-rows:auto minmax(0,1fr) auto; row-gap: var(--s-4); }
+    .page-read { display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; row-gap: var(--s-4); padding-top: var(--s-4); }
     .page-read .read-head { margin-bottom:0; }
     .page-read .read-grid { min-height:0; overflow:hidden; align-items:stretch; }
     .page-read .read-left { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-gutter:stable; padding-right: var(--s-2); }
@@ -478,7 +478,6 @@
     .page-read .thread .read-wtm { padding: var(--s-3) var(--s-4); }
     .page-read .thread .read-wtm h4 { margin-bottom: var(--s-2); }
     .page-read .thread .read-wtm li { font-size:12.5px; line-height:1.45; }
-    .page-read .read-disclaimer { margin-top:0; }
     .read-grid.empty-read-grid { grid-template-columns:minmax(520px,0.96fr) minmax(320px,0.54fr); gap:var(--s-8); }
     .read-figwrap { display:grid; grid-template-columns: minmax(0,0.82fr) minmax(0,1fr); gap: var(--s-6); align-items:start; }
     .read-left .bodyfig { --bodyfig-max:340px; margin:0 auto; }
@@ -619,8 +618,6 @@
     .tier-badge.tB { color: var(--accent-strong); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); }
     .tier-badge.tC { color: var(--slate); background: var(--surface); box-shadow: inset 0 0 0 1px var(--line); }
     .tier-badge.tD { color: var(--slate-300); background: var(--surface-2); }
-    .read-disclaimer { margin-top: var(--s-6); padding: var(--s-4) var(--s-5); background: var(--surface-2); border:1px solid var(--line); border-radius: var(--r-md); font-size:12px; line-height:1.6; color: var(--slate); }
-    .read-disclaimer strong { color: var(--ink); }
 
     .empty-banner { padding: var(--s-5); background: var(--surface); border:1px solid var(--accent-line); border-left:3px solid var(--accent); border-radius: var(--r-md); margin-bottom: var(--s-6); }
     .empty-banner .eb-t { font-size:15px; font-weight:600; color: var(--ink); margin-bottom:6px; }
@@ -666,7 +663,30 @@
     /* ── Lightbox / Modal ── */
     .overlay { position:fixed; inset:0; background: rgba(10,15,29,0.72); backdrop-filter: blur(4px); display:flex; align-items:center; justify-content:center; z-index:1100; padding: var(--s-6); animation: fadeIn var(--duration-normal) var(--ease-out); }
     /* Case chat — "Beside": a right slide-over that leaves the read visible; no full-screen scrim. */
-    .chat-drawer { position:fixed; top:0; right:0; bottom:0; width:380px; max-width:92vw; background:var(--surface); border-left:1px solid var(--line); display:flex; flex-direction:column; z-index:1200; box-shadow:-12px 0 28px rgba(15,23,42,0.12); animation: chatIn var(--duration-normal) var(--ease-out); }
+    /* "Sidecar" — a docked column the read reflows beside, not a floating overlay. The canvas gets a matching
+       inline-end margin when .chat-open so figure/findings/proof stay visible alongside a roomy conversation. */
+    .shell { --chat-w: clamp(440px, 32vw, 540px); }
+    .chat-drawer { position:fixed; top:0; inset-inline-end:0; bottom:0; width:var(--chat-w); max-width:92vw; background:var(--surface); border-inline-start:1px solid var(--line); display:flex; flex-direction:column; z-index:1200; box-shadow:none; animation: chatIn var(--duration-normal) var(--ease-out); }
+    .shell.chat-open .canvas { margin-inline-end: var(--chat-w); transition: margin-inline-end var(--duration-normal) var(--ease-out); }
+    /* When docked and the read track gets tight, collapse to a single read column so the proof never gets crushed (panel must-fix). */
+    @media (max-width: 1560px) {
+      .shell.chat-open .page-read .read-grid { grid-template-columns: minmax(0,1fr); }
+      .shell.chat-open .page-read .read-right.proof-right { display:none; }
+    }
+    @media (prefers-reduced-motion: reduce) { .shell.chat-open .canvas { transition:none; } }
+    /* One-line safety note at the TOP of the read — slim, no box; full text on hover / in the report. */
+    .read-topnote { padding:0; font-size:11px; line-height:1.4; color: var(--slate); text-align:center; }
+    .read-topnote strong { color: var(--ink); font-weight:600; }
+    /* Read header is a row: title + confidence on the left, Download tucked top-right above the proof panel. */
+    .read-head { display:flex; align-items:flex-start; justify-content:space-between; gap: var(--s-8); }
+    .read-head-main { flex:1 1 auto; min-width:0; }
+    .read-head-side { flex:0 0 auto; padding-top:2px; }
+    /* Focused Ask-MIKA call-to-action — the patient's primary action, centered under the read; solid accent + helix coin. */
+    .read-askrow { display:flex; justify-content:center; align-items:center; margin-top: var(--s-1); }
+    .btn-ask-focus { display:inline-flex; align-items:center; gap:9px; font-size:14px; font-weight:600; line-height:1; padding:11px 24px; border-radius: var(--r-md); border:1px solid var(--accent); background: var(--accent); color:#fff; cursor:pointer; white-space:nowrap; box-shadow: 0 2px 10px rgba(37,99,235,0.22); transition: filter var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out); }
+    .btn-ask-focus:hover { filter: brightness(1.07); box-shadow: 0 3px 14px rgba(37,99,235,0.30); }
+    .btn-ask-focus.on { background: var(--surface); color: var(--accent); box-shadow:none; }
+    .btn-ask-focus .ask-coin { width:20px; height:20px; border-radius:50%; background:#0A0F1D; flex-shrink:0; }
     @keyframes chatIn { from{ transform:translateX(16px); opacity:0; } to{ transform:none; opacity:1; } }
     @media (prefers-reduced-motion: reduce) { .chat-drawer{ animation:none; } .chat-mark-pulse{ animation:none !important; } }
     .chat-head { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line-soft); }
@@ -989,14 +1009,16 @@
       'Tier':'الدرجة','Quality':'الجودة','Clinical PDF':'PDF السريري','Enlarge':'تكبير',
       'passed':'ناجح','issues flagged':'مشاكل مرصودة','not run':'لم يُجرَ',
       'Ask about your read':'اسأل عن قراءتك','this study only':'هذه الدراسة فقط',
+      'Ask MIKA':'اسأل MIKA','Ask MIKA about your read':'اسأل MIKA عن قراءتك','Close':'إغلاق',
+      'This is an AI-generated analysis, not a medical diagnosis — please discuss it with your doctor.':'هذا تحليل مُولَّد بالذكاء الاصطناعي وليس تشخيصاً طبياً — يُرجى مناقشته مع طبيبك.',
       'Ask me anything about this scan.':'اسألني أي شيء عن هذه الدراسة.',
       'MIKA is reading your report…':'تقرأ MIKA تقريرك…',
       "Couldn't answer just now — try again":'تعذّر الرد الآن — حاول مرة أخرى',
       'Ask in your own words…':'اسأل بكلماتك الخاصة…','view on scan':'اعرض على الصورة',
       "Ask me anything about this scan — I'll keep it plain.":'اسألني أي شيء عن هذه الدراسة — وسأبقيها بسيطة.',
       'What does my result mean in simple terms?':'ماذا تعني نتيجتي بكلمات بسيطة؟',
-      'Is this something I should worry about?':'هل هذا أمر يستدعي القلق؟',
-      'What should I ask my doctor next?':'ما الذي ينبغي أن أسأل طبيبي عنه تالياً؟',
+      'Is it serious?':'هل هي خطيرة؟',
+      'What should I do now?':'ماذا أفعل الآن؟',
       'This run did not include a pinned proof image for the selected finding.':'لم تتضمّن هذه القراءة صورة إثبات مثبّتة للنتيجة المحددة.',
     };
     // Translate a UI chrome string (English fallback). NOT for medical content.
@@ -1858,7 +1880,7 @@
       );
     }
 
-    function TopBar({ screen, connection, vm, progress, uiPrefs, setUiPrefs, onDownload, onConnect, onNotify, checking, chatAvail, onAsk }) {
+    function TopBar({ screen, connection, vm, progress, uiPrefs, setUiPrefs, onDownload, onConnect, onNotify, checking, chatAvail, onAsk, chatOpen }) {
       // AR ⇄ EN language switch — available on every screen; merges into uiPrefs so `view` is preserved.
       const langToggle = (
         <div className="toggle lang-toggle" role="group" aria-label="Language">
@@ -1904,13 +1926,9 @@
           </div>
         );
       }
-      // read
+      // read — Download lives in the read header (above the proof panel); only language + view toggles stay in the topbar
       const s = (vm && vm.study) || {};
       const line = [s.body_part, s.modality, s.date].filter(Boolean).join(' · ') || L('Your Read');
-      const clinicianView = uiPrefs && uiPrefs.view === 'clinician';
-      const reportKind = clinicianView ? 'clinical' : 'patient';
-      const canDownload = !!(vm && (clinicianView ? vm.clinicalPdfAvailable : vm.pdfAvailable));
-      const downloadLabel = clinicianView ? L('Download clinical report') : L('Download report');
       return (
         <div className="topbar">
           <div className="topbar-l stacked">
@@ -1923,8 +1941,6 @@
               <button className={uiPrefs.view==='plain'?'on':''} onClick={()=>setUiPrefs(p=>({...p, view:'plain'}))}>{L('Plain language')}</button>
               <button className={uiPrefs.view==='clinician'?'on':''} onClick={()=>setUiPrefs(p=>({...p, view:'clinician'}))}>{L('Clinician')}</button>
             </div>
-            {chatAvail && <button className="btn btn-ghost btn-sm" onClick={onAsk}><img src="/assets/brand/mika-mark.png" alt="" aria-hidden="true" style={{width:'16px',height:'16px',borderRadius:'50%',background:'#0A0F1D',verticalAlign:'-3px',marginInlineEnd:'4px'}} /> {L('Ask about your read')}</button>}
-            <button className="btn btn-primary btn-sm" onClick={()=>onDownload(reportKind)} disabled={vm && !canDownload}>{I.download({width:15,height:15})} {downloadLabel}</button>
           </div>
         </div>
       );
@@ -2677,7 +2693,7 @@
       );
     }
 
-    function ReadScreen({ vm, jobId, view, activeId, setActiveId, onZoom, onClinician, compareState, setCompareState, onCompareReport, onCancelCompare }) {
+    function ReadScreen({ vm, jobId, view, activeId, setActiveId, onZoom, onClinician, compareState, setCompareState, onCompareReport, onCancelCompare, onDownload, chatOpen, setChatOpen, chatAvail }) {
       const findings = vm.findings || [];
       const active = findings.find(f => f.id === activeId) || findings[0] || null;
       const empty = findings.length === 0;
@@ -2688,7 +2704,9 @@
       const selectFinding = (fid) => { setActiveId(fid); const el = document.getElementById(fid); if (el) el.scrollIntoView({ behavior:'smooth', block:'nearest' }); };
       return (
         <div className="page-inner page-read fade-up">
+          <div className="read-topnote" title={L(vm.disclaimer)}><strong>{L('Important:')}</strong> {L('This is an AI-generated analysis, not a medical diagnosis — please discuss it with your doctor.')}</div>
           <div className="read-head">
+            <div className="read-head-main">
             {/* Honest self-audit banner (§4.3 State E / §7.5): if MIKA's verification flagged issues or
                 could not finish, say so on the Read — never present findings as fully checked. (CERT-2) */}
             {!CLIN && (vm.verification.status === 'issues_flagged' || vm.verification.status === 'incomplete') && (
@@ -2712,6 +2730,13 @@
             <div style={{display:'flex', gap:'12px', alignItems:'center', flexWrap:'wrap'}}>
               <ConfidencePill label={vm.overall.label} score={vm.overall.score} />
               {vm.overall.note && <span style={{fontSize:'13px', color:'var(--slate)'}}>{L(vm.overall.note)}</span>}
+            </div>
+            </div>
+            <div className="read-head-side">
+              <button className="btn btn-primary btn-sm" onClick={()=>onDownload(CLIN ? 'clinical' : 'patient')}
+                disabled={vm && !(CLIN ? vm.clinicalPdfAvailable : vm.pdfAvailable)}>
+                {I.download({width:15,height:15})} {CLIN ? L('Download clinical report') : L('Download report')}
+              </button>
             </div>
           </div>
 
@@ -2806,8 +2831,14 @@
               </>
             )}
           </div>
-
-          <div className="read-disclaimer"><strong>{L('Important:')}</strong> {L(vm.disclaimer)}</div>
+          {chatAvail && (
+            <div className="read-askrow">
+              <button className={`btn-ask-focus${chatOpen ? ' on' : ''}`} onClick={()=>setChatOpen(o=>!o)} aria-pressed={chatOpen}>
+                <img src="/assets/brand/mika-mark.png" alt="" aria-hidden="true" className="ask-coin" />
+                {chatOpen ? L('Close') : L('Ask MIKA about your read')}
+              </button>
+            </div>
+          )}
         </div>
       );
     }
@@ -2845,7 +2876,7 @@
     // Case chat — "Beside" v2: MIKA itself speaking. The assistant presence is the real helix mark (a dusk coin,
     // cropped from the logo raster), answers are markdown-typeset notes, the thinking state is the coin breathing.
     const CHAT_MARK = <img src="/assets/brand/mika-mark.png" alt="" aria-hidden="true" />;
-    const CHAT_CHIPS = ['What does my result mean in simple terms?', 'Is this something I should worry about?', 'What should I ask my doctor next?'];
+    const CHAT_CHIPS = ['What does my result mean in simple terms?', 'Is it serious?', 'What should I do now?'];
     function ChatDrawer({ jobId, studyLabel, onClose }) {
       const [msgs, setMsgs] = useState([]);     // [{role:'user'|'assistant', text}]
       const [busy, setBusy] = useState(false);
@@ -3353,15 +3384,16 @@
       const effVm = dm ? demoVm : vm;
 
       const view = dm ? screen : (route || screen);   // route ('recent') overrides the job-derived screen
+      const chatDocked = chatOpen && !dm && !!job.id;   // matches the ChatDrawer render condition → reflow the canvas
       return (
-        <div className="shell">
+        <div className={`shell${chatDocked ? ' chat-open' : ''}`}>
           <Sidebar screen={screen} route={dm?null:route} hasJob={!dm && !!job.id && job.status!=='pending'}
             onAbout={()=>setShowAbout(true)} onNav={onNav} connection={connection}
             onConnect={()=>{ setShowConnect(true); checkConnection(); }}
             onHelp={()=>addToast('Need a hand? In the full app this opens help — for now, email the team.', 'success')} />
           <div className="canvas">
             <TopBar screen={view} connection={connection} vm={effVm} progress={dm?demoProgress:job}
-              chatAvail={chatAvail && !dm} onAsk={()=>setChatOpen(true)}
+              chatAvail={chatAvail && !dm} chatOpen={chatOpen && !dm && !!job.id} onAsk={()=>setChatOpen(o=>!o)}
               uiPrefs={uiPrefs} setUiPrefs={setUiPrefs} onDownload={onDownload}
               onConnect={()=>{ setShowConnect(true); checkConnection(); }} onNotify={onNotify} checking={checkingConn} />
             <div className="page">
@@ -3369,7 +3401,8 @@
               {view === 'wait' && (() => { const sq = dm?DEMO_SEQUENCES:sequences; return <WaitScreen progress={dm?demoProgress:job} sequences={sq} anatomy={figureAnatomy(sq.anatomy || (effVm&&effVm.anatomy) || 'unknown', sq.anatomy_subregion || '')} jobId={dm?'demo':job.id} />; })()}
               {view === 'read' && effVm && <ReadScreen vm={effVm} jobId={dm?'demo':job.id} view={uiPrefs.view} activeId={activeId} setActiveId={setActiveId}
                 onZoom={setLightbox} onClinician={onClinician} compareState={compareState} setCompareState={setCompareState}
-                onCompareReport={onCompareReport} onCancelCompare={onCancelCompare} />}
+                onCompareReport={onCompareReport} onCancelCompare={onCancelCompare}
+                onDownload={onDownload} chatOpen={chatOpen} setChatOpen={setChatOpen} chatAvail={chatAvail && !dm} />}
               {view === 'recent' && <RecentScreen onOpen={openRecent} onNew={goNew} />}
             </div>
           </div>
