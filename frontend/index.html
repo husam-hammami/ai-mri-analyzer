@@ -743,7 +743,9 @@
        its own scroll region so tall content is reachable at any zoom (the bug: content cropped, unscrollable). */
     .page-lab-read { overflow-y:auto; overflow-x:hidden; overscroll-behavior:contain; scrollbar-gutter:stable;
       display:flex; flex-direction:column; gap:var(--s-5); }
-    .page-lab-read > * + * { margin-top:0; }
+    /* The scroll container must NOT flex-shrink its children — otherwise the workspace collapses and its
+       list overflows/overlaps the blocks below it (instead of the page scrolling). */
+    .page-lab-read > * { flex:0 0 auto; margin-top:0; }
 
     /* Header: demographics + named assessment */
     .lab-demo { display:flex; flex-wrap:wrap; align-items:center; gap:var(--s-2) var(--s-4); margin-bottom:var(--s-3); }
