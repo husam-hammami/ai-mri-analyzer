@@ -170,6 +170,11 @@ CHAT_TIMEOUT = int(os.environ.get("MIKA_CHAT_TIMEOUT_S", "90"))
 CHAT_MAX_Q = int(os.environ.get("MIKA_CHAT_MAX_QUESTION_CHARS", "1000"))
 CHAT_MAX_TURNS = int(os.environ.get("MIKA_CHAT_MAX_TURNS", "12"))
 
+# Lab-report ("The Verdict") feature — additive kind=='lab' flow grafted onto the existing
+# upload→SSE→disk pipeline (docs/PLAN_lab_report.md). Default ON for the feat/lab-report branch;
+# mirrors the MIKA_CHAT_ENABLED flag pattern so the surface can be hidden by flipping it to '0'.
+LAB_ENABLED = os.environ.get("MIKA_LAB_ENABLED", "1") == "1"
+
 # ── Application ──
 
 @asynccontextmanager
@@ -265,6 +270,7 @@ class AnalysisJob:
         self.artifact_qa: dict = {}
         self.reconciliation: dict = {}
         self.mode: str = "lite"               # "agent" | "lite"
+        self.kind: str = "dicom"              # "dicom" (imaging, default) | "lab" (lab-report flow)
         self.active_sequence: Optional[str] = None  # live "now reading X", when the agent reports it
         self.active_region: Optional[str] = None     # live "now inspecting <level/region>", when reported
         self.agent: dict = {}                 # agent-mode result (pdf path, figures, summary)
@@ -1437,6 +1443,29 @@ def _list_reports() -> list[dict]:
             meta = _load_meta(d.name)
             if not meta:
                 continue
+            # Lab reports build the Recent entry from meta ALONE — never run _normalize_loaded_report
+            # (DICOM-shaped) on a lab dir. The frontend Recent renderer tolerates a null thumb.
+            if meta.get("kind") == "lab":
+                out.append({
+                    "job_id": meta.get("job_id", d.name),
+                    "status": meta.get("status", "complete"),
+                    "kind": "lab",
+                    "title": meta.get("title") or "Lab report",
+                    "detected_anatomy": "lab",
+                    "anatomy_subregion": "",
+                    "modality": "lab",
+                    "created_at": meta.get("created_at", ""),
+                    "completed_at": meta.get("completed_at", ""),
+                    "thumb": meta.get("thumb"),
+                    "pdf_available": False,
+                    "clinical_pdf_available": False,
+                    "reference_reconciliation_available": False,
+                    "error_code": meta.get("error_code"),
+                    "error_message": meta.get("error_message"),
+                    "auth_state": meta.get("auth_state"),
+                    "progress_phase": _normalized_progress_phase(meta.get("status", "complete"), meta.get("progress_phase")),
+                })
+                continue
             raw_report = _load_report(d.name) or {}
             report = _normalize_loaded_report(d.name, raw_report) if raw_report else {}
             study = report.get("study") or {}
@@ -1739,6 +1768,7 @@ class AnalyzeRequest(BaseModel):
     job_id: str
     mode: str = "agent"   # "agent" = run the skill via Claude Code (subscription, definitive
                           # PDF report) | "lite" = fast structured-JSON pipeline (needs a key/token)
+    kind: str = "dicom"   # "dicom" (imaging, default) | "lab" (lab-report read; bypasses DICOM path)
     api_key: Optional[str] = None
     auth_token: Optional[str] = None  # bearer/OAuth token (e.g. subscription via Claude Code)
     clinical_history: Optional[str] = None
@@ -1803,12 +1833,20 @@ SUPPORTED_EXTENSIONS = {
 
 
 @app.post("/api/upload")
-async def upload_files(files: list[UploadFile] = File(...)):
+async def upload_files(files: list[UploadFile] = File(...), kind: str = Form("dicom")):
     """
     Upload medical imaging files and create a new analysis job.
     Supports: DICOM (.dcm), NIfTI (.nii/.nii.gz), NRRD (.nrrd),
               images (PNG/JPG/TIFF), and ZIP archives containing any of these.
+
+    `kind='lab'` (additive) accepts a single PDF/PNG/JPG lab report: the file is kept verbatim in
+    upload/ (no DICOM conversion, no FormatConverter) for the lab read path. Default 'dicom' is the
+    existing imaging behavior, fully unchanged.
     """
+    kind = (kind or "dicom").lower()
+    is_lab = kind == "lab"
+    if is_lab and not LAB_ENABLED:
+        raise HTTPException(404, "Lab reports are not enabled")
     job_id = str(uuid.uuid4())[:8]
     upload_dir = DATA_DIR / job_id / "upload"
     dicom_dir = DATA_DIR / job_id / "dicom"
@@ -1833,15 +1871,19 @@ async def upload_files(files: list[UploadFile] = File(...)):
         # Handle .nii.gz double extension
         is_nifti_gz = fname_lower.endswith(".nii.gz")
 
-        is_supported = ext in SUPPORTED_EXTENSIONS or is_nifti_gz
-        # Also accept extensionless files (potential DICOM from PACS)
-        if not is_supported and ext == "":
-            is_supported = True
+        if is_lab:
+            # Lab uploads are a single PDF/PNG/JPG kept verbatim — no DICOM, no conversion.
+            is_supported = ext in {".pdf", ".png", ".jpg", ".jpeg"}
+        else:
+            is_supported = ext in SUPPORTED_EXTENSIONS or is_nifti_gz
+            # Also accept extensionless files (potential DICOM from PACS)
+            if not is_supported and ext == "":
+                is_supported = True
 
         if not is_supported:
             continue
 
-        is_dicom = ext in {".dcm", ".ima", ".dicom"} or ext == ""
+        is_dicom = (not is_lab) and (ext in {".dcm", ".ima", ".dicom"} or ext == "")
 
         # Stream to disk in 1 MB chunks so a single huge file is never buffered whole in RAM, and the
         # size cap is enforced DURING the read (not after the entire body is in memory).
@@ -1867,16 +1909,19 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
     if file_count == 0:
         shutil.rmtree(str(DATA_DIR / job_id))
+        if is_lab:
+            raise HTTPException(400, "No supported lab file found. Upload a PDF, PNG, or JPG lab report.")
         raise HTTPException(
             400,
             "No supported files found. Upload DICOM (.dcm), NIfTI (.nii/.nii.gz), "
             "NRRD (.nrrd), images (PNG/JPG/TIFF), or ZIP archives.",
         )
 
-    # If we have non-DICOM files, run the format converter
+    # If we have non-DICOM files, run the format converter (NEVER for lab — the lab read works off the
+    # original PDF/image directly; converting it to DICOM is wrong and would fail).
     input_format = "dicom"
     conversion_warnings = []
-    if has_non_dicom:
+    if has_non_dicom and not is_lab:
         converter = FormatConverter(str(upload_dir), str(dicom_dir))
         result = converter.convert()
         input_format = result.input_format
@@ -1890,10 +1935,15 @@ async def upload_files(files: list[UploadFile] = File(...)):
         logger.info(f"Format conversion: {result.input_format} -> DICOM, {result.num_slices} slices")
 
     job = AnalysisJob(job_id=job_id, dicom_dir=str(dicom_dir))
+    if is_lab:
+        job.kind = "lab"
+        input_format = "lab"
     JOBS[job_id] = job
 
-    logger.info(f"Upload complete: job={job_id}, format={input_format}, files={file_count}")
+    logger.info(f"Upload complete: job={job_id}, kind={kind}, format={input_format}, files={file_count}")
     response = {"job_id": job_id, "file_count": file_count, "input_format": input_format}
+    if is_lab:
+        response["kind"] = "lab"
     if conversion_warnings:
         response["warnings"] = conversion_warnings
     return response
@@ -1966,10 +2016,32 @@ async def start_analysis(request: AnalyzeRequest, background_tasks: BackgroundTa
 
     mode = (request.mode or "agent").lower()
     job.mode = mode
+    job.kind = (getattr(request, "kind", None) or "dicom").lower()
     job.error = None
     job.error_code = None
     job.progress_message = ""
     job.progress_phase = "queued"
+
+    # ── lab-report flow (additive; bypasses every DICOM-shaped path) ──
+    if job.kind == "lab":
+        if not LAB_ENABLED:
+            raise HTTPException(404, "Lab reports are not enabled")
+        # Same credential source the imaging interpret/"lite" path uses (api_key, else subscription
+        # auth_token, else env profile). The default desktop posture (claude /login only) gives the
+        # SDK no token — see lab_reader's Phase-0 note for the documented fallback obligation.
+        api_key = request.api_key or ANTHROPIC_API_KEY
+        auth_token = request.auth_token or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+        job.status = "interpreting"
+        job.progress = 0
+        job.progress_phase = "interpreting"
+        background_tasks.add_task(
+            _run_lab_pipeline,
+            job=job,
+            api_key=api_key,
+            auth_token=auth_token,
+            notify_email=request.notify_email,
+        )
+        return {"job_id": job.job_id, "status": "started", "kind": "lab"}
 
     if mode == "agent":
         # Agent mode runs the skill via Claude Code on your subscription — no API key needed.
@@ -2304,9 +2376,35 @@ def _build_report_payload(job: "AnalysisJob") -> dict:
     return payload
 
 
+def _is_lab_job(job_id: str, job: Optional["AnalysisJob"] = None) -> bool:
+    """True when this job is a lab-report read. Cheap, restart-safe: check the live job, else the
+    on-disk report.json / meta.json kind marker. Used to early-return the lab payload before every
+    DICOM-shaped builder (_build_report_payload / _normalize_loaded_report)."""
+    if job is not None and getattr(job, "kind", "dicom") == "lab":
+        return True
+    live = job if job is not None else JOBS.get(job_id)
+    if live is not None and getattr(live, "kind", "dicom") == "lab":
+        return True
+    raw = _load_report(job_id)
+    if raw and raw.get("kind") == "lab":
+        return True
+    meta = _load_meta(job_id)
+    return bool(meta and meta.get("kind") == "lab")
+
+
 def _english_report_payload(job_id: str):
     """Return (english_payload, job_or_None) for a completed job — live, or rehydrated from disk."""
     job = JOBS.get(job_id)
+    # Lab reports early-return the lab report.json verbatim BEFORE the DICOM-shaped builders
+    # (_build_report_payload / _normalize_loaded_report both backfill imaging-contract fields and
+    # would mangle/throw on the lab shape). Live and disk must yield the same lab payload.
+    if _is_lab_job(job_id, job):
+        if job is not None and job.status != "complete":
+            raise HTTPException(400, f"Analysis not complete (status: {job.status})")
+        disk = _load_report(job_id)
+        if disk is not None:
+            return disk, job
+        raise HTTPException(404, "Report not found")
     if job:
         if job.status != "complete":
             raise HTTPException(400, f"Analysis not complete (status: {job.status})")
@@ -2335,7 +2433,10 @@ async def get_report(job_id: str, lang: str = "en"):
     a cached Arabic view (flag-gated); the English payload is byte-identical when off."""
     _validate_job_id(job_id)
     payload, _job = _english_report_payload(job_id)
-    if lang == "ar" and AR_ENABLED:
+    # Lab payload is served verbatim; its Arabic verdict is a fixed template-glossary lookup
+    # (lab_reader.compose_verdict, lang='ar'), NOT the imaging build_ar_patient LLM pass — so the
+    # lab report never goes through _attach_arabic (which expects an imaging `patient` block).
+    if lang == "ar" and AR_ENABLED and not _is_lab_job(job_id, _job):
         return _attach_arabic(job_id, payload)
     return payload
 
@@ -2385,6 +2486,10 @@ async def case_chat_endpoint(job_id: str, body: ChatRequest):
     if not CHAT_ENABLED:
         raise HTTPException(404, "Not found")
     _validate_job_id(job_id)            # JOB_ID_RE — anti-traversal
+    # Case-chat is DISABLED for lab reports in v1 (an ungated claude -p must never free-narrate the
+    # verdict). Return a clean, explicit message — not an ambiguous 404 (docs/PLAN_lab_report.md §3).
+    if _is_lab_job(job_id):
+        raise HTTPException(400, "Chat isn't available for lab reports yet.")
     q = (body.question or "").strip()
     if not q:
         raise HTTPException(400, "Empty question")
@@ -2421,6 +2526,8 @@ async def list_reports():
 async def reconcile_completed_report(request: ReconcileRequest):
     """Add a separate reference-assisted review to an already completed blind read."""
     _validate_job_id(request.job_id)
+    if _is_lab_job(request.job_id):
+        raise HTTPException(400, "Reconciliation isn't available for lab reports.")
     if not (request.reference_report_path or request.reference_report_text):
         raise HTTPException(400, "Provide a reference report path or reference report text.")
     job = JOBS.get(request.job_id) or _rehydrate_completed_job(request.job_id)
@@ -2448,6 +2555,8 @@ async def reconcile_completed_report_upload(
 ):
     """Browser-friendly reference upload/paste path for completed blind reads."""
     _validate_job_id(job_id)
+    if _is_lab_job(job_id):
+        raise HTTPException(400, "Reconciliation isn't available for lab reports.")
     text_parts: list[str] = []
     if reference_report_text and reference_report_text.strip():
         text_parts.append(reference_report_text.strip())
@@ -2587,6 +2696,29 @@ async def get_image(job_id: str, image_name: str):
     low = str(safe).lower()
     media = "image/jpeg" if low.endswith((".jpg", ".jpeg")) else "image/webp" if low.endswith(".webp") else "image/png"
     return FileResponse(str(safe), media_type=media)
+
+
+@app.get("/api/report/{job_id}/page/{n}")
+async def get_lab_page(job_id: str, n: int):
+    """Serve a rendered lab report page PNG for the proof view ("see it on your report"). The page
+    map lives in the lab meta.json (`pages: {page_0: <rel>}`); every path is _safe_join-confined to
+    the job dir. Lab-only — falls back to the work/lab_pages render if the map is missing."""
+    _validate_job_id(job_id)
+    if n < 0 or n > 64:
+        raise HTTPException(404, "Page not found")
+    meta = _load_meta(job_id) or {}
+    rel = (meta.get("pages") or {}).get(f"page_{n}")
+    page_path = None
+    if rel:
+        p = _safe_join(job_id, rel)
+        page_path = str(p) if p else None
+    if not page_path:
+        # Fallback: the rendered page in the job's lab_pages dir (still job-dir confined).
+        p = _safe_join(job_id, f"work/lab_pages/page_{n}.png")
+        page_path = str(p) if p else None
+    if not page_path or not os.path.exists(page_path):
+        raise HTTPException(404, "Page not found")
+    return FileResponse(page_path, media_type="image/png")
 
 
 @app.get("/api/study/{job_id}/sequences")
@@ -2758,6 +2890,97 @@ def _notify_email(email: Optional[str], job_id: str, status: str) -> None:
         logger.info(f"[notify] emailed {email} ({status})")
     except Exception as e:
         logger.warning(f"[notify] email failed for {email}: {e}")
+
+
+def _find_lab_upload(job_id: str) -> Optional[Path]:
+    """Locate the original uploaded lab file (PDF/PNG/JPG) for a job. Lab uploads are non-DICOM, so
+    they land in DATA_DIR/<job>/upload/. Prefer a PDF, else the first image. Confined to the job dir."""
+    upload_dir = _job_dir(job_id) / "upload"
+    if not upload_dir.is_dir():
+        return None
+    pdfs = sorted(upload_dir.glob("*.pdf")) + sorted(upload_dir.glob("*.PDF"))
+    if pdfs:
+        return pdfs[0]
+    for ext in ("*.png", "*.jpg", "*.jpeg", "*.PNG", "*.JPG", "*.JPEG"):
+        imgs = sorted(upload_dir.glob(ext))
+        if imgs:
+            return imgs[0]
+    return None
+
+
+async def _run_lab_pipeline(
+    job: AnalysisJob,
+    api_key: str = "",
+    auth_token: str = "",
+    notify_email: Optional[str] = None,
+):
+    """Lab-report read path (worker/background). render_pages -> read_labs -> compose_verdict ->
+    persist_lab_report, emitting SSE progress via the same job-status/heartbeat machinery the imaging
+    path uses. Purely additive; never touches the DICOM pipeline. The live Claude read inside
+    read_labs runs here on the worker (never nested in a Claude session — INCIDENTS #2)."""
+    try:
+        from services import lab_reader
+
+        job.kind = "lab"
+        job.status = "interpreting"
+        job.progress_phase = "interpreting"
+        job.progress = 8
+        job.progress_message = "Reading the values"
+        _write_status_heartbeat(job)
+
+        upload = _find_lab_upload(job.job_id)
+        if not upload:
+            raise ValueError("No lab report file found for this job (expected a PDF/PNG/JPG upload).")
+
+        # 1. Render pages (offline, deterministic).
+        pages_dir = _job_dir(job.job_id) / "work" / "lab_pages"
+        page_pngs = await asyncio.to_thread(lab_reader.render_pages, upload, pages_dir)
+        job.progress = 25
+        job.progress_message = "Reading the values"
+        _write_status_heartbeat(job)
+
+        # 2. Live Opus vision read (worker-only). Mirrors the imaging credential source.
+        parsed = await asyncio.to_thread(
+            lab_reader.read_labs, job.job_id, page_pngs, api_key=api_key, auth_token=auth_token
+        )
+        results = parsed.get("results", [])
+        signals = parsed.get("signals", {})
+        job.progress = 80
+        job.progress_message = "Finding what stands out"
+        _write_status_heartbeat(job)
+
+        # 3. Deterministic safety gate (pure Python — composes the verdict; never an LLM string).
+        verdict = lab_reader.compose_verdict(results, signals, lang="en")
+        job.progress = 92
+        job.progress_message = "Putting it in plain words"
+        _write_status_heartbeat(job)
+
+        # 4. Persist via the dedicated lab path (NOT _persist_report — that is DICOM-coupled).
+        payload = lab_reader.build_lab_payload(verdict, results, signals)
+        await asyncio.to_thread(
+            lab_reader.persist_lab_report, job.job_id, DATA_DIR, payload, page_pngs,
+            created_at=job.created_at, title="Lab report",
+        )
+
+        job.status = "complete"
+        job.progress_phase = "complete"
+        job.progress = 100
+        job.error = None
+        job.error_code = None
+        job.progress_message = "Lab report ready"
+        _write_status_heartbeat(job)
+        _notify_email(notify_email, job.job_id, "complete")
+        logger.info(f"[lab {job.job_id}] complete: {verdict['flagged_count']} flagged of "
+                    f"{verdict['checked_count']} checked (key={verdict['verdict_key']})")
+    except Exception as e:
+        logger.exception(f"Lab pipeline failed for job {job.job_id}")
+        job.status = "error"
+        job.error = str(e)
+        job.error_code = "LAB_READ_ERROR"
+        job.progress_phase = "error"
+        job.progress_message = f"Error: {str(e)}"
+        _write_status_heartbeat(job)
+        _notify_email(notify_email, job.job_id, "error")
 
 
 async def _run_agent_pipeline(

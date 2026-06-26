@@ -498,6 +498,78 @@
     .legend-row { display:flex; gap: var(--s-5); margin-top: var(--s-4); font-size:12px; color: var(--slate); }
     .legend-row span { display:inline-flex; align-items:center; gap:6px; }
 
+    /* ── Lab report — "The Verdict" ── */
+    .num { unicode-bidi: isolate; font-variant-numeric: tabular-nums; }
+    .page-lab-home { max-width:640px; margin-inline:auto; padding-top: var(--s-6); }
+    .lab-home-head { margin-bottom: var(--s-5); text-align:center; }
+    .page-lab-home .home-title { font-size:26px; font-weight:700; color: var(--ink); margin-bottom: var(--s-3); }
+    .page-lab-home .home-sub { margin-inline:auto; text-align:center; }
+    .page-lab-read { padding-top: var(--s-4); }
+    .page-lab-read > * + * { margin-top: var(--s-6); }
+
+    .lab-verdict { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,300px); gap: var(--s-8); align-items:start; }
+    .lab-verdict-main { min-width:0; }
+    .lab-takeaway { font-size:27px; line-height:1.25; font-weight:700; color: var(--ink); letter-spacing:-.01em; margin-bottom: var(--s-4); }
+    .lab-verdict-meta { display:flex; align-items:center; gap: var(--s-3); flex-wrap:wrap; margin-bottom: var(--s-3); }
+    .lab-count { display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color: var(--accent-strong);
+      background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-line); padding:6px 13px; border-radius: var(--r-full); }
+    .lab-count-n { display:inline-flex; align-items:center; justify-content:center; min-width:22px; height:22px; padding:0 5px;
+      border-radius: var(--r-full); background: var(--accent); color:#fff; font-size:12.5px; font-weight:700; box-shadow: 0 0 0 3px var(--accent-glow); }
+    .lab-count.clean { color: var(--accent-strong); }
+    .lab-count.clean svg { color: var(--accent); }
+    .lab-ratio { font-size:13.5px; color: var(--slate); }
+
+    .lab-stream { border-radius: var(--r-lg); overflow:hidden; box-shadow: inset 0 0 0 1px var(--accent-line), 0 0 0 4px var(--accent-glow), var(--shadow-md);
+      aspect-ratio: 3/4; position:relative; background: var(--surface-2); }
+    .lab-stream img { width:100%; height:100%; object-fit:cover; display:block; }
+    .lab-stream::after { content:''; position:absolute; inset:0; pointer-events:none;
+      box-shadow: inset 0 0 60px 8px rgba(10,15,29,0.45); border-radius: inherit; }
+
+    .lab-flags { display:flex; flex-direction:column; gap: var(--s-3); }
+    .lab-frow { padding:0; cursor:default; }
+    .lab-frow-hd { width:100%; text-align:start; background:transparent; border:none; cursor:pointer; padding: var(--s-3) var(--s-4); display:block; }
+    .lab-mean { font-size:12.5px; color: var(--slate); line-height:1.5; margin-top:6px; }
+    .lab-frow .frow-extra { margin: 0 var(--s-4) var(--s-4); }
+    .lab-reveal-tabs { display:flex; gap: var(--s-2); margin-bottom: var(--s-3); }
+    .lab-reveal-tabs button { font-size:12px; font-weight:600; color: var(--slate); background: var(--surface-2);
+      border:1px solid var(--line); border-radius: var(--r-full); padding:5px 12px; cursor:pointer; }
+    .lab-reveal-tabs button.on { color:#fff; background: var(--accent); border-color: var(--accent); }
+    .lab-kv { display:flex; justify-content:space-between; gap: var(--s-4); font-size:13px; padding:5px 0; }
+    .lab-kv > span:first-child { color: var(--slate); }
+    .lab-kv > span:last-child { color: var(--ink); font-weight:600; }
+
+    .lrange { margin-top: var(--s-3); }
+    .lrange-rail { position:relative; height:6px; border-radius: var(--r-full); background: var(--surface-2); }
+    .lrange-band { position:absolute; inset-block:0; background: var(--accent-softer); box-shadow: inset 0 0 0 1px var(--accent-line); border-radius: var(--r-full); }
+    .lrange-tick { position:absolute; inset-block:-4px; inline-size:3px; transform: translateX(-50%); background: var(--accent); border-radius: var(--r-full); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .lrange-scale { display:flex; justify-content:space-between; font-size:10.5px; color: var(--slate-300); margin-top:5px; }
+    .lrange-cap { font-size:11.5px; font-weight:600; color: var(--accent-strong); margin-top:6px; }
+
+    .lab-proof { }
+    .lab-proof-quote { font-size:12.5px; color: var(--slate); margin-bottom: var(--s-3); }
+    .lab-proof-quote em { color: var(--ink); font-style:italic; }
+    .lab-proof-img { border:1px solid var(--line); border-radius: var(--r-md); overflow:hidden; max-height:360px; overflow-y:auto; background: var(--surface-2); }
+    .lab-proof-img img { width:100%; display:block; }
+    .lab-proof-na { font-size:12.5px; color: var(--slate-300); padding: var(--s-4); text-align:center; border:1px dashed var(--line); border-radius: var(--r-md); }
+
+    .lab-normals, .lab-other { border:1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
+    .lab-cov { width:100%; background:transparent; border:none; cursor:pointer; }
+    .lab-cov .cov-name { font-weight:500; }
+    .lab-cov .cov-ico { color: var(--accent); }
+    .lab-normals-body, .lab-other-body { padding: 0 var(--s-4) var(--s-4); }
+    .lab-other-hint { font-size:12px; color: var(--slate); margin-bottom: var(--s-2); }
+    .lab-normals-body ul, .lab-other-body ul { columns:2; gap: var(--s-5); font-size:12.5px; color: var(--ink); margin:0; padding-inline-start: var(--s-5); }
+    .lab-normals-body li, .lab-other-body li { margin-bottom:3px; }
+
+    .lab-err { background: var(--surface); border:1px solid var(--line); border-radius: var(--r-lg); padding: var(--s-7); text-align:center; max-width:560px; margin-inline:auto; }
+    .lab-err-t { font-size:16px; font-weight:600; color: var(--ink); margin-bottom: var(--s-3); }
+    .lab-err-b { font-size:13.5px; color: var(--slate); line-height:1.6; }
+
+    @media (max-width: 920px) {
+      .lab-verdict { grid-template-columns: minmax(0,1fr); }
+      .lab-stream { max-width:280px; order:2; margin-inline:auto; }
+    }
+
     .proof { background: var(--surface); border:1px solid var(--line); border-radius: var(--r-lg); overflow:hidden; box-shadow: var(--shadow-sm); }
     .proof-head { padding: var(--s-4) var(--s-5); border-bottom:1px solid var(--line-soft); }
     .proof-title { font-size:15px; font-weight:600; color: var(--ink); margin-bottom:6px; }
@@ -884,6 +956,42 @@
       },
       privacy: { t:'Private by design', b:'Your scan is processed securely and is never shared.' },
       help: 'Need help?',
+      // ── Lab report flow ("The Verdict") ──
+      lab: {
+        nav: 'Lab report',
+        topbarHome: 'Read a lab report',
+        topbarRead: 'Your lab report',
+        topbarReadMeta: 'Read complete',
+        dropTitle: 'Add your lab or blood report',
+        dropSub: 'A PDF or a clear photo of the results page',
+        cta: 'Read my report',
+        choose: 'Choose file',
+        ready: 'report ready',
+        badFile: 'MIKA could not find a readable report. Upload a PDF or a clear photo of the results page.',
+        uploadFail: 'Upload failed — is the server running?',
+        startFail: 'I couldn’t start the read. Please try again.',
+        intro: 'Upload a lab or blood report and MIKA will put the results in plain language — what was checked, and anything worth a closer look.',
+        // Verdict page
+        review: 'to review',
+        ratio: 'of {checked} checked and look normal',     // "{normal} of {checked} checked and look normal"
+        flaggedTitle: 'Worth a look',
+        seeNumbers: 'See the numbers',
+        seeReport: 'See it on your report',
+        readAs: 'MIKA read:',
+        value: 'Your result',
+        range: 'Normal range',
+        wellAbove: 'well above range',
+        wellBelow: 'well below range',
+        normalsTitle: 'checked, all normal',                // "{normal} of {checked} checked, all normal"
+        normalsHint: 'These describe only the values on this report.',
+        otherTitle: 'Other results',
+        otherHint: 'MIKA couldn’t read these clearly — check them on your report with your doctor.',
+        allClearTitle: 'Nothing stood out',
+        // states
+        errTitle: 'MIKA couldn’t read this report clearly',
+        errBody: 'Try a clearer photo in good light, or upload the original PDF. MIKA won’t guess at values it can’t read.',
+        proofUnavail: 'The report page isn’t available for this result.',
+      },
     };
 
     // ── i18n: Arabic UI overlay (flag-dark; English is the source of truth, Arabic strings DRAFT) ──
@@ -1020,6 +1128,36 @@
       'Is it serious?':'هل هي خطيرة؟',
       'What should I do now?':'ماذا أفعل الآن؟',
       'This run did not include a pinned proof image for the selected finding.':'لم تتضمّن هذه القراءة صورة إثبات مثبّتة للنتيجة المحددة.',
+      // ── Lab report flow ("The Verdict") ──
+      'Lab report':'تقرير المختبر',
+      'Read a lab report':'اقرأ تقرير مختبر',
+      'Your lab report':'تقرير مختبرك',
+      'Add your lab or blood report':'أضف تقرير المختبر أو الدم',
+      'A PDF or a clear photo of the results page':'ملف PDF أو صورة واضحة لصفحة النتائج',
+      'Read my report':'اقرأ تقريري',
+      'Choose file':'اختر ملفاً',
+      'report ready':'التقرير جاهز',
+      'MIKA could not find a readable report. Upload a PDF or a clear photo of the results page.':'لم تجد MIKA تقريراً قابلاً للقراءة. ارفع ملف PDF أو صورة واضحة لصفحة النتائج.',
+      'Upload a lab or blood report and MIKA will put the results in plain language — what was checked, and anything worth a closer look.':'ارفع تقرير مختبر أو دم وستضع MIKA النتائج بلغة مبسّطة — ما الذي فُحص، وأي شيء يستحق نظرة أقرب.',
+      'to review':'بحاجة لمراجعة',
+      'of {checked} checked and look normal':'من {checked} تم فحصها وتبدو طبيعية',
+      'of':'من',
+      'Worth a look':'يستحق نظرة',
+      'See the numbers':'اعرض الأرقام',
+      'See it on your report':'اعرضه على تقريرك',
+      'MIKA read:':'قرأت MIKA:',
+      'Your result':'نتيجتك',
+      'Normal range':'النطاق الطبيعي',
+      'well above range':'أعلى من النطاق بكثير',
+      'well below range':'أدنى من النطاق بكثير',
+      'checked, all normal':'تم فحصها، كلها طبيعية',
+      'These describe only the values on this report.':'هذه تصف فقط القيم الواردة في هذا التقرير.',
+      'Other results':'نتائج أخرى',
+      'MIKA couldn’t read these clearly — check them on your report with your doctor.':'لم تتمكّن MIKA من قراءتها بوضوح — راجعها على تقريرك مع طبيبك.',
+      'Nothing stood out':'لا شيء لافت',
+      'MIKA couldn’t read this report clearly':'لم تتمكّن MIKA من قراءة هذا التقرير بوضوح',
+      'Try a clearer photo in good light, or upload the original PDF. MIKA won’t guess at values it can’t read.':'جرّب صورة أوضح بإضاءة جيدة، أو ارفع ملف PDF الأصلي. لن تخمّن MIKA قيماً لا تستطيع قراءتها.',
+      'The report page isn’t available for this result.':'صفحة التقرير غير متوفرة لهذه النتيجة.',
     };
     // Translate a UI chrome string (English fallback). NOT for medical content.
     function L(s){ return UI_LANG === 'ar' && AR_UI[s] != null ? AR_UI[s] : s; }
@@ -1270,10 +1408,11 @@
 
     /* ═══════════════ Hooks & helpers ═══════════════ */
     function screenFor(job) {
-      if (!job.id || job.status === 'pending') return 'home';
-      if (job.status === 'complete') return 'read';
-      if (job.status === 'error') return 'home';
-      return 'wait'; // inventory | interpreting | levels | measuring
+      const lab = job.kind === 'lab';   // lab jobs share the wait machine but get their own home/read screens
+      if (!job.id || job.status === 'pending') return lab ? 'lab-home' : 'home';
+      if (job.status === 'complete') return lab ? 'lab-read' : 'read';
+      if (job.status === 'error') return lab ? 'lab-home' : 'home';
+      return 'wait'; // inventory | interpreting | levels | measuring (shared)
     }
 
     function useReducedMotion() {
@@ -1649,6 +1788,7 @@
       chest:(p)=>(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M6 5c2 3 10 3 12 0M6 5v8c0 3 3 6 6 6s6-3 6-6V5"/></svg>),
       brain:(p)=>(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M9 4a3 3 0 00-3 3 3 3 0 00-1 5 3 3 0 002 4 3 3 0 005 1 3 3 0 005-1 3 3 0 002-4 3 3 0 00-1-5 3 3 0 00-3-3 3 3 0 00-3-1 3 3 0 00-4 1z"/><path d="M12 4v15"/></svg>),
       compare:(p)=>(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 3v18"/><path d="M7 7l-3 3 3 3M17 17l3-3-3-3"/></svg>),
+      droplet:(p)=>(<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" {...p}><path d="M12 3s6 6.5 6 11a6 6 0 01-12 0c0-4.5 6-11 6-11z"/></svg>),
     };
     const COV_ICON = { brain:I.brain, spine:I.spine, headneck:I.headneck, chest:I.chest, heart:I.heart, vessel:I.vessel, organ:I.organ, breast:I.breast, prostate:I.prostate, bone:I.bone, compare:I.compare };
 
@@ -1779,8 +1919,10 @@
           <span className="sb-ico">{icon({})}</span>{label}
         </button>
       );
+      const isLab = (typeof screen === 'string' && screen.startsWith('lab')) || route === 'lab';
       const onHome = route===null && screen==='home';
-      const onCurrent = route===null && (screen==='wait' || screen==='read');
+      const onCurrent = route===null && !isLab && (screen==='wait' || screen==='read');
+      const onLab = route==='lab' || (route===null && isLab);
       const connected = !!(connection && connection.connected);
       const sub = connection && connection.subscription_type;
       return (
@@ -1793,7 +1935,8 @@
           </div>
           <nav className="sb-nav">
             {navItem('home', I.home, onHome ? L('Home') : L('New scan'), onHome, () => onNav('new'))}
-            {hasJob && navItem('current', I.reading, screen==='wait' ? L('Reading the scan') : L('Your Read'), onCurrent, () => onNav('current'))}
+            {hasJob && !isLab && navItem('current', I.reading, screen==='wait' ? L('Reading the scan') : L('Your Read'), onCurrent, () => onNav('current'))}
+            {navItem('lab', I.droplet, L(COPY.lab.nav), onLab, () => onNav('lab'))}
             {navItem('recent', I.stack, L('Recent scans'), route==='recent', () => onNav('recent'))}
             {navItem('about', I.info, L('About MIKA'), false, onAbout)}
           </nav>
@@ -1901,6 +2044,32 @@
       }
       const connected = connection && connection.connected;
       const plan = connection && connection.subscription_type;
+      if (screen === 'lab-home') {
+        return (
+          <div className="topbar">
+            <div className="topbar-l"><span className="topbar-title">{L(COPY.lab.topbarHome)}</span></div>
+            <div className="topbar-r">
+              {connected ? (
+                <span className="conn-pill"><span className="conn-dot" />{L('Connected to Claude')}{plan && plan!=='api' ? ` · ${String(plan).toUpperCase()}` : ''}</span>
+              ) : (
+                <button className="btn btn-primary btn-sm" onClick={onConnect}>{I.mark({ width:14, height:14 })} {checking ? L('Checking sign-in…') : L('Sign in with Claude')}</button>
+              )}
+              {langToggle}
+            </div>
+          </div>
+        );
+      }
+      if (screen === 'lab-read') {
+        return (
+          <div className="topbar">
+            <div className="topbar-l stacked">
+              <span className="topbar-title">{L(COPY.lab.topbarRead)}</span>
+              <span className="topbar-meta">{L(COPY.lab.topbarReadMeta)}</span>
+            </div>
+            <div className="topbar-r">{langToggle}</div>
+          </div>
+        );
+      }
       if (screen === 'home') {
         return (
           <div className="topbar">
@@ -2693,6 +2862,220 @@
       );
     }
 
+    /* ═══════════════ LAB REPORT — "The Verdict" ═══════════════ */
+    function LabHomeScreen({ onFiles, ready, onStart }) {
+      const fileRef = useRef(null);
+      const [over, setOver] = useState(false);
+      const onDrop = e => { e.preventDefault(); setOver(false); onFiles(e.dataTransfer.files); };
+      return (
+        <div className="page-inner page-lab-home fade-up">
+          <div className="lab-home-head">
+            <h1 className="home-title">{L(COPY.lab.dropTitle)}</h1>
+            <p className="home-sub">{L(COPY.lab.intro)}</p>
+          </div>
+          <div className={`dropzone ${over?'over':''} ${ready?'ready':''}`}
+               onDragOver={e=>{e.preventDefault(); setOver(true);}} onDragLeave={()=>setOver(false)} onDrop={onDrop}>
+            {!ready ? (
+              <>
+                <div className="dz-ico">{I.droplet({ width:24, height:24 })}</div>
+                <div className="dz-title">{L(COPY.lab.dropTitle)}</div>
+                <div className="dz-sub">{L(COPY.lab.dropSub)}</div>
+                <div className="dz-actions">
+                  <button className="btn btn-primary" onClick={()=>fileRef.current.click()}>{I.upload({width:16,height:16})} {L(COPY.lab.choose)}</button>
+                </div>
+                <input ref={fileRef} type="file" hidden accept=".pdf,image/*" onChange={e=>onFiles(e.target.files)} />
+                <div className="dz-chips">
+                  <span className="chip modality">PDF</span><span className="chip">PNG/JPG</span><span className="chip">Photo</span>
+                </div>
+              </>
+            ) : (
+              <div className="dz-meta" style={{borderTop:'none', paddingTop:0, marginTop:0}}>
+                <div className="dz-ready-row"><span className="ok">{I.check({})}</span>{ready.file_count} {L(COPY.lab.ready)}{ready.input_format?` · ${String(ready.input_format).toUpperCase()}`:''}</div>
+                <button className="btn btn-primary" style={{ width:'100%', marginTop:'16px' }} onClick={onStart}>{L(COPY.lab.cta)}</button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // dir-isolated number/unit span so digits + units never reverse in RTL
+    function Num({ children }) { return <span className="num" dir="ltr">{children}</span>; }
+
+    // Pure parse of a printed two-sided numeric range ("30-100", "30 – 100"); null if not two numbers.
+    function parseTwoSided(text) {
+      if (!text) return null;
+      const m = String(text).match(/(-?\d+(?:\.\d+)?)\s*[-–—to]+\s*(-?\d+(?:\.\d+)?)/i);
+      if (!m) return null;
+      const lo = parseFloat(m[1]), hi = parseFloat(m[2]);
+      if (!isFinite(lo) || !isFinite(hi) || hi <= lo) return null;
+      return { lo, hi };
+    }
+
+    // Range bar — renders ONLY for two_sided_numeric with a parseable range + numeric value. Clamps
+    // out-of-range to a labelled end-cap; never fabricates a tick beyond the rail. (concept §4 / plan)
+    function LabRangeBar({ r }) {
+      if (r.range_type !== 'two_sided_numeric') return null;
+      const bounds = parseTwoSided(r.ref_range_text);
+      const val = parseFloat(String(r.value).replace(/[^0-9.\-]/g, ''));
+      if (!bounds || !isFinite(val)) return null;
+      const { lo, hi } = bounds;
+      const span = hi - lo;
+      const pad = span;                         // show one band-width of head-room each side
+      const min = lo - pad, max = hi + pad;
+      const pct = (x) => Math.max(0, Math.min(100, ((x - min) / (max - min)) * 100));
+      const bandL = pct(lo), bandR = pct(hi);
+      const tick = pct(val);
+      const farBelow = val < lo - 1.5 * span, farAbove = val > hi + 1.5 * span;
+      return (
+        <div className="lrange">
+          <div className="lrange-rail">
+            <div className="lrange-band" style={{ insetInlineStart:`${bandL}%`, inlineSize:`${bandR - bandL}%` }} />
+            <div className="lrange-tick" style={{ insetInlineStart:`${tick}%` }} aria-hidden="true" />
+          </div>
+          <div className="lrange-scale">
+            <span className="num" dir="ltr">{lo}</span>
+            <span className="num" dir="ltr">{hi}</span>
+          </div>
+          {(farBelow || farAbove) && <div className="lrange-cap">{L(farAbove ? COPY.lab.wellAbove : COPY.lab.wellBelow)}</div>}
+        </div>
+      );
+    }
+
+    function LabFlagCard({ r, n, jobId, open, onToggle }) {
+      const [tab, setTab] = useState(null);   // 'numbers' | 'report'
+      const proofSrc = jobId ? `${API_BASE}/api/report/${jobId}/page/${r.page_index||0}` : null;
+      const [proofOk, setProofOk] = useState(true);
+      return (
+        <div className={`frow lab-frow ${open?'active':''}`}>
+          <button className="lab-frow-hd" aria-expanded={open} onClick={onToggle}>
+            <div className="frow-top">
+              <span className="frow-num">{n}</span>
+              <CertaintyChip certainty={r.confidence} />
+            </div>
+            <div className="frow-plain">{r.plain_name}</div>
+            {r.severity_phrase && <div className="frow-cap">{r.severity_phrase}</div>}
+            {r.plain_meaning && <div className="lab-mean">{r.plain_meaning}</div>}
+          </button>
+          {open && (
+            <div className="frow-extra">
+              <div className="lab-reveal-tabs">
+                <button className={tab==='numbers'?'on':''} onClick={()=>setTab(t=>t==='numbers'?null:'numbers')}>{L(COPY.lab.seeNumbers)}</button>
+                <button className={tab==='report'?'on':''} onClick={()=>setTab(t=>t==='report'?null:'report')}>{L(COPY.lab.seeReport)}</button>
+              </div>
+              {tab==='numbers' && (
+                <div className="lab-numbers">
+                  <div className="lab-kv"><span>{L(COPY.lab.value)}</span><span><Num>{r.value}</Num>{r.unit?<> <Num>{r.unit}</Num></>:''}</span></div>
+                  {r.ref_range_text && <div className="lab-kv"><span>{L(COPY.lab.range)}</span><span><Num>{r.ref_range_text}</Num></span></div>}
+                  <LabRangeBar r={r} />
+                </div>
+              )}
+              {tab==='report' && (
+                <div className="lab-proof">
+                  <div className="lab-proof-quote">{L(COPY.lab.readAs)} <em>“{r.source_text}”</em></div>
+                  {proofSrc && proofOk
+                    ? <div className="lab-proof-img"><img src={proofSrc} alt="" onError={()=>setProofOk(false)} /></div>
+                    : <div className="lab-proof-na">{L(COPY.lab.proofUnavail)}</div>}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function LabReadScreen({ report, jobId }) {
+      const [openId, setOpenId] = useState(0);             // top card pre-expanded
+      const [normalsOpen, setNormalsOpen] = useState(false);
+      const [otherOpen, setOtherOpen] = useState(false);
+      const disclaimer = 'This is an AI-generated analysis, not a medical diagnosis — please discuss it with your doctor.';
+
+      // Error / unreadable read — calm register, no fake results.
+      const unreadable = report && report.signals && report.signals.render_quality === 'unreadable';
+      if (!report || unreadable) {
+        return (
+          <div className="page-inner page-lab-read fade-up">
+            <div className="read-topnote" title={L(disclaimer)}><strong>{L('Important:')}</strong> {L(disclaimer)}</div>
+            <div className="lab-err">
+              <div className="lab-err-t">{L(COPY.lab.errTitle)}</div>
+              <div className="lab-err-b">{L(COPY.lab.errBody)}</div>
+            </div>
+          </div>
+        );
+      }
+
+      const results = report.results || [];
+      const overall = report.overall || {};
+      // Split: flagged cards = non-normal/unknown, high-confidence, clear enough (most-off NOT inferred —
+      // order preserved from the backend, which sorts most-off first). Everything else collapses.
+      const flagged = results.filter(r => !['normal','unknown'].includes(r.status) && ['Confirmed','Likely'].includes(r.confidence) && (r.clarity ?? 0) >= 0.7);
+      const rest = results.filter(r => !flagged.includes(r));
+      const other = rest.filter(r => (r.clarity ?? 1) < 0.7 || r.status === 'unknown' || !r.plain_name);
+      const normalsN = (typeof overall.normal_count === 'number') ? overall.normal_count : rest.filter(r => r.status === 'normal').length;
+      const checkedN = (typeof overall.checked_count === 'number') ? overall.checked_count : results.length;
+      const confLabel = overall.confidence === 'high' ? 'High' : overall.confidence === 'low' ? 'Low' : 'Moderate';
+      const allClean = flagged.length === 0;
+
+      return (
+        <div className="page-inner page-lab-read fade-up">
+          <div className="read-topnote" title={L(disclaimer)}><strong>{L('Important:')}</strong> {L(disclaimer)}</div>
+
+          <div className="lab-verdict">
+            <div className="lab-verdict-main">
+              <h1 className="lab-takeaway">{overall.takeaway}</h1>
+              <div className="lab-verdict-meta">
+                <ConfidencePill label={confLabel} />
+                {allClean
+                  ? <span className="lab-count clean">{I.check({width:15,height:15})} {L(COPY.lab.allClearTitle)}</span>
+                  : <span className="lab-count"><span className="lab-count-n"><Num>{flagged.length}</Num></span> {L(COPY.lab.review)}</span>}
+              </div>
+              <div className="lab-ratio"><Num>{normalsN}</Num> {L(COPY.lab.ratio).replace('{checked}', String(checkedN))}</div>
+            </div>
+            <div className="lab-stream" aria-hidden="true">
+              <img src="/assets/brand/lab-stream.png" alt="" />
+            </div>
+          </div>
+
+          {flagged.length > 0 && (
+            <div className="lab-flags">
+              <div className="thread-title">{L(COPY.lab.flaggedTitle)}</div>
+              {flagged.map((r, i) => (
+                <LabFlagCard key={i} r={r} n={i+1} jobId={jobId} open={openId===i} onToggle={()=>setOpenId(o=>o===i?-1:i)} />
+              ))}
+            </div>
+          )}
+
+          <div className="lab-normals">
+            <button className="cov-row lab-cov" aria-expanded={normalsOpen} onClick={()=>setNormalsOpen(o=>!o)}>
+              <span className="cov-ico">{I.check({})}</span>
+              <span className="cov-name"><Num>{normalsN}</Num> {L('of')} <Num>{checkedN}</Num> {L(COPY.lab.normalsTitle)}</span>
+            </button>
+            {normalsOpen && (
+              <div className="lab-normals-body">
+                <div className="lab-other-hint">{L(COPY.lab.normalsHint)}</div>
+                <ul>{rest.filter(r => r.status === 'normal' && r.plain_name).map((r, i) => <li key={i}>{r.plain_name}</li>)}</ul>
+              </div>
+            )}
+          </div>
+
+          {other.length > 0 && (
+            <div className="lab-other">
+              <button className="cov-row lab-cov" aria-expanded={otherOpen} onClick={()=>setOtherOpen(o=>!o)}>
+                <span className="cov-ico">{I.info({})}</span>
+                <span className="cov-name">{L(COPY.lab.otherTitle)} · <Num>{other.length}</Num></span>
+              </button>
+              {otherOpen && (
+                <div className="lab-other-body">
+                  <div className="lab-other-hint">{L(COPY.lab.otherHint)}</div>
+                  <ul>{other.map((r, i) => <li key={i}><Num>{r.source_text || r.plain_name || '—'}</Num></li>)}</ul>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function ReadScreen({ vm, jobId, view, activeId, setActiveId, onZoom, onClinician, compareState, setCompareState, onCompareReport, onCancelCompare, onDownload, chatOpen, setChatOpen, chatAvail }) {
       const findings = vm.findings || [];
       const active = findings.find(f => f.id === activeId) || findings[0] || null;
@@ -3093,6 +3476,22 @@
         } catch (e) { addToast('Upload failed — is the server running?', 'error'); }
       }, [addToast]);
 
+      // ── lab upload (PDF / photo of a lab or blood report) — reuses the same upload endpoint + job cache ──
+      const LAB_SUP = ['.pdf','.png','.jpg','.jpeg','.tif','.tiff','.bmp','.heic','.webp'];
+      const onLabFiles = useCallback(async (files) => {
+        const list = Array.from(files).filter(f => { const n=f.name.toLowerCase(); return LAB_SUP.some(e=>n.endsWith(e)); });
+        if (!list.length) { addToast(L(COPY.lab.badFile), 'error'); return; }
+        const fd = new FormData(); list.forEach(f => fd.append('files', f));
+        try {
+          const data = await api.upload(fd);
+          if (data.job_id) {
+            setJob(j => ({ ...j, id:data.job_id, kind:'lab' }));   // tag the job lab so screenFor routes the Verdict
+            setReady({ file_count:data.file_count, input_format:data.input_format });
+            if (data.warnings) data.warnings.forEach(w => addToast(w, 'warning'));
+          } else addToast(data.detail || L(COPY.lab.uploadFail), 'error');
+        } catch (e) { addToast(L(COPY.lab.uploadFail), 'error'); }
+      }, [addToast]);
+
       // ── status stream (SSE + poll fallback) ──
       const stopStream = useCallback(() => {
         if (esRef.current) { esRef.current.close(); esRef.current = null; }
@@ -3202,6 +3601,22 @@
         } catch (e) { addToast('I couldn’t start the read. Please try again.', 'error'); }
       }, [job.id, history, watch, addToast, connection]);
 
+      // ── analyze (lab) — same gate + SSE, but kind:'lab' routes the backend lab-reader path ──
+      const onLabStart = useCallback(async () => {
+        if (!job.id) return;
+        let pf = connection;
+        try { pf = await api.preflight(); setConnection(pf); } catch (_) {}
+        if (!pf || !pf.connected || !pf.ready) { setShowConnect(true); return; }
+        try {
+          const r = await api.analyze({ job_id:job.id, mode:'agent', kind:'lab' });
+          if (r.detail || r.error_message) { addToast(detailText(r.detail || r.error_message, L(COPY.lab.startFail)), 'error'); if (r.auth_state) setConnection(c => ({ ...(c||{}), connected:false, auth_state:r.auth_state, error_message:r.error_message||r.detail })); return; }
+          setConnection(c => ({ ...(c||{}), connected:true, ready:true, auth_state:'connected', error_message:null }));
+          setJob(j => ({ ...j, kind:'lab', status:'inventory', mode:r.mode||'agent', progress:8, est_total_seconds:j.est_total_seconds }));
+          setReady(null);
+          watch(job.id);
+        } catch (e) { addToast(L(COPY.lab.startFail), 'error'); }
+      }, [job.id, watch, addToast, connection]);
+
       // resume deep-link (§7.7) — verify the job actually exists before assuming it's mid-run, so an
       // expired/gone link shows a clear message instead of stranding the user on a frozen Wait. (sm-01)
       useEffect(() => {
@@ -3281,7 +3696,13 @@
         if (dest === 'new') goNew();
         else if (dest === 'current') setRoute(null);
         else if (dest === 'recent') setRoute('recent');
-      }, [goNew]);
+        else if (dest === 'lab') {
+          // Open the lab surface. If the active job isn't a lab job, clear it so lab-home shows the dropzone
+          // (an imaging job left in the cache would otherwise resolve to its own screen under route override).
+          setRoute('lab');
+          if (job.kind !== 'lab') { stopStream(); setReport(null); setSequences({ sequences:[] }); setReady(null); setJob({ ...EMPTY_JOB, kind:'lab' }); }
+        }
+      }, [goNew, job.kind, stopStream]);
 
       // Browser Back/Forward: restore the view (route + study) from the URL, without re-pushing.
       // Defined after goNew/openRecent so their bindings are initialized when this effect registers.
@@ -3382,8 +3803,17 @@
       const demoVm = dm ? buildViewModel(_demoBase) : null;
       const demoProgress = dm==='wait' ? { status:'interpreting', progress:60, eta_seconds:660, est_total_seconds:1300, active_sequence:'STIR', active_region:'L4-L5', message:'Reading STIR images' } : null;
       const effVm = dm ? demoVm : vm;
+      // Lab payload (kind:'lab') renders the Verdict directly from report.json — NOT through buildViewModel
+      // (that backfills DICOM-shaped fields). Demo lab screens use a hardcoded fixture so they render
+      // without a backend; a live lab job reads the raw `report`.
+      const labReport = (dm === 'lab-read') ? DEMO_LAB_REPORT
+        : (report && report.kind === 'lab') ? report : null;
 
-      const view = dm ? screen : (route || screen);   // route ('recent') overrides the job-derived screen
+      // route ('recent') overrides the job-derived screen. The 'lab' nav route is special: it isn't a screen
+      // name — it opens the lab surface, which is lab-home until a lab job exists (then screenFor drives it).
+      const view = dm ? screen
+        : (route === 'lab' ? (job.kind === 'lab' && job.id ? screen : 'lab-home')
+        : (route || screen));
       const chatDocked = chatOpen && !dm && !!job.id;   // matches the ChatDrawer render condition → reflow the canvas
       return (
         <div className={`shell${chatDocked ? ' chat-open' : ''}`}>
@@ -3398,6 +3828,8 @@
               onConnect={()=>{ setShowConnect(true); checkConnection(); }} onNotify={onNotify} checking={checkingConn} />
             <div className="page">
               {view === 'home' && <HomeScreen onFiles={onFiles} ready={ready} onStart={onStart} history={history} setHistory={setHistory} />}
+              {view === 'lab-home' && <LabHomeScreen onFiles={onLabFiles} ready={ready} onStart={onLabStart} />}
+              {view === 'lab-read' && <LabReadScreen report={labReport} jobId={dm?'demo':job.id} />}
               {view === 'wait' && (() => { const sq = dm?DEMO_SEQUENCES:sequences; return <WaitScreen progress={dm?demoProgress:job} sequences={sq} anatomy={figureAnatomy(sq.anatomy || (effVm&&effVm.anatomy) || 'unknown', sq.anatomy_subregion || '')} jobId={dm?'demo':job.id} />; })()}
               {view === 'read' && effVm && <ReadScreen vm={effVm} jobId={dm?'demo':job.id} view={uiPrefs.view} activeId={activeId} setActiveId={setActiveId}
                 onZoom={setLightbox} onClinician={onClinician} compareState={compareState} setCompareState={setCompareState}
@@ -3444,6 +3876,46 @@
       ] } },
     };
     const DEMO_REPORT_EMPTY = { ...DEMO_REPORT, agent:{ summary:{ patient:{ ...DEMO_REPORT.agent.summary.patient, bottom_line:'', findings:[], what_it_means:[], worth_flagging:[], key_points:['No significant abnormality was flagged on this automated read.'], confidence:{label:'Moderate', note:'Limited by image quality in places.'} } } } };
+    // Lab demo (kind:'lab') — drives ?demo=lab-read with NO backend: 2 flagged (low Vit D two-sided,
+    // high LDL two-sided), a qualitative result, ~22 normals, and one low-clarity item for "Other results".
+    const DEMO_LAB_REPORT = (() => {
+      const normalNames = ['Sodium','Potassium','Chloride','Calcium','Glucose (fasting)','Creatinine','eGFR',
+        'Hemoglobin','Hematocrit','White cell count','Platelets','ALT','AST','Total bilirubin','Albumin',
+        'TSH','HbA1c','Total cholesterol','HDL','Triglycerides','Ferritin','Vitamin B12'];
+      const normals = normalNames.map((nm, i) => ({
+        plain_name:nm, analyte_raw:nm, value:'—', unit:'', ref_range_text:'within range',
+        range_type:'two_sided_numeric', status:'normal', severity_phrase:'normal', confidence:'Confirmed',
+        plain_meaning:'within the normal range.', clarity:0.95, page_index:0, source_text:`${nm} — normal`,
+      }));
+      const flagged = [
+        { plain_name:'Vitamin D', analyte_raw:'25-hydroxyvitamin D', value:'18', unit:'ng/mL',
+          ref_range_text:'30-100', range_type:'two_sided_numeric', status:'low', severity_phrase:'a bit low',
+          confidence:'Likely', plain_meaning:'Low vitamin D is common and can leave you feeling tired.',
+          clarity:0.92, page_index:0, source_text:'Vitamin D (25-OH) 18 ng/mL (30-100)' },
+        { plain_name:'LDL cholesterol', analyte_raw:'LDL-C, calculated', value:'182', unit:'mg/dL',
+          ref_range_text:'0-130', range_type:'two_sided_numeric', status:'high', severity_phrase:'clearly high',
+          confidence:'Confirmed', plain_meaning:'A higher LDL is one of several things that affect heart health over time.',
+          clarity:0.96, page_index:0, source_text:'LDL Cholesterol 182 mg/dL (<130)' },
+      ];
+      const qualitative = { plain_name:'Urine culture', analyte_raw:'Urine culture', value:'No growth', unit:'',
+        ref_range_text:'No growth', range_type:'qualitative', status:'normal', severity_phrase:'normal',
+        confidence:'Confirmed', plain_meaning:'No bacteria grew in the sample.', clarity:0.9, page_index:0,
+        source_text:'Urine culture: no growth at 48h' };
+      const lowClarity = { plain_name:'Handwritten note', analyte_raw:'', value:'', unit:'', ref_range_text:null,
+        range_type:'qualitative', status:'unknown', severity_phrase:'', confidence:'Possible',
+        plain_meaning:'', clarity:0.4, page_index:0, source_text:'(unclear handwriting)' };
+      const results = [...flagged, ...normals, qualitative, lowClarity];
+      const checked = results.length;
+      const normal_count = normals.length + 1;   // normals + the qualitative no-growth
+      return {
+        kind:'lab',
+        overall:{ takeaway:'2 things worth a look.', confidence:'moderate',
+          checked_count:checked, normal_count, flagged_count:flagged.length, verdict_key:'FEW' },
+        results,
+        signals:{ extraction_confidence:0.93, analytes_parsed:checked, render_quality:'clear' },
+      };
+    })();
+
     const DEMO_SEQUENCES = { anatomy:'spine', modality:'MR', level_map:'/assets/_demo/proof-levelref.png', sequences:[
       {name:'Sag T2', plane:'sagittal', num_slices:15, thumb:'/assets/_demo/proof-levelref.png'},
       {name:'Sag T1', plane:'sagittal', num_slices:15, thumb:'/assets/_demo/proof-l5s1.png'},
