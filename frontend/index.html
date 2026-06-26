@@ -532,11 +532,26 @@
     .lab-count.clean svg { color: var(--accent); }
     .lab-ratio { font-size:13.5px; color: var(--slate); }
 
-    .lab-stream { border-radius: var(--r-lg); overflow:hidden; box-shadow: inset 0 0 0 1px var(--accent-line), 0 0 0 4px var(--accent-glow), var(--shadow-md);
-      aspect-ratio: 3/4; position:relative; background: var(--surface-2); }
-    .lab-stream img { width:100%; height:100%; object-fit:cover; display:block; }
-    .lab-stream::after { content:''; position:absolute; inset:0; pointer-events:none;
-      box-shadow: inset 0 0 60px 8px rgba(10,15,29,0.45); border-radius: inherit; }
+    /* Lab "sample under analysis" — the petri-dish sample in a circular frame. The wait screen adds a
+       radar scan sweep + breathing ring (.reading); the results screen shows it settled. */
+    .lab-scan { position:relative; width:100%; max-width:300px; aspect-ratio:1/1; margin-inline:auto; }
+    .lab-scan-dish { position:absolute; inset:0; border-radius:50%; overflow:hidden; background: var(--surface-2);
+      box-shadow: inset 0 0 0 1px var(--accent-line), 0 0 0 5px var(--accent-glow), var(--shadow-md); }
+    .lab-scan-dish img { width:100%; height:100%; object-fit:cover; display:block; }
+    .lab-scan-dish::before { content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+      box-shadow: inset 0 0 36px 6px rgba(10,15,29,0.18); }
+    .lab-scan-ring { position:absolute; inset:-7px; border-radius:50%; border:1.5px solid var(--accent-line); pointer-events:none; }
+    .lab-scan-sweep { position:absolute; inset:0; border-radius:50%; pointer-events:none; opacity:0; }
+    .lab-scan.reading .lab-scan-sweep { opacity:1;
+      background: conic-gradient(from 0deg, rgba(37,99,235,.34) 0deg, rgba(37,99,235,.08) 26deg, rgba(37,99,235,0) 46deg, rgba(37,99,235,0) 360deg);
+      animation: scanSpin 3s linear infinite; }
+    .lab-scan.reading .lab-scan-ring { animation: scanRing 2.6s var(--ease-calm) infinite; }
+    @keyframes scanSpin { to { transform: rotate(360deg); } }
+    @keyframes scanRing { 0%,100% { transform:scale(1); opacity:.45; } 50% { transform:scale(1.04); opacity:.95; } }
+    @media (prefers-reduced-motion: reduce) {
+      .lab-scan.reading .lab-scan-sweep { opacity:0; }
+      .lab-scan.reading .lab-scan-ring { animation:none; }
+    }
 
     .lab-flags { display:flex; flex-direction:column; gap: var(--s-3); }
     .lab-frow { padding:0; cursor:default; }
@@ -570,13 +585,8 @@
     .lab-wait-grid { display:grid; grid-template-columns: minmax(0,1fr) minmax(0,300px); gap: var(--s-8); align-items:center; }
     .lab-wait-main { min-width:0; }
     .page-lab-wait .wait-heading { font-size:27px; font-weight:700; color: var(--ink); letter-spacing:-.01em; margin-bottom: var(--s-5); }
-    .lab-wait-grid .lab-stream { aspect-ratio: 2 / 3; max-height: 60vh; }
-    .lab-wait-grid .lab-stream.reading::before { content:''; position:absolute; inset:0; z-index:2; pointer-events:none;
-      background: linear-gradient(115deg, transparent 38%, rgba(255,255,255,.34) 50%, transparent 62%);
-      background-size: 230% 100%; animation: labSheen 2.8s var(--ease-calm) infinite; }
-    @keyframes labSheen { from { background-position: 130% 0; } to { background-position: -50% 0; } }
-    @media (prefers-reduced-motion: reduce) { .lab-wait-grid .lab-stream.reading::before { animation:none; } }
-    @media (max-width: 820px) { .lab-wait-grid { grid-template-columns: minmax(0,1fr); } .lab-wait-grid .lab-stream { max-width:260px; margin-inline:auto; } }
+    .lab-wait-grid .lab-scan { max-width: min(300px, 56vh); }
+    @media (max-width: 820px) { .lab-wait-grid { grid-template-columns: minmax(0,1fr); } .lab-wait-grid .lab-scan { max-width:240px; } }
 
     .lab-normals, .lab-other { border:1px solid var(--line); border-radius: var(--r-md); background: var(--surface); }
     .lab-cov { width:100%; background:transparent; border:none; cursor:pointer; }
@@ -593,7 +603,7 @@
 
     @media (max-width: 920px) {
       .lab-verdict { grid-template-columns: minmax(0,1fr); }
-      .lab-stream { max-width:280px; order:2; margin-inline:auto; }
+      .lab-scan { max-width:260px; order:2; margin-inline:auto; }
     }
 
     .proof { background: var(--surface); border:1px solid var(--line); border-radius: var(--r-lg); overflow:hidden; box-shadow: var(--shadow-sm); }
@@ -2488,8 +2498,10 @@
               <div className="wait-live" role="status" aria-live="polite">{live}</div>
               <div className="safe-leave">{I.bell({})}{L(COPY.wait.safe)}</div>
             </div>
-            <div className="lab-stream reading" aria-hidden="true">
-              <img src="/assets/brand/lab-stream.png" alt="" />
+            <div className="lab-scan reading" aria-hidden="true">
+              <div className="lab-scan-dish"><img src="/assets/brand/lab-sample.png" alt="" /></div>
+              <div className="lab-scan-sweep" />
+              <div className="lab-scan-ring" />
             </div>
           </div>
         </div>
@@ -3146,8 +3158,9 @@
               </div>
               <div className="lab-ratio"><Num>{normalsN}</Num> {L(COPY.lab.ratio).replace('{checked}', String(checkedN))}</div>
             </div>
-            <div className="lab-stream" aria-hidden="true">
-              <img src="/assets/brand/lab-stream.png" alt="" />
+            <div className="lab-scan" aria-hidden="true">
+              <div className="lab-scan-dish"><img src="/assets/brand/lab-sample.png" alt="" /></div>
+              <div className="lab-scan-ring" />
             </div>
           </div>
 
