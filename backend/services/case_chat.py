@@ -59,6 +59,16 @@ def ask_claude(prompt: str, *, model: str, effort: str, timeout_s: int) -> tuple
         return ("", True)
 
 
+def _calibration_label(study: dict) -> str:
+    """Robust calibration string. The real payload carries `calibration_status` as a DICT
+    ({'calibrated': bool, 'basis': ...}); older/lite paths use a plain string. Normalize both."""
+    cs = (study or {}).get("calibration_status", "") if isinstance(study, dict) else ""
+    if isinstance(cs, dict):
+        c = cs.get("calibrated")
+        return "uncalibrated" if c is False else ("calibrated" if c else "unknown")
+    return str(cs or "unknown")
+
+
 # ── Context assembly — pure, unit-testable; reads only the patient-facing (plain, de-identified) report ──
 def build_context(report: dict) -> str:
     """Grounding text from the NORMALIZED report payload. Belt-and-suspenders fallback through
@@ -72,7 +82,7 @@ def build_context(report: dict) -> str:
     bottom = p.get("bottom_line") or agp.get("bottom_line") or ""
     kpts = p.get("key_points") or agp.get("key_points") or []
     lines = [
-        f"STUDY: {s.get('body_part', '?')} · {s.get('modality', '?')} · calibration: {s.get('calibration_status', '?')}",
+        f"STUDY: {s.get('body_part', '?')} · {s.get('modality', '?')} · calibration: {_calibration_label(s)}",
         f"BOTTOM LINE: {bottom}",
     ]
     for i, f in enumerate(findings, 1):
@@ -140,8 +150,8 @@ def answer_case_question(job_id, report, question, history, *, model, effort, ti
     # STRIP the offending mm token(s), don't discard the whole answer — keeps a useful plain reply while
     # guaranteeing no fabricated measurement survives (nuking the answer would destroy a correct, helpful reply
     # over an incidental "5 mm slice thickness" — a usefulness regression against the feature's purpose).
-    cal = ((report.get("study", {}) or {}).get("calibration_status", "") or "") if isinstance(report, dict) else ""
-    if "uncalibrat" in cal.lower() or cal.strip().upper().startswith("UNCALIBRATED"):
+    study = (report.get("study") or {}) if isinstance(report, dict) else {}
+    if "uncalibrat" in _calibration_label(study).lower():
         if _MM_RE.search(text):
             text = _MM_RE.sub("a size that can't be measured exactly on this uncalibrated study", text).strip()
             if "doctor" not in text.lower():
