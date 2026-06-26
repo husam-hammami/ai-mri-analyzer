@@ -44,3 +44,34 @@ translation layer; the drawer chrome uses the existing `L()`/`AR_UI` i18n.)
 
 ## Primary risk
 Rigid 3-section answers feel robotic → keep sections soft; one-paragraph answers allowed.
+
+---
+
+## v2 — the "wow" elevation (/daedalus refine, 2026-06-26)
+Fine → genuinely premium, by making the drawer feel like **MIKA itself speaking**, not a chatbot. Three moves:
+
+1. **Brand presence — the MIKA helix coin (kills the cheap speech-bubble).** The assistant avatar is the REAL
+   silver helix mark, cropped from `frontend/assets/logo.png` (the left ~620px helix) onto a small **dusk-navy
+   circle** (`#0A0F1D`) so the metallic mark reads correctly on a light surface — a little "MIKA coin." Build
+   crops a transparent PNG `frontend/assets/brand/mika-mark.png` (DON'T re-draw it as SVG — use the real raster,
+   per house rule). Sizes: 26px in the header + answer speaker, 40px in the empty state. The **thinking state is
+   this coin breathing** (1.6s opacity+scale pulse) under "MIKA is reading your report…" — branded, calm, the
+   signature wow detail.
+
+2. **Answers are beautifully-typeset NOTES, markdown-rendered.** The model returns markdown (`**bold**`, line
+   breaks, "What this means for you:" / "Next step:" labels). Build a tiny inline renderer (no library): `**x**`
+   → semibold ink, blank lines → paragraph spacing, `- ` → a clean bullet, and bold "Label:" leads → a quiet
+   **accent-colored mini-label**. Generous leading (1.66), comfortable measure. The note carries the MIKA coin
+   as the speaker at its top-left + a hairline border + 14px radius — and echoes the Read screen's own answer
+   box (same single accent) so chat and report share one visual language. NO literal asterisks ever again.
+
+3. **A warm, premium empty state + personal anchoring.** The 40px coin, a calm line ("Ask me anything about
+   this scan — I'll keep it plain."), the study shown subtly in the header subtitle ("your brain MRI") so it
+   feels personal/anchored, and the 3 starter chips as elegant pills. The patient's own question stays a quiet
+   right-aligned bubble so the branded answer is the hero.
+
+**Motion (native):** drawer slide-in 240ms ease-out (inline-end; RTL flips); answer note fade+rise 8px/220ms;
+the coin breathes 1.6s in the thinking state; `prefers-reduced-motion` → fades only, no pulse/slide.
+**Palette unchanged:** single accent `#2563EB`, dusk-navy coin, near-white surfaces — no new hue, no glass.
+**Build notes for /katana:** crop the helix coin asset; add the markdown mini-renderer; swap the speaker glyph
+to the coin everywhere; header subtitle = the study line; keep RTL flip + i18n + the no-scroll thread.

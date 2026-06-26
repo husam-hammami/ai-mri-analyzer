@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MIKA — Clinical Imaging Intelligence</title>
+  <title>MIKA — Understand your medical imaging</title>
   <meta name="description" content="MIKA — From scan to clear answers. Patient-first AI reading of MRI / CT / X-ray scans, every finding shown with certainty and an annotated proof image." />
   <!-- mika-mark (recolorable helix) as favicon -->
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg viewBox='0 0 56 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%232563EB' stroke-linecap='round'%3E%3Cg opacity='0.4' stroke-width='3'%3E%3Cpath d='M12 24 Q28 15 44 24'/%3E%3Cpath d='M12 40 Q28 31 44 40'/%3E%3Cpath d='M12 56 Q28 47 44 56'/%3E%3C/g%3E%3Cg stroke-width='4'%3E%3Cpath d='M12 24 Q28 33 44 24'/%3E%3Cpath d='M12 40 Q28 49 44 40'/%3E%3Cpath d='M12 56 Q28 65 44 56'/%3E%3C/g%3E%3C/g%3E%3Ccircle cx='28' cy='40' r='4.2' fill='%231D4ED8'/%3E%3C/svg%3E" />
@@ -670,7 +670,22 @@
     @keyframes chatIn { from{ transform:translateX(16px); opacity:0; } to{ transform:none; opacity:1; } }
     @media (prefers-reduced-motion: reduce) { .chat-drawer{ animation:none; } .chat-mark-pulse{ animation:none !important; } }
     .chat-head { display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line-soft); }
-    .chat-mark { width:26px; height:26px; border-radius:50%; background:var(--accent); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .chat-mark { width:26px; height:26px; border-radius:50%; background:#0A0F1D; overflow:hidden; flex-shrink:0; display:block; box-shadow:0 0 0 1px rgba(255,255,255,0.05); }
+    .chat-mark img { width:100%; height:100%; object-fit:cover; display:block; }
+    .chat-mark-lg { width:46px; height:46px; }
+    .chat-head-t { flex:1; min-width:0; }
+    .chat-head-title { font-size:14px; font-weight:600; color:var(--ink); line-height:1.2; }
+    .chat-head-sub { font-size:11.5px; color:var(--slate-300); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .chat-empty { display:flex; flex-direction:column; align-items:center; text-align:center; gap:13px; padding:26px 8px 6px; }
+    .chat-empty-line { font-size:14px; color:var(--slate); line-height:1.6; max-width:250px; }
+    .chat-a { display:flex; gap:9px; align-items:flex-start; }
+    .chat-a-mark { margin-top:1px; }
+    .chat-md-p { margin:0 0 8px; }
+    .chat-md-p:last-child { margin-bottom:0; }
+    .chat-md-p strong { font-weight:600; color:var(--ink); }
+    .chat-md-lead { font-weight:600; color:var(--accent-strong); }
+    .chat-md-ul { margin:2px 0 8px; padding-inline-start:18px; display:flex; flex-direction:column; gap:5px; }
+    .chat-md-ul li { font-size:13.5px; line-height:1.5; }
     .chat-mark-pulse { animation: chatBreath 1.6s var(--ease-calm) infinite; }
     @keyframes chatBreath { 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
     .chat-scope { font-size:11px; color:var(--slate); background:var(--surface-2); border:1px solid var(--line); padding:3px 9px; border-radius:999px; white-space:nowrap; }
@@ -681,7 +696,7 @@
     .chat-q { align-self:flex-end; max-width:82%; }
     .chat-q .bub { display:inline-block; background:var(--surface-2); color:var(--ink); font-size:13.5px; line-height:1.5; padding:9px 13px; border-radius:14px 14px 4px 14px; }
     .chat-a { max-width:94%; }
-    .chat-note { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:13px 15px; font-size:13.5px; line-height:1.62; color:var(--ink); white-space:pre-wrap; }
+    .chat-note { flex:1; min-width:0; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:13px 15px; font-size:13.5px; line-height:1.66; color:var(--ink); }
     .chat-think { display:flex; align-items:center; gap:9px; font-size:13px; color:var(--slate); }
     .chat-err { font-size:13px; color:#b91c1c; }
     .chat-foot { padding:12px 16px 16px; border-top:1px solid var(--line-soft); }
@@ -821,9 +836,9 @@
 
     /* ═══════════════ Constants & maps ═══════════════ */
     const COPY = {
-      brand: { name:'MIKA', sub:'Clinical imaging intelligence', tagline:'From scan to clear answers.' },
+      brand: { name:'MIKA', sub:'Understand your medical imaging', tagline:'From scan to clear answers.' },
       home: {
-        pretitle: 'Clinical imaging intelligence',
+        pretitle: 'Understand your medical imaging',
         title1: 'From scan to clear ', titleAccent: 'answers', title2: '.',
         sub: 'Upload an imaging study. MIKA will organize the images, measurements, and proof views into a clear read.',
         dropTitle: 'Upload an imaging study', dropSub: 'DICOM folders, ZIP files, or standard image formats',
@@ -857,7 +872,7 @@
     // Medical CONTENT is NOT translated here — it comes from the backend Arabic block (services/arabic).
     let UI_LANG = 'en';
     const AR_UI = {
-      'Clinical imaging intelligence':'ذكاء التصوير الطبي',
+      'Understand your medical imaging':'افهم تصويرك الطبي',
       'From scan to clear answers.':'من الصورة إلى إجابات واضحة.',
       'From scan to clear ':'من الصورة إلى ','answers':'إجابات',
       'Upload an imaging study. MIKA will organize the images, measurements, and proof views into a clear read.':'ارفع دراسة تصويرية. ستنظّم MIKA الصور والقياسات وصور الإثبات في قراءة واضحة.',
@@ -978,6 +993,7 @@
       'MIKA is reading your report…':'تقرأ MIKA تقريرك…',
       "Couldn't answer just now — try again":'تعذّر الرد الآن — حاول مرة أخرى',
       'Ask in your own words…':'اسأل بكلماتك الخاصة…','view on scan':'اعرض على الصورة',
+      "Ask me anything about this scan — I'll keep it plain.":'اسألني أي شيء عن هذه الدراسة — وسأبقيها بسيطة.',
       'What does my result mean in simple terms?':'ماذا تعني نتيجتي بكلمات بسيطة؟',
       'Is this something I should worry about?':'هل هذا أمر يستدعي القلق؟',
       'What should I ask my doctor next?':'ما الذي ينبغي أن أسأل طبيبي عنه تالياً؟',
@@ -1750,7 +1766,7 @@
           <div className="sb-logo">
             <picture>
               <source srcSet="/assets/logo.webp" type="image/webp" />
-              <img src="/assets/logo.png" alt="MIKA — Clinical Imaging Intelligence" />
+              <img src="/assets/logo.png" alt="MIKA — Understand your medical imaging" />
             </picture>
           </div>
           <nav className="sb-nav">
@@ -1907,7 +1923,7 @@
               <button className={uiPrefs.view==='plain'?'on':''} onClick={()=>setUiPrefs(p=>({...p, view:'plain'}))}>{L('Plain language')}</button>
               <button className={uiPrefs.view==='clinician'?'on':''} onClick={()=>setUiPrefs(p=>({...p, view:'clinician'}))}>{L('Clinician')}</button>
             </div>
-            {chatAvail && <button className="btn btn-ghost btn-sm" onClick={onAsk}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg> {L('Ask about your read')}</button>}
+            {chatAvail && <button className="btn btn-ghost btn-sm" onClick={onAsk}><img src="/assets/brand/mika-mark.png" alt="" aria-hidden="true" style={{width:'16px',height:'16px',borderRadius:'50%',background:'#0A0F1D',verticalAlign:'-3px',marginInlineEnd:'4px'}} /> {L('Ask about your read')}</button>}
             <button className="btn btn-primary btn-sm" onClick={()=>onDownload(reportKind)} disabled={vm && !canDownload}>{I.download({width:15,height:15})} {downloadLabel}</button>
           </div>
         </div>
@@ -2806,13 +2822,31 @@
       return { ...EMPTY_JOB, id:jobId, status:'loading', progress:0, message:'Opening saved read...' };
     }
 
-    // Case chat — "Beside": a calm reading companion, not a chatbot. Answers are plain "notes", not bubbles.
-    // P1 = text Q&A + the calm look + states. The "view on scan" peek (anchor → body marker) is P2 (grounding).
-    const CHAT_MARK = (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-    );
+    // Tiny markdown renderer for chat answers (no library): **bold**, blank-line paragraphs, "- " bullets,
+    // and a leading "**Label:**" → a quiet accent mini-label. Kills literal asterisks; degrades to plain text.
+    function renderMarkdown(text) {
+      const inline = (str) => str.split(/(\*\*[^*]+\*\*)/g).map((seg, i) =>
+        /^\*\*[^*]+\*\*$/.test(seg) ? <strong key={i}>{seg.slice(2, -2)}</strong> : seg);
+      const out = []; let li = [];
+      const flush = () => { if (li.length) { out.push(<ul className="chat-md-ul" key={'u'+out.length}>{li}</ul>); li = []; } };
+      String(text || '').split('\n').forEach((raw, i) => {
+        const s = raw.trim();
+        if (!s) { flush(); return; }
+        if (/^[-*]\s+/.test(s)) { li.push(<li key={i}>{inline(s.replace(/^[-*]\s+/, ''))}</li>); return; }
+        flush();
+        const m = s.match(/^\*\*([^*]+:)\*\*\s*(.*)$/);
+        out.push(m
+          ? <p className="chat-md-p" key={i}><span className="chat-md-lead">{m[1]}</span> {inline(m[2])}</p>
+          : <p className="chat-md-p" key={i}>{inline(s)}</p>);
+      });
+      flush();
+      return out;
+    }
+    // Case chat — "Beside" v2: MIKA itself speaking. The assistant presence is the real helix mark (a dusk coin,
+    // cropped from the logo raster), answers are markdown-typeset notes, the thinking state is the coin breathing.
+    const CHAT_MARK = <img src="/assets/brand/mika-mark.png" alt="" aria-hidden="true" />;
     const CHAT_CHIPS = ['What does my result mean in simple terms?', 'Is this something I should worry about?', 'What should I ask my doctor next?'];
-    function ChatDrawer({ jobId, onClose }) {
+    function ChatDrawer({ jobId, studyLabel, onClose }) {
       const [msgs, setMsgs] = useState([]);     // [{role:'user'|'assistant', text}]
       const [busy, setBusy] = useState(false);
       const [err, setErr] = useState(false);
@@ -2832,15 +2866,26 @@
         <div className="chat-drawer" role="dialog" aria-label={L('Ask about your read')}>
           <div className="chat-head">
             <span className="chat-mark">{CHAT_MARK}</span>
-            <div style={{flex:1, minWidth:0, fontSize:'14px', fontWeight:600, color:'var(--ink)'}}>{L('Ask about your read')}</div>
+            <div className="chat-head-t">
+              <div className="chat-head-title">{L('Ask about your read')}</div>
+              {studyLabel && <div className="chat-head-sub">{studyLabel}</div>}
+            </div>
             <span className="chat-scope">{L('this study only')}</span>
             <button className="chat-x" onClick={onClose} aria-label="Close">×</button>
           </div>
           <div className="chat-thread" ref={threadRef}>
-            {msgs.length === 0 && !busy && <div className="chat-hint">{L('Ask me anything about this scan.')}</div>}
+            {msgs.length === 0 && !busy && (
+              <div className="chat-empty">
+                <span className="chat-mark chat-mark-lg">{CHAT_MARK}</span>
+                <div className="chat-empty-line">{L("Ask me anything about this scan — I'll keep it plain.")}</div>
+              </div>
+            )}
             {msgs.map((m, i) => m.role === 'user'
               ? <div className="chat-q" key={i}><div className="bub">{m.text}</div></div>
-              : <div className="chat-a" key={i}><div className="chat-note">{m.text}</div></div>)}
+              : <div className="chat-a" key={i}>
+                  <span className="chat-mark chat-a-mark">{CHAT_MARK}</span>
+                  <div className="chat-note">{renderMarkdown(m.text)}</div>
+                </div>)}
             {busy && <div className="chat-think"><span className="chat-mark chat-mark-pulse">{CHAT_MARK}</span>{L('MIKA is reading your report…')}</div>}
             {err && <div className="chat-err">{L("Couldn't answer just now — try again")}</div>}
           </div>
@@ -3329,7 +3374,7 @@
             </div>
           </div>
           {showAbout && <AboutModal onClose={()=>setShowAbout(false)} />}
-          {chatOpen && !dm && job.id && <ChatDrawer jobId={job.id} onClose={()=>setChatOpen(false)} />}
+          {chatOpen && !dm && job.id && <ChatDrawer jobId={job.id} studyLabel={(effVm && effVm.study) ? [effVm.study.body_part, effVm.study.modality].filter(Boolean).join(' · ') : ''} onClose={()=>setChatOpen(false)} />}
           {showConnect && <ConnectModal connection={connection} authSession={authSession} checking={checkingConn}
             onConnect={()=>connectClaude('browser')} onUseCode={()=>retryAuth('code')} onSubmitCode={submitAuthCode}
             onRetry={()=>retryAuth('browser')} onCancel={cancelAuth} onRecheck={checkConnection}
