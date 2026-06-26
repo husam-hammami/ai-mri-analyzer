@@ -606,6 +606,132 @@
       .lab-scan { max-width:260px; order:2; margin-inline:auto; }
     }
 
+    /* Lab redesign - compact result workspace */
+    .page-lab-home { max-width:680px; }
+    .page-lab-home .home-title { font-size:28px; line-height:1.15; }
+    .page-lab-read { display:flex; flex-direction:column; gap:var(--s-4); padding-top:var(--s-4); }
+    .page-lab-read > * + * { margin-top:0; }
+    .lab-workspace { display:grid; grid-template-columns:minmax(0, 1fr) minmax(286px, 330px); gap:var(--s-6); align-items:start; min-height:0; }
+    .lab-main, .lab-side { min-width:0; }
+    .lab-main { display:flex; flex-direction:column; gap:var(--s-4); }
+    .lab-side { display:flex; flex-direction:column; gap:var(--s-4); position:sticky; top:0; }
+    .lab-verdict { display:block; background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:var(--s-5); box-shadow:var(--shadow-sm); }
+    .lab-eyebrow { font-size:11px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; color:var(--slate-300); margin-bottom:var(--s-3); }
+    .lab-takeaway { font-size:32px; line-height:1.12; font-weight:700; color:var(--ink); letter-spacing:-.01em; margin-bottom:var(--s-4); text-wrap:balance; }
+    .lab-verdict-meta { display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap; margin-bottom:var(--s-4); }
+    .lab-count { min-height:32px; gap:8px; font-size:13px; font-weight:700; padding:5px 12px; border-radius:8px; }
+    .lab-count-n { min-width:24px; height:24px; border-radius:6px; font-weight:800; box-shadow:none; }
+    .lab-ratio { font-size:13.5px; line-height:1.45; color:var(--slate); }
+    .lab-stat-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:var(--s-2); margin-top:var(--s-4); }
+    .lab-stat { border:1px solid var(--line-soft); background:var(--surface-2); border-radius:8px; padding:10px 12px; }
+    .lab-stat-k { display:block; font-size:10.5px; line-height:1.2; font-weight:700; letter-spacing:.55px; text-transform:uppercase; color:var(--slate-300); margin-bottom:4px; }
+    .lab-stat-v { display:block; font-size:18px; line-height:1.1; font-weight:750; color:var(--ink); }
+
+    .lab-stream { position:relative; min-height:360px; border-radius:8px; overflow:hidden; isolation:isolate; background:
+      radial-gradient(70% 62% at 50% 42%, rgba(91,141,239,.18), rgba(91,141,239,0) 64%),
+      linear-gradient(180deg, #fbfdff 0%, #eef6ff 48%, #f8fafc 100%);
+      border:1px solid var(--accent-line); box-shadow:0 12px 34px rgba(15,23,42,.10), inset 0 0 0 1px rgba(255,255,255,.74); perspective:900px; }
+    .lab-stream img { position:absolute; z-index:1; left:50%; top:50%; width:138%; height:auto; max-width:none; min-height:0; object-fit:contain; display:block;
+      transform:translate3d(-50%,-50%,0) rotateY(-3deg); transform-origin:center; opacity:.96;
+      filter:saturate(.96) contrast(1.02) drop-shadow(0 16px 26px rgba(49,78,128,.16)); animation:labStreamFloat 10s var(--ease-calm) infinite; }
+    .lab-stream::after { content:''; position:absolute; inset:0; z-index:4; pointer-events:none;
+      background:linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,0) 31%, rgba(255,255,255,.34)),
+        radial-gradient(78% 58% at 50% 50%, transparent 52%, rgba(248,250,252,.72) 100%); }
+    .lab-stream-particles { position:absolute; z-index:2; inset:8% 22%; pointer-events:none; opacity:.22; mix-blend-mode:multiply;
+      background-image:
+        radial-gradient(circle at 24% 18%, rgba(37,99,235,.50) 0 2px, transparent 3px),
+        radial-gradient(circle at 64% 34%, rgba(14,165,233,.36) 0 2px, transparent 3px),
+        radial-gradient(circle at 46% 64%, rgba(148,163,184,.34) 0 1.5px, transparent 3px),
+        radial-gradient(circle at 72% 76%, rgba(37,99,235,.34) 0 1.5px, transparent 3px);
+      background-size:92px 154px; animation:labParticleFlow 14s linear infinite;
+      -webkit-mask-image:linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%);
+      mask-image:linear-gradient(90deg, transparent 0%, #000 24%, #000 76%, transparent 100%); }
+    .lab-stream-pulse { position:absolute; z-index:3; top:-22%; bottom:-22%; left:42%; width:18%; pointer-events:none; opacity:0;
+      background:linear-gradient(180deg, transparent 0%, rgba(91,141,239,.08) 22%, rgba(91,141,239,.48) 48%, rgba(255,255,255,.68) 52%, rgba(91,141,239,.10) 76%, transparent 100%);
+      filter:blur(11px); transform:translateY(-120%) skewX(-8deg); mix-blend-mode:screen; }
+    .lab-stream.reading img { animation-duration:7s; }
+    .lab-stream.reading .lab-stream-particles { opacity:.38; animation-duration:6.5s; mix-blend-mode:multiply; }
+    .lab-stream.reading .lab-stream-pulse { animation:labStreamPulse 3.1s var(--ease-calm) infinite; }
+    @keyframes labStreamFloat { 0%,100%{ transform:translate3d(-50%,-50%,0) rotateY(-3deg) rotateZ(-.35deg); } 50%{ transform:translate3d(-50%,-51.4%,18px) rotateY(3deg) rotateZ(.35deg); } }
+    @keyframes labParticleFlow { from{ background-position:0 0, 0 0, 0 0, 0 0; } to{ background-position:0 -308px, 0 -308px, 0 -308px, 0 -308px; } }
+    @keyframes labStreamPulse { 0%,18%{ opacity:0; transform:translateY(-120%) skewX(-8deg); } 46%{ opacity:.95; } 74%,100%{ opacity:0; transform:translateY(120%) skewX(-8deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      .lab-stream img, .lab-stream-particles, .lab-stream.reading .lab-stream-pulse { animation:none; }
+      .lab-stream-particles, .lab-stream-pulse { opacity:0; }
+    }
+
+    .lab-section-head { display:flex; align-items:flex-end; justify-content:space-between; gap:var(--s-3); }
+    .lab-section-title { font-size:11px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; color:var(--slate-300); }
+    .lab-section-sub { font-size:12.5px; color:var(--slate); }
+    .lab-flags { display:flex; flex-direction:column; gap:var(--s-3); }
+    .lab-clean-panel { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:var(--s-5); color:var(--slate); font-size:13.5px; line-height:1.6; }
+    .lab-frow { padding:0; cursor:default; overflow:hidden; border-radius:8px; background:var(--surface); }
+    .lab-frow.active { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-glow); }
+    .lab-frow-hd { width:100%; text-align:start; background:transparent; border:none; cursor:pointer; padding:var(--s-4); display:block; }
+    .lab-card-grid { display:grid; grid-template-columns:34px minmax(0, 1fr); gap:var(--s-3); align-items:start; }
+    .lab-card-index { display:flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:7px; background:var(--surface-2);
+      color:var(--slate); font-size:12px; font-weight:800; box-shadow:inset 0 0 0 1px var(--line); }
+    .lab-frow.active .lab-card-index { background:var(--accent); color:#fff; box-shadow:none; }
+    .lab-card-top { display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap; margin-bottom:var(--s-2); }
+    .lab-name { font-size:16px; line-height:1.25; font-weight:700; color:var(--ink); }
+    .lab-result-line { display:flex; align-items:baseline; gap:var(--s-2); flex-wrap:wrap; margin-bottom:var(--s-2); }
+    .lab-result-value { font-size:21px; line-height:1.1; font-weight:750; color:var(--ink); }
+    .lab-result-range { font-size:12.5px; color:var(--slate); }
+    .lab-severity { font-size:12.5px; color:var(--accent-strong); font-weight:650; }
+    .lab-mean { font-size:13px; color:var(--slate); line-height:1.5; margin-top:0; max-width:62ch; }
+    .lab-frow .frow-extra { margin:0 var(--s-4) var(--s-4) calc(var(--s-4) + 46px); padding-top:var(--s-3); border-top:1px solid var(--line-soft); }
+    .lab-reveal-tabs { display:flex; gap:var(--s-2); margin-bottom:var(--s-3); }
+    .lab-reveal-tabs button { min-height:32px; font-size:12px; font-weight:700; color:var(--slate); background:var(--surface);
+      border:1px solid var(--line); border-radius:7px; padding:6px 11px; cursor:pointer; }
+    .lab-reveal-tabs button.on { color:#fff; background:var(--accent); border-color:var(--accent); }
+    .lab-numbers { border:1px solid var(--line-soft); background:var(--surface-2); border-radius:8px; padding:var(--s-3); }
+    .lab-kv > span:last-child { font-weight:700; text-align:end; }
+    .lrange-rail { height:7px; background:var(--surface); box-shadow:inset 0 0 0 1px var(--line); }
+    .lrange-cap { font-weight:700; }
+    .lab-proof-img, .lab-proof-na { border-radius:8px; }
+
+    .page-lab-wait { padding-top:var(--s-4); min-height:calc(100vh - 78px); display:flex; align-items:flex-start; }
+    .lab-wait-grid { width:100%; display:grid; grid-template-columns:minmax(0, 1fr) minmax(360px, 430px); gap:var(--s-8); align-items:stretch; }
+    .lab-wait-main { min-width:0; display:flex; flex-direction:column; gap:var(--s-4); }
+    .lab-wait-card { background:var(--surface); border:1px solid var(--line); border-radius:8px; padding:var(--s-6); box-shadow:var(--shadow-sm); }
+    .page-lab-wait .wait-heading { font-size:36px; line-height:1.08; letter-spacing:-.01em; margin-bottom:var(--s-5); }
+    .page-lab-wait .stepper { max-width:620px; margin:var(--s-5) 0 var(--s-5); }
+    .page-lab-wait .wait-live { max-width:none; margin-bottom:0; min-height:44px; display:flex; align-items:center; font-size:14px; border-radius:8px; }
+    .lab-wait-progress { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:var(--s-3); align-items:center; margin-top:var(--s-5); padding-top:var(--s-5); border-top:1px solid var(--line-soft); }
+    .lab-wait-progress .pbar { grid-column:1 / -1; }
+    .lab-wait-progress-k { font-size:10.5px; line-height:1.2; font-weight:800; letter-spacing:.6px; text-transform:uppercase; color:var(--slate-300); }
+    .lab-wait-progress-v { font-size:22px; line-height:1; font-weight:800; color:var(--ink); }
+    .lab-wait-board { display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:var(--s-3); }
+    .lab-wait-stage { min-height:112px; border:1px solid var(--line); border-radius:8px; background:var(--surface); padding:var(--s-4); display:flex; flex-direction:column; gap:var(--s-3); }
+    .lab-wait-stage.done, .lab-wait-stage.active { border-color:var(--accent-line); background:linear-gradient(180deg, var(--accent-soft), var(--surface)); }
+    .lab-wait-stage.active { box-shadow:0 0 0 3px var(--accent-glow); }
+    .lab-wait-stage-ico { width:34px; height:34px; border-radius:8px; display:flex; align-items:center; justify-content:center; background:var(--surface-2); color:var(--slate); box-shadow:inset 0 0 0 1px var(--line); }
+    .lab-wait-stage.done .lab-wait-stage-ico, .lab-wait-stage.active .lab-wait-stage-ico { background:var(--accent); color:#fff; box-shadow:none; }
+    .lab-wait-stage-t { font-size:13px; line-height:1.35; font-weight:750; color:var(--ink); }
+    .lab-wait-stage-s { margin-top:auto; font-size:11.5px; font-weight:700; color:var(--slate-300); }
+    .lab-wait-stage.done .lab-wait-stage-s, .lab-wait-stage.active .lab-wait-stage-s { color:var(--accent-strong); }
+    .lab-wait-side { min-width:0; display:flex; flex-direction:column; gap:var(--s-4); }
+    .lab-wait-side .lab-stream { min-height:430px; flex:1; }
+    .lab-wait-note { color:var(--slate-300); font-size:12px; line-height:1.5; padding-inline:2px; }
+    .lab-drawers { display:flex; flex-direction:column; gap:var(--s-3); }
+    .lab-normals, .lab-other { border-radius:8px; overflow:hidden; }
+    .lab-cov .cov-name { font-weight:650; }
+    .lab-normals-body ul, .lab-other-body ul { columns:1; font-size:12.5px; line-height:1.45; }
+    .lab-normals-body li, .lab-other-body li { margin-bottom:4px; break-inside:avoid; }
+
+    @media (max-width: 920px) {
+      .lab-workspace, .lab-wait-grid { grid-template-columns:minmax(0,1fr); }
+      .lab-side { position:static; }
+      .page-lab-wait { min-height:0; }
+      .page-lab-wait .wait-heading { font-size:30px; }
+      .lab-wait-board { grid-template-columns:minmax(0,1fr); }
+      .lab-wait-side .lab-stream { min-height:300px; }
+      .lab-stream { min-height:260px; }
+      .lab-stream img { width:118%; }
+      .lab-stat-grid { grid-template-columns:repeat(2, minmax(0,1fr)); }
+      .lab-frow .frow-extra { margin-inline-start:var(--s-4); }
+    }
+
     .proof { background: var(--surface); border:1px solid var(--line); border-radius: var(--r-lg); overflow:hidden; box-shadow: var(--shadow-sm); }
     .proof-head { padding: var(--s-4) var(--s-5); border-bottom:1px solid var(--line-soft); }
     .proof-title { font-size:15px; font-weight:600; color: var(--ink); margin-bottom:6px; }
@@ -911,7 +1037,7 @@
     }
 
     /* headings receive programmatic focus on screen change (a11y) but shouldn't show a ring */
-    .home-title:focus, .wait-heading:focus, .read-bottom-line:focus, .eb-t:focus { outline: none; }
+    .home-title:focus, .wait-heading:focus, .read-bottom-line:focus, .lab-takeaway:focus, .eb-t:focus { outline: none; }
     /* visible focus for real keyboard targets */
     .btn:focus-visible, .frow:focus-visible, .sb-item:focus-visible, .toggle button:focus-visible,
     .clin-link:focus-visible, .field:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -2468,6 +2594,16 @@
 
     // Lab WAIT — labs have no slices/sequences/anatomy, so they get their OWN reading screen:
     // the bloodstream visual + the three real lab phases (see _run_lab_pipeline). Never the body figure.
+    function LabStreamVisual({ reading=false }) {
+      return (
+        <div className={`lab-stream ${reading?'reading':''}`} aria-hidden="true">
+          <img src="/assets/brand/lab-stream-evidence-artifact.webp" alt="" loading="lazy" />
+          <span className="lab-stream-particles" />
+          <span className="lab-stream-pulse" />
+        </div>
+      );
+    }
+
     function LabWaitScreen({ progress }) {
       const pct = Math.round((progress && progress.progress) || 0);
       const steps = COPY.lab.waitSteps;
@@ -2477,32 +2613,47 @@
       const fillPct = (activeIdx / (steps.length - 1)) * 100;
       const STEP_ICON = [I.droplet, I.target, I.reading];
       const live = (progress && (progress.message || '').trim()) || L(steps[activeIdx]);
+      const phaseCards = steps.map((s, i) => {
+        const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'todo';
+        return { label:s, state, Icon:STEP_ICON[i] || I.droplet };
+      });
       return (
         <div className="page-inner page-lab-wait fade-up">
           <div className="lab-wait-grid">
             <div className="lab-wait-main">
-              <h1 className="wait-heading">{L(COPY.lab.waitHeading)}</h1>
-              <div className="stepper" role="list" aria-label="Reading progress">
-                <div className="stepper-track" aria-hidden="true"><div className="stepper-fill" style={{ width:`${fillPct}%` }} /></div>
-                {steps.map((s, i) => {
-                  const state = i < activeIdx ? 'done' : i === activeIdx ? 'active' : 'todo';
-                  const Ico = STEP_ICON[i] || I.droplet;
-                  return (
-                    <div className={`step ${state}`} key={i} role="listitem" aria-current={state==='active'?'step':undefined}>
-                      <div className="step-node">{state==='done' ? I.check({ width:18, height:18 }) : Ico({ width:19, height:19 })}</div>
-                      <div className="step-label">{L(s)}</div>
-                    </div>
-                  );
-                })}
+              <div className="lab-wait-card">
+                <h1 className="wait-heading">{L(COPY.lab.waitHeading)}</h1>
+                <div className="stepper" role="list" aria-label="Reading progress">
+                  <div className="stepper-track" aria-hidden="true"><div className="stepper-fill" style={{ width:`${fillPct}%` }} /></div>
+                  {phaseCards.map(({ label, state, Icon }, i) => (
+                      <div className={`step ${state}`} key={i} role="listitem" aria-current={state==='active'?'step':undefined}>
+                        <div className="step-node">{state==='done' ? I.check({ width:18, height:18 }) : Icon({ width:19, height:19 })}</div>
+                        <div className="step-label">{L(label)}</div>
+                      </div>
+                    ))}
+                </div>
+                <div className="wait-live" role="status" aria-live="polite">{live}</div>
+                <div className="lab-wait-progress" aria-label="Lab read progress">
+                  <span className="lab-wait-progress-k">{L('Progress')}</span>
+                  <span className="lab-wait-progress-v"><Num>{pct}</Num>%</span>
+                  <ProgressBar value={pct} />
+                </div>
               </div>
-              <div className="wait-live" role="status" aria-live="polite">{live}</div>
+              <div className="lab-wait-board" aria-label="Lab read phases">
+                {phaseCards.map(({ label, state, Icon }, i) => (
+                  <div className={`lab-wait-stage ${state}`} key={i}>
+                    <div className="lab-wait-stage-ico">{state==='done' ? I.check({ width:17, height:17 }) : Icon({ width:18, height:18 })}</div>
+                    <div className="lab-wait-stage-t">{L(label)}</div>
+                    <div className="lab-wait-stage-s">{L(state === 'done' ? 'Done' : state === 'active' ? 'Now' : 'Next')}</div>
+                  </div>
+                ))}
+              </div>
               <div className="safe-leave">{I.bell({})}{L(COPY.wait.safe)}</div>
             </div>
-            <div className="lab-scan reading" aria-hidden="true">
-              <div className="lab-scan-dish"><img src="/assets/brand/lab-sample.png" alt="" /></div>
-              <div className="lab-scan-sweep" />
-              <div className="lab-scan-ring" />
-            </div>
+            <aside className="lab-wait-side">
+              <LabStreamVisual reading />
+              <div className="lab-wait-note">{L('MIKA will open the report as soon as the read is complete.')}</div>
+            </aside>
           </div>
         </div>
       );
@@ -3070,19 +3221,31 @@
     }
 
     function LabFlagCard({ r, n, jobId, open, onToggle }) {
-      const [tab, setTab] = useState(null);   // 'numbers' | 'report'
+      const [tab, setTab] = useState(open ? 'numbers' : null);   // 'numbers' | 'report'
       const proofSrc = jobId ? `${API_BASE}/api/report/${jobId}/page/${r.page_index||0}` : null;
       const [proofOk, setProofOk] = useState(true);
+      useEffect(() => {
+        if (open && tab == null) setTab('numbers');
+      }, [open, tab]);
+      const valueText = [r.value, r.unit].filter(Boolean).join(' ');
       return (
         <div className={`frow lab-frow ${open?'active':''}`}>
           <button className="lab-frow-hd" aria-expanded={open} onClick={onToggle}>
-            <div className="frow-top">
-              <span className="frow-num">{n}</span>
-              <CertaintyChip certainty={r.confidence} />
+            <div className="lab-card-grid">
+              <span className="lab-card-index"><Num>{n}</Num></span>
+              <div>
+                <div className="lab-card-top">
+                  <span className="lab-name">{r.plain_name}</span>
+                  <CertaintyChip certainty={r.confidence} />
+                </div>
+                <div className="lab-result-line">
+                  {valueText && <span className="lab-result-value"><Num>{valueText}</Num></span>}
+                  {r.ref_range_text && <span className="lab-result-range">{L(COPY.lab.range)} <Num>{r.ref_range_text}</Num></span>}
+                  {r.severity_phrase && <span className="lab-severity">{r.severity_phrase}</span>}
+                </div>
+                {r.plain_meaning && <div className="lab-mean">{r.plain_meaning}</div>}
+              </div>
             </div>
-            <div className="frow-plain">{r.plain_name}</div>
-            {r.severity_phrase && <div className="frow-cap">{r.severity_phrase}</div>}
-            {r.plain_meaning && <div className="lab-mean">{r.plain_meaning}</div>}
           </button>
           {open && (
             <div className="frow-extra">
@@ -3147,8 +3310,11 @@
         <div className="page-inner page-lab-read fade-up">
           <div className="read-topnote" title={L(disclaimer)}><strong>{L('Important:')}</strong> {L(disclaimer)}</div>
 
-          <div className="lab-verdict">
-            <div className="lab-verdict-main">
+          <div className="lab-workspace">
+            <div className="lab-main">
+              <div className="lab-verdict">
+                <div className="lab-verdict-main">
+              <div className="lab-eyebrow">{L(COPY.lab.nav)}</div>
               <h1 className="lab-takeaway">{overall.takeaway}</h1>
               <div className="lab-verdict-meta">
                 <ConfidencePill label={confLabel} />
@@ -3157,23 +3323,33 @@
                   : <span className="lab-count"><span className="lab-count-n"><Num>{flagged.length}</Num></span> {L(COPY.lab.review)}</span>}
               </div>
               <div className="lab-ratio"><Num>{normalsN}</Num> {L(COPY.lab.ratio).replace('{checked}', String(checkedN))}</div>
-            </div>
-            <div className="lab-scan" aria-hidden="true">
-              <div className="lab-scan-dish"><img src="/assets/brand/lab-sample.png" alt="" /></div>
-              <div className="lab-scan-ring" />
-            </div>
-          </div>
+              <div className="lab-stat-grid" aria-label="Lab report summary">
+                <div className="lab-stat"><span className="lab-stat-k">{L('To review')}</span><span className="lab-stat-v"><Num>{flagged.length}</Num></span></div>
+                <div className="lab-stat"><span className="lab-stat-k">{L('Look normal')}</span><span className="lab-stat-v"><Num>{normalsN}</Num></span></div>
+                <div className="lab-stat"><span className="lab-stat-k">{L('Checked')}</span><span className="lab-stat-v"><Num>{checkedN}</Num></span></div>
+              </div>
+                </div>
+              </div>
 
-          {flagged.length > 0 && (
-            <div className="lab-flags">
-              <div className="thread-title">{L(COPY.lab.flaggedTitle)}</div>
-              {flagged.map((r, i) => (
-                <LabFlagCard key={i} r={r} n={i+1} jobId={jobId} open={openId===i} onToggle={()=>setOpenId(o=>o===i?-1:i)} />
-              ))}
+              {flagged.length > 0 ? (
+                <div className="lab-flags">
+                  <div className="lab-section-head">
+                    <div className="lab-section-title">{L(COPY.lab.flaggedTitle)}</div>
+                    <div className="lab-section-sub"><Num>{flagged.length}</Num> {L(COPY.lab.review)}</div>
+                  </div>
+                  {flagged.map((r, i) => (
+                    <LabFlagCard key={i} r={r} n={i+1} jobId={jobId} open={openId===i} onToggle={()=>setOpenId(o=>o===i?-1:i)} />
+                  ))}
+                </div>
+              ) : (
+                <div className="lab-clean-panel">{L(COPY.lab.allClearTitle)}. {L(COPY.lab.normalsHint)}</div>
+              )}
             </div>
-          )}
 
-          <div className="lab-normals">
+            <aside className="lab-side">
+              <LabStreamVisual />
+              <div className="lab-drawers">
+                <div className="lab-normals">
             <button className="cov-row lab-cov" aria-expanded={normalsOpen} onClick={()=>setNormalsOpen(o=>!o)}>
               <span className="cov-ico">{I.check({})}</span>
               <span className="cov-name"><Num>{normalsN}</Num> {L('of')} <Num>{checkedN}</Num> {L(COPY.lab.normalsTitle)}</span>
@@ -3200,6 +3376,9 @@
               )}
             </div>
           )}
+              </div>
+            </aside>
+          </div>
         </div>
       );
     }
