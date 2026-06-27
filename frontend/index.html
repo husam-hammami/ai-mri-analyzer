@@ -775,7 +775,7 @@
     .lab-demo-item { font-size:13px; font-weight:600; color:var(--slate); }
     .lab-demo-item:not(:last-child)::after { content:'·'; margin-inline-start:var(--s-4); color:var(--slate-300); }
     .lab-assess .lab-takeaway { margin-bottom:var(--s-3); }
-    .lab-assess-lead { display:block; font-size:15px; font-weight:600; letter-spacing:0; color:var(--slate); margin-bottom:6px; }
+    .lab-assess-lead { display:block; font-size:12.5px; font-weight:600; letter-spacing:.4px; text-transform:uppercase; color:var(--slate-300); margin-bottom:6px; }
     .lab-assess-expl { font-size:14.5px; line-height:1.55; color:var(--slate); max-width:64ch; margin:0 0 var(--s-4); }
     .lab-assess-support { display:flex; align-items:center; gap:var(--s-3); flex-wrap:wrap; }
     .lab-assess-support-k { font-size:10.5px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--slate-300); }
@@ -862,12 +862,15 @@
     .lab-verdict-text { min-width:0; }
     .lab-verdict-art { min-width:0; align-self:stretch; display:flex; }
     .lab-verdict-art .lab-stream { min-height:200px; width:100%; border-radius:8px; }
-    .lab-assess-based { font-size:13px; line-height:1.5; color:var(--slate); margin:0; }
-    .lab-assess-based-k { font-size:10.5px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--slate-300); margin-inline-end:6px; }
+    .lab-assess-based { display:flex; align-items:center; gap:var(--s-2); flex-wrap:wrap; margin:0; }
+    .lab-assess-based-k { font-size:10.5px; font-weight:700; letter-spacing:.6px; text-transform:uppercase; color:var(--slate-300); }
+    .lab-based-list { display:flex; gap:6px; flex-wrap:wrap; }
+    .lab-based-chip { font-size:12px; font-weight:600; color:var(--navy-700); background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:6px; padding:3px 8px; }
 
     /* The values: one calm toggle → a compact, low table. No cards/tiles/bars. */
     .lab-other-note { font-size:13px; color:var(--slate); margin:0 0 var(--s-3); }
-    .lab-todo-text { font-size:14px; line-height:1.6; color:var(--ink); margin:0; max-width:84ch; }
+    .lab-todo-lead { font-size:14.5px; line-height:1.5; font-weight:700; color:var(--ink); margin:0 0 6px; max-width:84ch; }
+    .lab-todo-text { font-size:14px; line-height:1.6; color:var(--slate); margin:0; max-width:84ch; }
     .lab-numbers-wrap { display:flex; flex-direction:column; gap:var(--s-3); }
     .lab-numbers-toggle { align-self:flex-start; display:inline-flex; align-items:center; gap:10px; min-height:40px;
       font-size:14px; font-weight:700; color:var(--accent-strong); background:var(--accent-soft);
@@ -3493,9 +3496,10 @@
           <h1 className="lab-takeaway"><span className="lab-assess-lead">{L(COPY.lab.assessmentLead)} </span>{name}</h1>
           {expl && <p className="lab-assess-expl">{expl}</p>}
           {sup.length > 0 && (
-            <p className="lab-assess-based">
-              <span className="lab-assess-based-k">{L(COPY.lab.assessmentBasedOn)}</span> {sup.join(' · ')}
-            </p>
+            <div className="lab-assess-based">
+              <span className="lab-assess-based-k">{L(COPY.lab.assessmentBasedOn)}</span>
+              <span className="lab-based-list">{sup.map((s, i) => <span className="lab-based-chip" key={i}>{s}</span>)}</span>
+            </div>
           )}
         </div>
       );
@@ -3646,10 +3650,14 @@
               not repeated here. */}
           <div className="lab-todo">
             <div className="lab-todo-h">{L(COPY.lab.helpTitle)}</div>
-            <p className="lab-todo-text">{
-              (assessment && (UI_LANG === 'ar' ? assessment.advice_ar : assessment.advice_en))
-                || L(COPY.lab.helpGeneric)
-            }</p>
+            {(() => {
+              const advice = (assessment && (UI_LANG === 'ar' ? assessment.advice_ar : assessment.advice_en)) || L(COPY.lab.helpGeneric);
+              const parts = String(advice).split(/(?<=[.!؟])\s+/).filter(Boolean);
+              // De-inlined: first sentence = the reassuring lead (bold), the rest reads as the body.
+              return parts.length > 1
+                ? <><p className="lab-todo-lead">{parts[0]}</p><p className="lab-todo-text">{parts.slice(1).join(' ')}</p></>
+                : <p className="lab-todo-text">{advice}</p>;
+            })()}
           </div>
 
           {/* Collapsed normals + low-clarity "Other results" — full width below the workspace. */}
