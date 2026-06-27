@@ -1405,6 +1405,9 @@
       'Plain language':'لغة مبسّطة','Clinician':'للطبيب',
       'Download report':'تنزيل التقرير','Download clinical report':'تنزيل التقرير السريري',
       'Sign in with Claude':'تسجيل الدخول عبر Claude','Checking sign-in…':'جارٍ التحقق…',
+      'Claude Code isn’t installed on this PC':'تطبيق Claude Code غير مُثبَّت على هذا الجهاز',
+      'MIKA reads through Claude Code — a free app from Anthropic that runs on your computer. Install it once, then reopen MIKA and sign in.':'يقرأ MIKA عبر Claude Code، وهو تطبيق مجاني من Anthropic يعمل على جهازك. ثبّته مرة واحدة، ثم أعد فتح MIKA وسجّل الدخول.',
+      'Install Claude Code':'تثبيت Claude Code','Already installed? Re-check':'مُثبَّت بالفعل؟ أعد الفحص',
       'What this may mean':'ما الذي قد يعنيه هذا','Change over time':'التغيّر عبر الزمن',
       'Findings':'النتائج','Notes':'ملاحظات',
       'Confirmed':'مؤكَّد','Likely':'مُرجَّح','Possible':'محتمل',
@@ -2571,6 +2574,7 @@
 
     function ConnectModal({ connection, authSession, checking, onConnect, onUseCode, onSubmitCode, onRetry, onCancel, onRecheck, onClose }) {
       const connected = connection && connection.connected;
+      const cliMissing = !!(connection && connection.claude_cli_found === false);
       const plan = connection && connection.subscription_type;
       const [code, setCode] = useState('');
       const state = (authSession && authSession.auth_state) || (connection && connection.auth_state) || '';
@@ -2581,7 +2585,7 @@
         <div className="overlay" onClick={onClose}>
           <div className="modal" onClick={e=>e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Sign in with Claude">
             <div className="modal-head">
-              <h2>{connected ? L('Signed in with Claude') : L('Sign in with your Claude subscription')}</h2>
+              <h2>{connected ? L('Signed in with Claude') : cliMissing ? L('Claude Code isn’t installed on this PC') : L('Sign in with your Claude subscription')}</h2>
               <button className="modal-x" onClick={onClose} aria-label="Close">×</button>
             </div>
             <div className="modal-body">
@@ -2593,6 +2597,18 @@
                       : `Claude is connected${plan && plan!=='api' ? ` (${String(plan).toUpperCase()} plan)` : ''}. You can upload a scan and start a read.`}
                   </p>
                   <button className="btn btn-primary" style={{width:'100%'}} onClick={onClose}>{L('Continue')}</button>
+                </>
+              ) : cliMissing ? (
+                <>
+                  <p className="founder-note" style={{marginBottom:'14px'}}>
+                    {L('MIKA reads through Claude Code — a free app from Anthropic that runs on your computer. Install it once, then reopen MIKA and sign in.')}
+                  </p>
+                  <button className="btn btn-primary" style={{width:'100%'}} onClick={()=>window.open('https://claude.com/claude-code','_blank')}>
+                    {L('Install Claude Code')}
+                  </button>
+                  <div style={{textAlign:'center', marginTop:'12px'}}>
+                    <button className="clin-link" style={{fontSize:'12px'}} disabled={checking} onClick={onRecheck}>{L('Already installed? Re-check')}</button>
+                  </div>
                 </>
               ) : (
                 <>
