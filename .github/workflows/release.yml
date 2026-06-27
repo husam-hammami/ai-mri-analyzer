@@ -1,0 +1,78 @@
+name: release
+
+# Tag a release (vX.Y.Z, matching electron/package.json version) → build the signed Windows installer
+# and publish it to GitHub Releases, where electron-updater pulls OTA updates from.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # create the GitHub Release + upload the installer/latest.yml
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Safety gate — run the full suite before building anything
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+          # 53 lab + 198 imaging safety tests must pass; packaging may never regress them.
+          python -m pytest backend/tests tests -q
+
+      - name: Preflight — version reconcile + load-bearing assets
+        shell: pwsh
+        run: |
+          $pkg = (Get-Content electron/package.json -Raw | ConvertFrom-Json).version
+          $m   = Select-String -Path backend/app.py -Pattern 'version\s*=\s*"([0-9][0-9.]*)"' | Select-Object -First 1
+          $be  = $m.Matches.Groups[1].Value
+          if ($pkg -ne $be) { throw "version mismatch: electron $pkg vs backend $be — reconcile before release (Phase C step 12)" }
+          if (-not (Test-Path backend/skills/mri-spine-analysis/SKILL.md)) { throw "SKILL.md missing — the read gate (agent_runner ready flag) needs it bundled" }
+          $tag = "${{ github.ref_name }}".TrimStart('v')
+          if ($tag -and $tag -ne $pkg -and "${{ github.event_name }}" -eq 'push') { throw "tag $tag != package version $pkg" }
+          Write-Host "preflight OK: v$pkg"
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install electron deps
+        working-directory: electron
+        run: npm install --no-audit --no-fund
+
+      - name: Build the bundled Python runtime (embeddable + locked wheels)
+        working-directory: electron
+        shell: pwsh
+        run: pwsh -File scripts/fetch-python.ps1
+
+      - name: Build + publish the Windows installer
+        working-directory: electron
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # ---- Code signing (REQUIRED for silent OTA — electron-updater verifies the signature) ----
+          # Owner picks ONE route and sets the matching repo secrets; UNSET => an UNSIGNED build
+          # (installs with a SmartScreen warning AND will NOT auto-update — for local testing only).
+          #
+          #   • OV / EV PFX certificate (works out of the box here):
+          #       secrets.WIN_CSC_LINK            = base64 of the .pfx   (or an https URL to it)
+          #       secrets.WIN_CSC_KEY_PASSWORD    = the .pfx password
+          #
+          #   • Azure Trusted Signing (~$10/mo, US/Canada entity): needs electron-builder >= 25 +
+          #     build.win.azureSignOptions — bump the dep and add that block, then set the AZURE_* secrets.
+          #
+          #   • SignPath.io OSS (free): repo must be PUBLIC + pass their content review; wire their
+          #     GitHub Action to sign the artifact after this build step.
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: npx electron-builder --win --publish always
