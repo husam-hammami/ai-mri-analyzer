@@ -2,7 +2,25 @@
 
 > Forged in /warcry (2026-06-27). Scouts: pre-mortem + feasibility (completed); prior-art folded into
 > feasibility; cartography + feature-inventory gathered directly after a mid-run process restart killed
-> 3 background scouts. Status: DRAFT → /bulletproof → /katana.
+> 3 background scouts. Status: Rev 2 — **Reviewed ✓ (bulletproof) VERDICT: SUFFICIENT** for the
+> "installer ready = Phases A–D + F" milestone (2 wiring tightenings folded in: /health exposes app.version;
+> SKILL.md bundle assertion). → /katana (in-session phases) → owner (signing + clean-VM + live OTA + publish).
+>
+> **Rev 2 — bulletproof corrections (verified against the repo):**
+> 1. OTA update prompt = MAIN-PROCESS `dialog` (preload is intentionally empty; contextIsolation/sandbox
+>    ON) — NOT a renderer prompt (there is no IPC bridge; frontend has 0 electron refs).
+> 2. Safety gate runs the REAL suite: `pytest backend/tests tests` = 53 lab + **198 imaging = ~251**
+>    functions (the earlier "48" was wrong and omitted the imaging tests). Run under the BUNDLED interpreter.
+> 3. REUSE existing endpoints: `/api/agent/availability` (already returns `claude_cli_found`/`connected`/
+>    `auth_state`) for the CLI gate + the existing FastAPI `version="3.0.0"` — do NOT add `/api/cli-status`
+>    or `/api/version`.
+> 4. Reconcile the version mismatch (electron `1.0.0` vs backend `3.0.0`) to ONE source before any
+>    version-match guard.
+> 5. Rollback primitive = gate `quitAndInstall` on a `/health` pass of the NEW version (it already 503s on
+>    ABI mismatch) — not "skip auto-update once".
+> 6. Bundle check includes `python-bidi==0.4.2` (pure-Python wheel; Rust-wheel drift bricks the AR PDF).
+> 7. CONCURRENCY: katana runs SOLE-SESSION on the shared files (see Precondition).
+> Phase E (full app consistency sweep) demoted to a fast-follow; "installer ready" = A–D + F.
 
 ## Goal / Done-when
 A production, **code-signed Windows installer** of MIKA that:
@@ -60,37 +78,64 @@ machine-checkable inventory and a coverage gate that re-runs it.
   *coverage* is banned (warcry completeness rule). Phasing *depth* (e.g. which anatomies get deep live
   validation) is allowed and must be logged, not silently dropped.
 
+## Precondition — SOLE-SESSION on the shared files (concurrency gate)
+katana rewrites `electron/main.js`, `electron/package.json`, `backend/app.py`, `frontend/index.html` —
+the EXACT files another live agent session has been editing (this plan's header records a mid-run restart
+that killed scouts). HARD GATE: confirm no other session is editing these before katana runs; re-baseline
+`git status` + `git diff` immediately before each phase commit; ABORT a phase if the tree changed under it.
+A half-merged `main.js` bricks boot.
+
 ## Phased steps (commit to main per phase — solo repo)
 
 **Phase A — Bundle Python (kills the host-Python dependency).**
 1. Add `electron/scripts/fetch-python.(ps1|js)` that downloads python-embeddable (3.10/3.11 x64) +
    `pip install -r requirements.lock` into `electron/python/` (enable `import site` in the `._pth`).
-2. Freeze `backend/requirements.lock` = `pip freeze` of the working env (numpy<2 enforced); commit it.
-   Add a CI/preflight check: `pip install -r requirements.lock && python -c "import numpy,scipy,fitz,pydicom; assert numpy.__version__ < '2'"`.
+2. Produce `requirements.lock` DERIVED from the already-curated repo-root `requirements.txt` (pip-compile /
+   hashes) — preserving its human pins (numpy 1.26.4, scipy 1.12.0, **python-bidi 0.4.2 pure-Python**,
+   nibabel/pynrrd bounds), NOT a raw `pip freeze` (which drops the curated constraints + pins transitive
+   junk). File lives at REPO ROOT (`requirements.txt`), not `backend/`. Preflight: `pip install -r
+   requirements.lock && python -c "import numpy,scipy,fitz,pydicom,bidi; assert numpy.__version__ < '2'"`.
 3. `electron/package.json` build: add `{from:"python", to:"python"}` to `extraResources`; ship
-   `vcruntime140.dll` (embeddable needs VC++ runtime).
+   `vcruntime140.dll` (embeddable needs VC++ runtime). ASSERT the bundle includes
+   `backend/skills/mri-spine-analysis/SKILL.md` — the Phase-B `ready` gate ALSO requires `skill_present`
+   (`agent_runner.py:670`), so the `extraResources` filter must NOT exclude `skills/` (it currently
+   doesn't; don't add `!skills/**` next to `!tests/**`).
 4. `electron/main.js`: `resolvePython()` prefers the bundled `process.resourcesPath/python/python.exe`
    when `app.isPackaged`, else host python (dev). Keep `MIKA_PYTHON` override.
-5. Backend `GET /api/version` (returns app+backend version) + a boot `check_env()` (already partly
-   exists per hardening plan) asserting the numpy/scipy ABI; `main.js` surfaces a clear dialog on failure.
+5. Reuse the EXISTING boot `check_env()` (`app.py:1554`, EXPECTED_VERSIONS `app.py:1551`) asserting the
+   numpy/scipy ABI; `main.js` surfaces a clear `dialog.showErrorBox` on failure (mirrors `fail()` @
+   main.js:80). Do NOT add `/api/version` — FastAPI already declares `version="3.0.0"` (`app.py:204`).
+   ADD `app.version` to the `/health` JSON (today it returns only DEPENDENCY versions, not the app
+   version) — step 11's brick-guard and step 12's version-match guard need this field to compare against.
+   (Version reconcile → Phase C step 12.)
 
 **Phase B — Claude-CLI first-run gate (auth consistency across ALL features).**
-6. `GET /api/cli-status` → `{installed, authenticated}` (reuse `agent_runner.check_cli_auth` / `_resolve_claude_bin`).
-7. Frontend first-run gate: if `!installed` → a calm panel guiding the official installer; if
-   `installed && !authenticated` → the existing "Sign in with Claude" (`/api/connect`). Block reads
-   until ready, on BOTH imaging and lab.
+6. REUSE the existing `GET /api/agent/availability` (`app.py:1970`) — it already returns `claude_cli_found`
+   + `connected` + `auth_state` + `ready` (`agent_runner.py:627,670`). Do NOT add `/api/cli-status`. NOTE:
+   `availability()` shells `claude --version`/`claude auth status` (nested CLI spawn) → exercising it LIVE
+   inside a Claude/katana session is an INCIDENTS-#1 risk; verify only on a real box.
+7. Frontend first-run gate (driven by `/api/agent/availability`): if `!claude_cli_found` → a calm panel
+   guiding the official installer; if `claude_cli_found && !connected` → the existing "Sign in with Claude"
+   (`/api/connect`). Block reads until `ready`, on BOTH imaging and lab.
 8. CONSISTENCY assertion: verify imaging read, lab read, imaging chat, lab chat ALL go through the same
    subscription `claude -p` transport (lab read = `lab_reader`, lab chat = `lab_chat`, imaging = agent +
    `case_chat`). Unit-test the transport/auth-env parity; document any divergence.
 
 **Phase C — electron-updater OTA.**
 9. Add `electron-updater` dep; `package.json` build `publish:{provider:"github",owner:"husam-hammami",repo:"ai-mri-analyzer"}`.
-10. `main.js`: after the window loads, `autoUpdater.checkForUpdatesAndNotify()`; wire `update-available`
-    / `update-downloaded` to a calm in-app prompt ("Update ready — restart to apply"); `autoInstallOnAppQuit:true`.
-11. **Rollback/crash-loop guard**: on boot write a `_last_boot` stamp; if N crashes within M seconds
-    after an update, skip auto-update once + surface a warning (don't infinite-loop a bad release).
-12. **Version-match guard**: after backend ready, compare app version vs `/api/version`; mismatch →
-    "restart to finish update" (don't run a half-updated pair).
+10. `main.js` (MAIN PROCESS — preload is empty + contextIsolation/sandbox ON, so NO renderer IPC):
+    `autoUpdater.checkForUpdatesAndNotify()`; on `update-downloaded` show `dialog.showMessageBox`
+    ("Update ready — restart to apply", Restart/Later) → `quitAndInstall` on Restart; `autoInstallOnAppQuit:true`
+    as fallback. **NO `index.html`/preload change** (the earlier "in-app prompt" had no transport — there is
+    no IPC bridge).
+11. **Rollback primitive (NOT "skip once" — electron-updater has no native revert):** gate `quitAndInstall`
+    on a successful `/health` (`app.py:1982`, already 503s on ABI mismatch) of the NEW version before
+    committing; write a `_last_boot` stamp and, on N crashes within M s post-update, show a "reinstall the
+    last good release" dialog with the GitHub Releases link.
+12. **Reconcile the version FIRST, then guard.** Today electron `package.json`=1.0.0 vs FastAPI
+    `version="3.0.0"` → pick ONE source of truth (recommend a single `VERSION` file both read, or backend
+    reads electron's `package.json` version). Only after they agree, boot-compare app vs backend-reported
+    version → "restart to finish update" on mismatch. (Without this, the guard bricks first boot.)
 13. **Data survives updates**: `MIKA_DATA_DIR = userData/data` (main.js:103) is outside the app dir →
     NSIS update preserves it; add a regression note + a boot check that the data dir is readable.
 
@@ -99,13 +144,15 @@ machine-checkable inventory and a coverage gate that re-runs it.
 15. `.github/workflows/release.yml`: on tag `v*` → install deps + fetch-python → `electron-builder --win --publish always` → sign → Release with `latest.yml` + blockmap. (Or local `dist:win --publish always` if no CI.)
 16. Version-bump discipline: bump `electron/package.json` version on every release (a check that the tag == package version).
 
-**Phase E — Consistency sweep + finalize.**
-17. Build + run the inventory coverage gate (Phase §sweep). Per-feature smoke via `?demo=*` fixtures +
-    endpoint schema checks. Fix every leak to 100%.
-18. **daedalus visual pass** on the running Electron window (not screenshots of dev) for cohesion
-    (brand: light #F8FAFC, single blue #2563EB, no traffic-light hues, no AI-tells) across home/imaging/
-    lab/chat/recent/about, EN + AR/RTL.
-19. **/sincere** copy polish on any new strings (CLI-gate, update prompt, error dialogs) — EN+AR.
+**Phase E — Consistency sweep + finalize (FAST-FOLLOW — NOT the "installer ready" milestone).**
+"Installer ready" = Phases A–D + F. The full app-wide ∀ sweep edits `frontend/index.html` broadly (highest
+collision risk with the other session) → do it solo, AFTER the installer lands. INSTALLER-SCOPED subset
+that belongs in this milestone: the NEW strings (CLI-gate panel, update dialog, error dialogs) get EN+AR +
+a `/sincere` pass, and the packaged shell strings (main.js dialogs) must be bilingual.
+17. (fast-follow) Full inventory coverage gate (Phase §sweep); `?demo=*` smoke + endpoint schema; 100%.
+18. (fast-follow) **daedalus visual pass** on the running Electron window across home/imaging/lab/chat/
+    recent/about, EN + AR/RTL.
+19. (installer-scoped) **/sincere** + EN/AR on the NEW strings (CLI-gate, update dialog, error dialogs).
 
 **Phase F — Real-machine validation (OWNER / out-of-session; the verification trap).**
 20. On a clean Windows VM (no Python, no dev tools): install the signed installer; confirm backend
@@ -114,36 +161,44 @@ machine-checkable inventory and a coverage gate that re-runs it.
     auto-updates and data persists. **None of this is doable in a Claude session.**
 
 ## Files & surfaces touched
-- `electron/main.js` — bundled-python resolve, autoUpdater wiring, crash-loop + version-match guards,
-  CLI-status surfacing, bilingual shell strings.
+- `electron/main.js` — bundled-python resolve, autoUpdater wiring (MAIN-process `dialog` prompts),
+  crash-loop + `/health`-gated install, version reconcile, availability-driven CLI surfacing, bilingual shell strings.
+- `electron/preload.js` — UNCHANGED (stays empty; no IPC bridge — update prompt is a main-process `dialog`).
 - `electron/package.json` — electron-updater dep, `publish`, `extraResources/python`, signing config,
-  version-bump.
-- `electron/scripts/fetch-python.*` (new), `.github/workflows/release.yml` (new).
-- `backend/requirements.lock` (new), `backend/app.py` — `/api/version`, `/api/cli-status`, boot
-  `check_env`.
-- `frontend/index.html` — first-run CLI/sign-in gate, update-ready prompt, any new EN/AR strings.
-- `backend/tests/` — env-lock check, cli-status, transport-parity, inventory/i18n coverage test.
+  version reconciled to the single source of truth.
+- `electron/scripts/fetch-python.*` (new), `.github/workflows/release.yml` (new), `VERSION` (new — or
+  reuse electron `package.json` version as the single source).
+- `requirements.lock` (new, REPO ROOT, derived from curated `requirements.txt`), `backend/app.py` — reuse
+  boot `check_env` + existing `/api/agent/availability` + `version="3.0.0"`; NO new endpoints.
+- `frontend/index.html` — first-run CLI/sign-in gate (via `/api/agent/availability`); new EN/AR strings.
+  (NO renderer update-UI — that's a main-process dialog.)
+- `backend/tests/` (53 fns) AND repo-root `tests/` (198 fns) — run BOTH; add env-lock + transport-parity tests.
 - `docs/` — this plan; a real-machine validation checklist.
 
 ## Verification strategy (be honest about what's testable here)
-- **In-session (testable):** pure-function unit tests; `requirements.lock` numpy<2 import check; the
-  inventory/i18n coverage grep gate; `?demo=*` visual gate (where the Preview/devtools MCP is available);
-  `python -c "import app"` + `electron-builder --dir` build smoke (build only — NOT launch).
+- **In-session (testable):** the FULL backend suite `pytest backend/tests tests` (53 lab + 198 imaging ≈
+  251 fns) re-run after EVERY phase, ideally under the BUNDLED embeddable interpreter (where ABI drift
+  surfaces); `requirements.lock` numpy<2 + `bidi` import check; the i18n coverage grep gate; `?demo=*`
+  visual gate (where Preview/devtools MCP is available); `python -c "import app"` + `electron-builder
+  --dir` build smoke (build only — NOT launch).
 - **NOT in-session (real-terminal/owner):** launching the packaged app, the live Claude read/chat
   (nested `claude -p` hangs), code-signing, the live OTA cycle, the clean-VM test. The plan must NOT
   claim in-session verification of these (bulletproof must reject any that does).
 
 ## Safety / realism gates (from the pre-mortem — bulletproof must confirm each)
-- G1 numpy<2 enforced at pack-time (requirements.lock) + boot `check_env` + CI import check.
+- G1 numpy<2 + **python-bidi 0.4.2 pure-Python** enforced at pack-time (lock derived from the curated
+  `requirements.txt`) + boot `check_env` + import check (`numpy,scipy,fitz,pydicom,bidi`). A Rust bidi
+  wheel bricks the AR PDF on the clean box.
 - G2 Signed installer is a HARD dependency of silent OTA (electron-updater verifies signature).
 - G3 No in-session verification of live read/chat/OTA/signing (verification trap named per step).
 - G4 Update can't brick: crash-loop rollback guard + version-match guard + data-dir persistence.
 - G5 Claude CLI NOT bundled (licensing); detect-and-guide only.
 - G6 Existing safety properties preserved across packaging/finalize (lab verdict gate, named-assessment
   whitelist + red-flag exclusion, chat answer-replacement gate incl. Arabic, no treatment/drug/dose,
-  PII out of meta.json, clarity-floor sync; imaging anti-hallucination/calibration) — re-run the 48
-  backend tests after every phase; add a "final-gate re-emission" test (INCIDENTS #4) covering PDF
-  re-export.
+  PII out of meta.json, clarity-floor sync; imaging anti-hallucination/calibration) — re-run
+  `pytest backend/tests tests` (~251 fns across BOTH dirs) after every phase. The imaging safety tests
+  live in repo-root `tests/` (198 fns) — omitting them protects nothing imaging. Add a "final-gate
+  re-emission" test (INCIDENTS #25 — gate bypassed by a 2nd writer) covering the PDF re-export path.
 - G7 ∀ coverage gate: 100% of the inventory; phasing coverage is banned; i18n EN+AR complete incl.
   Electron-shell strings.
 - G8 Auth consistency: imaging + lab read + both chats on the same subscription `claude -p` path
@@ -180,4 +235,4 @@ the crash-loop guard reverts a bad update. Feature stays behind existing flags w
 ## Success criteria (restated)
 Bundled-Python signed Windows installer; OTA via GitHub Releases working on a real machine; BYO-Claude
 sign-in gate; 100% feature-inventory coverage + daedalus-approved + EN/AR complete; all in-session tests
-green; the 48 safety tests still pass; owner external steps documented and handed off.
+green; the ~251 safety tests (`pytest backend/tests tests`) still pass; owner external steps documented and handed off.
