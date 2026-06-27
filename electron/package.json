@@ -30,6 +30,10 @@
     ],
     "extraResources": [
       {
+        "from": "python",
+        "to": "python"
+      },
+      {
         "from": "../backend",
         "to": "backend",
         "filter": [

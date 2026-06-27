@@ -2,6 +2,10 @@ fastapi==0.109.0
 uvicorn[standard]==0.27.0
 python-multipart==0.0.6
 pydicom==2.4.4
+# PDF text/raster for the lab reader (services/lab_reader.py imports fitz). Was installed ad-hoc in
+# dev and unpinned — a bundle built without it cannot read digital-PDF labs. Pinned to the verified
+# dev wheel (cp3x win_amd64 prebuilt — no compile on the clean box).
+PyMuPDF==1.27.2.2
 # numpy<2 is a HARD constraint: scipy 1.12.0 is built against the numpy 1.26 ABI; numpy 2.x
 # crashes every read. 1.26.4 is the version verified against scipy 1.12.0 (matches check_env()).
 numpy==1.26.4

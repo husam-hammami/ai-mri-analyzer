@@ -26,8 +26,11 @@ let win = null;
 let starting = true;
 
 function resolvePython() {
-  // Explicit override wins; otherwise try the common interpreter names and pick the first that runs.
-  const candidates = [process.env.MIKA_PYTHON, isWin ? 'python' : 'python3', 'python'].filter(Boolean);
+  // Packaged: prefer the bundled python-embeddable shipped at resources/python (built by
+  // electron/scripts/fetch-python.ps1) so a clean machine needs no host Python. Explicit override
+  // still wins; dev falls back to the host interpreter.
+  const bundled = app.isPackaged ? path.join(process.resourcesPath, 'python', 'python.exe') : null;
+  const candidates = [process.env.MIKA_PYTHON, bundled, isWin ? 'python' : 'python3', 'python'].filter(Boolean);
   for (const cand of candidates) {
     try {
       execFileSync(cand, ['--version'], { stdio: 'ignore' });
