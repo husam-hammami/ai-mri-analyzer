@@ -1982,10 +1982,12 @@ async def agent_preflight():
 @app.get("/health")
 async def health():
     """Fix 3: liveness + read-environment check. 200 when the read pipeline imports and the
-    ABI-critical deps match their pins; 503 (degraded) with the specific mismatch otherwise."""
+    ABI-critical deps match their pins; 503 (degraded) with the specific mismatch otherwise.
+    `version` is the backend app version — the desktop shell compares it against the packaged
+    app version to detect a half-applied OTA update (electron Phase C step 12)."""
     env = check_env()
     return JSONResponse(
-        {"status": "ok" if env["ok"] else "degraded", **env},
+        {"status": "ok" if env["ok"] else "degraded", "version": app.version, **env},
         status_code=200 if env["ok"] else 503,
     )
 

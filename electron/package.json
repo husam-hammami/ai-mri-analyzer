@@ -1,6 +1,6 @@
 {
   "name": "mika-desktop",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "description": "MIKA desktop app — spawns the Python backend + Claude CLI as a localhost sidecar and loads the MIKA web app in a native window.",
   "author": "Husam Hammami",
@@ -12,6 +12,9 @@
     "dist:win": "electron-builder --win",
     "postinstall": "electron-builder install-app-deps"
   },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
   "devDependencies": {
     "electron": "^31.7.7",
     "electron-builder": "^24.13.3"
@@ -19,6 +22,11 @@
   "build": {
     "appId": "com.orbia.mika",
     "productName": "MIKA",
+    "publish": {
+      "provider": "github",
+      "owner": "husam-hammami",
+      "repo": "ai-mri-analyzer"
+    },
     "directories": {
       "buildResources": "build",
       "output": "dist"
