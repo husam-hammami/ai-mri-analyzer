@@ -18,6 +18,7 @@ Architecture:
 """
 
 import os
+import sys
 import re
 import uuid
 import json
@@ -37,6 +38,10 @@ from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse, JSO
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+
+# The bundled python-embeddable does not auto-add the backend dir to sys.path; uvicorn does, but
+# don't depend on that — make the first-party packages importable however the app is launched.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from core.dicom_engine import DICOMEngine
 from core.format_converter import FormatConverter

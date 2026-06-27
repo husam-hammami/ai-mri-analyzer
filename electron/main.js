@@ -5,10 +5,11 @@
 // surfaces a clear dialog if its host prerequisites (Python, the Claude CLI) are missing.
 //
 // Host prerequisites (by design — MIKA runs on the user's own Claude subscription):
-//   • Python 3.10+ with the backend requirements installed (see backend/requirements.txt).
+//   • Packaged: a bundled python-embeddable (built by electron/scripts/fetch-python.ps1) — no host
+//     Python needed. Dev: Python 3.10+ with the repo-root requirements.txt installed.
 //   • The Claude CLI signed in (`claude /login`) — the analysis + lab + chat reads run on it.
 const { app, BrowserWindow, shell, dialog } = require('electron');
-const { spawn, exec, execFileSync } = require('child_process');
+const { spawn, execFileSync } = require('child_process');
 const net = require('net');
 const path = require('path');
 const fs = require('fs');
@@ -24,6 +25,8 @@ const BACKEND = app.isPackaged
 let py = null;
 let win = null;
 let starting = true;
+let failed = false;            // guard against stacking two error dialogs
+let intentionalQuit = false;   // user-/update-initiated quit — not a boot failure
 
 function resolvePython() {
   // Packaged: prefer the bundled python-embeddable shipped at resources/python (built by
@@ -69,19 +72,24 @@ function waitReady(url, timeoutMs = 90000) {
   });
 }
 
-function killTree(proc) {
+// Synchronous teardown — used before an OTA install so the bundled python.exe + its loaded DLLs
+// (inside resources/python, the exact tree NSIS overwrites) release their handles BEFORE the
+// installer runs. taskkill /F TerminateProcess has freed the handles by the time execFileSync returns.
+function killTreeSync(proc) {
   if (!proc || proc.killed) return;
-  if (isWin) {
-    try { exec(`taskkill /pid ${proc.pid} /T /F`); } catch (e) { /* best effort */ }
-  } else {
-    try { proc.kill('SIGTERM'); } catch (e) { /* best effort */ }
-  }
+  try {
+    if (isWin) execFileSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+    else proc.kill('SIGTERM');
+  } catch (_) { /* best effort */ }
 }
 
 function fail(title, message) {
+  if (failed) return;          // never stack two error dialogs
+  failed = true;
   starting = false;
+  if (!intentionalQuit) recordBootFailure(app.getVersion());   // count toward the crash-loop guard
   try { dialog.showErrorBox(title, message); } catch (e) { console.error(title, message); }
-  killTree(py);
+  killTreeSync(py);
   app.quit();
 }
 
@@ -106,32 +114,38 @@ function getJson(url) {
   });
 }
 
-// A bad OTA update can ship a build that won't boot. We optimistically mark each boot as failed and
-// clear it once the backend is ready; if two consecutive boots of a NEW version never came up, stop
-// reinstalling it and point the user at the last working release instead of looping forever.
+// A bad OTA update can ship a build that won't boot. We count consecutive boot FAILURES of a SPECIFIC
+// version (only real failures — see recordBootFailure, never a healthy boot the user happened to quit);
+// once a non-good version has failed twice we stop reinstalling it and point the user at the last
+// working release instead of looping forever.
+function recordBootFailure(version) {
+  const s = readStamp();
+  const fails = (s.failVersion === version ? (s.fails || 0) : 0) + 1;
+  writeStamp({ fails, failVersion: version, lastGood: s.lastGood });
+}
 function crashLoopGuard(version) {
   const s = readStamp();
-  if (s.fails >= 2 && s.lastGood && s.lastGood !== version) {
+  if (s.fails >= 2 && s.failVersion === version && s.lastGood && s.lastGood !== version) {
     const r = dialog.showMessageBoxSync({
       type: 'error', title: 'MIKA update problem',
       message: `This update (v${version}) isn't starting correctly.`,
       detail: `The last working version was v${s.lastGood}. You can download and reinstall it from the Releases page.`,
       buttons: ['Open Releases page', 'Try again'], defaultId: 0, cancelId: 1,
     });
-    writeStamp({ ...s, fails: 0 });
-    if (r === 0) { shell.openExternal(RELEASES_URL); app.quit(); return false; }
+    writeStamp({ fails: 0, failVersion: null, lastGood: s.lastGood });
+    if (r === 0) { shell.openExternal(RELEASES_URL); intentionalQuit = true; app.quit(); return false; }
   }
-  writeStamp({ fails: (s.fails || 0) + 1, lastGood: s.lastGood });
-  return true;
+  return true;   // increments happen only on a real boot failure, not here
 }
 
 function setupAutoUpdate() {
-  if (!app.isPackaged) return;                       // dev: no published releases to pull
+  if (!app.isPackaged) return;                            // dev: no published releases to pull
+  if (process.env.PORTABLE_EXECUTABLE_DIR) return;        // portable build can't self-update — don't prompt
   let autoUpdater;
   try { ({ autoUpdater } = require('electron-updater')); }
-  catch (_) { return; }                              // dep not bundled → OTA off, app still runs
+  catch (_) { console.error('[updater] electron-updater not bundled — OTA disabled'); return; }
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;           // fallback if the user picks "Later"
+  autoUpdater.autoInstallOnAppQuit = true;                // fallback if the user picks "Later"
   autoUpdater.on('update-downloaded', (info) => {
     const r = dialog.showMessageBoxSync({
       type: 'info', title: 'Update ready',
@@ -139,7 +153,8 @@ function setupAutoUpdate() {
       detail: 'Restart now to apply it, or it will install automatically next time you quit MIKA.',
       buttons: ['Restart now', 'Later'], defaultId: 0, cancelId: 1,
     });
-    if (r === 0) setImmediate(() => autoUpdater.quitAndInstall());
+    // Tear the sidecar down SYNCHRONOUSLY first so NSIS can overwrite resources/python (held DLLs).
+    if (r === 0) setImmediate(() => { intentionalQuit = true; killTreeSync(py); autoUpdater.quitAndInstall(false, true); });
   });
   autoUpdater.on('error', (e) => console.error('[updater]', (e && e.message) || e));
   autoUpdater.checkForUpdates().catch((e) => console.error('[updater] check failed:', (e && e.message) || e));
@@ -156,10 +171,14 @@ async function start() {
 
   const PY = resolvePython();
   if (!PY) {
-    return fail('Python is required',
-      'MIKA needs Python 3.10+ on this computer to run its analysis backend.\n\n' +
-      'Install Python from python.org, then reopen MIKA. ' +
-      '(Advanced: set the MIKA_PYTHON environment variable to a specific interpreter.)');
+    return app.isPackaged
+      ? fail('MIKA could not start its runtime',
+          'The bundled Python runtime didn’t launch. The install may be incomplete, or antivirus may ' +
+          'have quarantined a file.\n\nReinstall MIKA, and allow it through antivirus if prompted.')
+      : fail('Python is required',
+          'MIKA needs Python 3.10+ on this computer to run its analysis backend.\n\n' +
+          'Install Python from python.org, then reopen MIKA. ' +
+          '(Advanced: set the MIKA_PYTHON environment variable to a specific interpreter.)');
   }
 
   const port = await freePort();
@@ -176,10 +195,11 @@ async function start() {
   py.on('exit', (code) => {
     console.log(`[sidecar] exited with code ${code}`);
     if (starting) {
+      const hint = app.isPackaged
+        ? 'This usually means the install is incomplete — reinstall MIKA.'
+        : `Most often a missing dependency — from the repo root run:\n  ${PY} -m pip install -r requirements.txt`;
       fail('MIKA backend failed to start',
-        `The Python backend exited (code ${code}). Most often a missing dependency — from the ` +
-        `backend folder run:\n  ${PY} -m pip install -r requirements.txt\n\nRecent output:\n` +
-        tail.join('').slice(-1200));
+        `The Python backend exited (code ${code}). ${hint}\n\nRecent output:\n` + tail.join('').slice(-1200));
     }
   });
 
@@ -187,16 +207,19 @@ async function start() {
   await waitReady(url);
   starting = false;
   console.log(`[mika] backend ready on ${url}`);
-  writeStamp({ fails: 0, lastGood: version });      // this build boots — mark it good
 
-  // Half-applied-update guard: the backend version should match the shell.
+  // Mark this build "good" only if the read environment is actually healthy (200), not just that the
+  // HTTP root answered — so an ABI-degraded OTA build isn't trusted and can trip the crash-loop guard.
   const health = await getJson(`http://127.0.0.1:${port}/health`);
+  if (health && health.status === 'ok') {
+    writeStamp({ fails: 0, failVersion: null, lastGood: version });
+  } else if (!intentionalQuit) {
+    recordBootFailure(version);
+    console.warn('[mika] backend /health degraded:', health && (health.mismatches || health.import_error));
+  }
+  // Half-applied-update signal (rare — CI enforces the version match at release). Log, don't nag.
   if (health && health.version && health.version !== version) {
-    dialog.showMessageBox({
-      type: 'warning', title: 'Finishing update',
-      message: 'MIKA needs one more restart to finish updating.',
-      detail: `App is v${version}, backend is v${health.version}.`,
-    });
+    console.warn(`[mika] version mismatch: app v${version}, backend v${health.version}`);
   }
 
   win = new BrowserWindow({
@@ -224,5 +247,5 @@ app.whenReady().then(start).catch((err) => {
   fail('MIKA failed to start', String(err && err.message || err));
 });
 
-app.on('window-all-closed', () => { killTree(py); app.quit(); });
-app.on('before-quit', () => killTree(py));
+app.on('window-all-closed', () => { intentionalQuit = true; killTreeSync(py); app.quit(); });
+app.on('before-quit', () => { intentionalQuit = true; killTreeSync(py); });

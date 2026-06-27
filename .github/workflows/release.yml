@@ -48,7 +48,7 @@ jobs:
 
       - name: Install electron deps
         working-directory: electron
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund   # lockfile pins electron-updater — reproducible install
 
       - name: Build the bundled Python runtime (embeddable + locked wheels)
         working-directory: electron
@@ -75,4 +75,6 @@ jobs:
           #     GitHub Action to sign the artifact after this build step.
           CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: npx electron-builder --win --publish always
+        # Publish to GitHub Releases ONLY on a tag push; a manual workflow_dispatch builds the
+        # installer but must NOT touch the live OTA feed (latest.yml) from un-tagged code.
+        run: npx electron-builder --win --publish ${{ github.event_name == 'push' && 'always' || 'never' }}

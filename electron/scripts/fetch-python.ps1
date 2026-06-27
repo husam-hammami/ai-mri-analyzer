@@ -68,4 +68,14 @@ Write-Host "Installing requirements.lock into the embeddable ..."
 Write-Host "Verifying imports ..."
 & $pyExe -c "import numpy,scipy,fitz,pydicom,PIL,bidi,arabic_reshaper,fastapi,uvicorn; assert numpy.__version__.startswith('1.26'), numpy.__version__; print('bundle python OK:', numpy.__version__, 'fitz', fitz.__doc__.splitlines()[0])"
 
+# 6) verify the REAL run mode: resolve the backend app graph from the backend dir, exactly as main.js
+#    launches it (`uvicorn app:app`, cwd=backend). Catches first-party deps / import-time errors that
+#    the bare imports above can't see — a green here means the sidecar will actually boot.
+Write-Host "Verifying backend app:app (real run mode) ..."
+Push-Location (Join-Path $root "backend")
+try {
+  & $pyExe -c "import uvicorn.importer as u; u.import_from_string('app:app'); print('backend app:app OK')"
+  if ($LASTEXITCODE -ne 0) { throw "backend app:app failed to import under the bundled interpreter" }
+} finally { Pop-Location }
+
 Write-Host "`nDone. Bundled Python is at $dest — electron-builder will ship it as resources/python."
