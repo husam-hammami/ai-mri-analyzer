@@ -4275,7 +4275,15 @@
               const data = await rr.json();
               setReport(data);
               setRoute(null);
-              setJob(j=>({...j, id:deepLinkJob, status:'complete', progress:100}));
+              // Lab vs imaging: set job.kind so screenFor routes to the Verdict (lab-read), not the
+              // imaging Read. Without this, refreshing on a lab read fell through to the empty imaging
+              // "Your Read". (Same kind-routing fix as fetchReport/openRecent — this is the MOUNT path.)
+              if (data && data.kind === 'lab') {
+                setJob(j=>({...j, id:deepLinkJob, kind:'lab', status:'complete', progress:100}));
+                pushRecent({ jobId: deepLinkJob, label:'Lab report', anatomy:'lab', date: new Date().toISOString() });
+                return;
+              }
+              setJob(j=>({...j, id:deepLinkJob, kind:'dicom', status:'complete', progress:100}));
               try {
                 const tmp = buildViewModel(data);
                 const label = (tmp && tmp.study && tmp.study.body_part) || data.detected_anatomy || 'Scan';
