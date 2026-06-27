@@ -9,11 +9,7 @@
     "start": "electron .",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
-    "dist:win": "electron-builder --win",
-    "postinstall": "electron-builder install-app-deps"
-  },
-  "dependencies": {
-    "electron-updater": "^6.3.9"
+    "dist:win": "electron-builder --win"
   },
   "devDependencies": {
     "electron": "^31.7.7",
@@ -22,11 +18,6 @@
   "build": {
     "appId": "com.orbia.mika",
     "productName": "MIKA",
-    "publish": {
-      "provider": "github",
-      "owner": "husam-hammami",
-      "repo": "ai-mri-analyzer"
-    },
     "directories": {
       "buildResources": "build",
       "output": "dist"
@@ -40,6 +31,10 @@
       {
         "from": "python",
         "to": "python"
+      },
+      {
+        "from": "../version.txt",
+        "to": "version.txt"
       },
       {
         "from": "../backend",
