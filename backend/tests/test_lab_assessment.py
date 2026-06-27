@@ -116,6 +116,28 @@ def test_iron_deficiency_anemia_still_wins_when_hemoglobin_low():
     assert a and a["condition_key"] == "iron_deficiency_anemia", a
 
 
+def test_model_slug_cannot_override_printed_name():
+    """The model may mis-slug an analyte (live bug: analyte_key='platelets' for MPV, 'hemoglobin' for
+    MCHC). The PRINTED NAME is ground truth — _parse_lab_json must override the model's slug — else a low
+    MPV surfaces as a false 'low platelet count'. Regression for the real MOHAMAD report."""
+    import json
+    from services.lab_reader import _parse_lab_json
+    raw = json.dumps({"results": [
+        {"plain_name": "Platelet size (MPV)", "analyte_raw": "MPV", "analyte_key": "platelets",
+         "value": "7.1", "status": "low", "confidence": "Confirmed", "clarity": 0.9,
+         "range_type": "two_sided_numeric", "ref_range_text": "7.4-11.4"},
+        {"plain_name": "Hemoglobin concentration (MCHC)", "analyte_raw": "MCHC", "analyte_key": "hemoglobin",
+         "value": "30", "status": "low", "confidence": "Confirmed", "clarity": 0.9,
+         "range_type": "two_sided_numeric", "ref_range_text": "32-36"},
+    ], "signals": {"extraction_confidence": 0.9, "analytes_parsed": 2, "render_quality": "clear"}})
+    rows = _parse_lab_json(raw)["results"]
+    keys = {r["plain_name"]: r["analyte_key"] for r in rows}
+    assert keys["Platelet size (MPV)"] == "mpv", keys              # NOT the model's 'platelets'
+    assert keys["Hemoglobin concentration (MCHC)"] == "mch", keys  # NOT the model's 'hemoglobin'
+    a = compose_assessment(rows, {})
+    assert a is None or a["condition_key"] != "low_platelets", a
+
+
 # ── model is advisory only ──
 
 def test_model_cannot_add_unsupported_condition():

@@ -271,11 +271,14 @@ def _parse_lab_json(raw_text: str) -> dict:
             page_index = int(r.get("page_index", 0))
         except (TypeError, ValueError):
             page_index = 0
-        # analyte_key: trust the model's slug if it's a known canonical, else DERIVE it server-side from
-        # analyte_raw/plain_name (must-have #4 — condition matching must not depend on the model field).
-        akey = r.get("analyte_key")
-        if akey not in _ANALYTE_ALIASES:
-            akey = normalize_analyte_key(r.get("analyte_raw"), r.get("plain_name"))
+        # analyte_key: DERIVE from the printed name FIRST (deterministic + fixed normalizer); the model's
+        # own slug is a fallback ONLY for names we don't recognise. Trusting the model's slug let it
+        # mis-slug "Platelet size (MPV)" as the platelet-COUNT key (and MCHC as hemoglobin) → a false
+        # "low platelet count". The printed name is ground truth for what the analyte IS (must-have #4).
+        akey = normalize_analyte_key(r.get("analyte_raw"), r.get("plain_name"))
+        if not akey:
+            mk = r.get("analyte_key")
+            akey = mk if mk in _ANALYTE_ALIASES else ""
         norm_results.append({
             "plain_name": r.get("plain_name") or r.get("analyte_raw") or "",
             "analyte_raw": r.get("analyte_raw") or "",
@@ -675,7 +678,8 @@ _ANALYTE_ALIASES = {
     # key (longest-alias-wins) — otherwise "Hemoglobin per cell (MCH)" mis-maps to hemoglobin and fakes a
     # low Hgb (→ false anemia). Keep the multi-word forms ahead of the short "mch"/"mchc".
     "mch": ["mean corpuscular hemoglobin concentration", "red cell hemoglobin concentration",
-            "mean corpuscular hemoglobin", "hemoglobin per cell", "red cell hemoglobin", "mchc", "mch"],
+            "mean corpuscular hemoglobin", "hemoglobin concentration", "hemoglobin per cell",
+            "red cell hemoglobin", "mchc", "mch"],
     "rdw": ["red cell distribution width", "rdw"],
     "ferritin": ["ferritin"],
     "iron": ["serum iron", "iron"],
@@ -701,6 +705,13 @@ _ANALYTE_ALIASES = {
     "alp": ["alkaline phosphatase", "alp"],
     "bilirubin": ["total bilirubin", "bilirubin"],
     "wbc": ["white blood cell", "white cell count", "leukocyte", "leucocyte", "wbc"],
+    # Differential cells get their OWN keys so a high lymphocyte %/count can't fall back to the WBC key
+    # and falsely read as "high white cells" (no condition keys off these — a lone differential names nothing).
+    "lymphocytes": ["lymphocyte", "lymphocytes"],
+    "neutrophils": ["neutrophil", "neutrophils"],
+    "monocytes": ["monocyte", "monocytes"],
+    "eosinophils": ["eosinophil", "eosinophils"],
+    "basophils": ["basophil", "basophils"],
     # NOTE: NO bare "platelet" alias — it greedily matched "Platelet size (MPV)" and mis-mapped a low
     # platelet SIZE to the platelet COUNT key (→ a false "low platelet count" verdict). MPV is its own key.
     "platelets": ["platelet count", "platelets", "plt"],
