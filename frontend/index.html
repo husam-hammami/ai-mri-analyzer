@@ -3490,7 +3490,8 @@
     function LabAssessment({ assessment }) {
       const name = (UI_LANG === 'ar' ? assessment.name_ar : assessment.name_en) || assessment.name_en;
       const expl = (UI_LANG === 'ar' ? assessment.explanation_ar : assessment.explanation_en) || assessment.explanation_en;
-      const sup = assessment.supporting || [];
+      const sup = (UI_LANG === 'ar' && assessment.supporting_ar && assessment.supporting_ar.length
+        ? assessment.supporting_ar : assessment.supporting) || [];
       return (
         <div className="lab-assess">
           <h1 className="lab-takeaway"><span className="lab-assess-lead">{L(COPY.lab.assessmentLead)} </span>{name}</h1>
@@ -3527,7 +3528,9 @@
       // A plotted dot on a soft number line (NOT a slider): borderless rail, a soft normal band, a small
       // accent dot for the value, and lo/hi numerals sitting UNDER the band edges (where they actually are).
       return (
-        <span className="lnt-ind" aria-hidden="true">
+        // dir=ltr ALWAYS: a numeric axis reads low→high left→right in every language; under RTL the
+        // logical insets flipped the dot to the wrong side (a low value showed near the high end).
+        <span className="lnt-ind" dir="ltr" aria-hidden="true">
           <span className="lnt-ind-rail">
             <span className="lnt-ind-band" style={{ insetInlineStart:`${bandL}%`, inlineSize:`${bandR - bandL}%` }} />
             <span className="lnt-ind-dot" style={{ insetInlineStart:`${dot}%` }} />
@@ -3552,12 +3555,12 @@
             return (
               <div className="lnt-row" key={i}>
                 <div className="lnt-main">
-                  <span className="lnt-name">{r.plain_name}</span>
+                  <span className="lnt-name">{(UI_LANG==='ar' && r.plain_name_ar) || r.plain_name}</span>
                   <span className="lnt-val"><Num>{valueText || r.value || '—'}</Num></span>
                   <LabMiniBar r={r} />
                   <span className={`lnt-dir lnt-dir-${dir}`}>{dir === 'low' ? L(COPY.lab.dirLow) : dir === 'high' ? L(COPY.lab.dirHigh) : ''}</span>
                 </div>
-                {r.plain_meaning && <div className="lnt-desc">{r.plain_meaning}</div>}
+                {((UI_LANG==='ar' && r.plain_meaning_ar) || r.plain_meaning) && <div className="lnt-desc">{(UI_LANG==='ar' && r.plain_meaning_ar) || r.plain_meaning}</div>}
               </div>
             );
           })}
@@ -4528,37 +4531,44 @@
       // Microcytic anemia panel (mirrors a real CBC) — exercises the named assessment with several
       // supporting markers, plus one unrelated low (Vitamin D) to show the gate picks the PRIMARY pattern.
       const flagged = [
-        { plain_name:'Hemoglobin', analyte_raw:'Hemoglobin', analyte_key:'hemoglobin',
+        { plain_name:'Hemoglobin', plain_name_ar:'الهيموغلوبين', analyte_raw:'Hemoglobin', analyte_key:'hemoglobin',
           value:'10.6', unit:'g/dL', ref_range_text:'12-15', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'a bit low', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'Hemoglobin is the part of your blood that carries oxygen. Yours is a little low, which can sometimes leave you feeling tired or low on energy.',
+          plain_meaning_ar:'الهيموغلوبين هو الجزء من دمك الذي يحمل الأكسجين. وهو لديك منخفض قليلاً، ما قد يسبّب أحياناً الشعور بالتعب أو انخفاض الطاقة.',
           source_text:'Hemoglobin 10.6 g/dL (12-15)' },
-        { plain_name:'Hematocrit', analyte_raw:'Hematocrit', analyte_key:'hematocrit',
+        { plain_name:'Hematocrit', plain_name_ar:'الهيماتوكريت', analyte_raw:'Hematocrit', analyte_key:'hematocrit',
           value:'35', unit:'%', ref_range_text:'36-46', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'slightly low', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'This is how much of your blood is made up of red cells. It reads just under normal, which fits the low-iron picture.',
+          plain_meaning_ar:'هذا مقدار ما تشكّله كريات الدم الحمراء من دمك. وهو أقل قليلاً من الطبيعي، بما يتوافق مع صورة نقص الحديد.',
           source_text:'Hematocrit 35 % (36-46)' },
-        { plain_name:'Red-cell size (MCV)', analyte_raw:'MCV', analyte_key:'mcv',
+        { plain_name:'Red-cell size (MCV)', plain_name_ar:'حجم الكرية الحمراء (MCV)', analyte_raw:'MCV', analyte_key:'mcv',
           value:'74', unit:'fL', ref_range_text:'80-96', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:'This is the average size of your red blood cells. Smaller-than-usual cells are a classic sign of low iron.', source_text:'MCV 74 fL (80-96)' },
-        { plain_name:'Hemoglobin per cell (MCH)', analyte_raw:'MCH', analyte_key:'mch',
+          plain_meaning:'This is the average size of your red blood cells. Smaller-than-usual cells are a classic sign of low iron.',
+          plain_meaning_ar:'هذا متوسط حجم كرياتك الحمراء. والكريات الأصغر من المعتاد علامة كلاسيكية على نقص الحديد.', source_text:'MCV 74 fL (80-96)' },
+        { plain_name:'Hemoglobin per cell (MCH)', plain_name_ar:'الهيموغلوبين لكل خلية (MCH)', analyte_raw:'MCH', analyte_key:'mch',
           value:'23', unit:'pg', ref_range_text:'27-32', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
           plain_meaning:'This is how much oxygen-carrying hemoglobin each red cell holds. Yours is a bit low, in line with low iron.',
+          plain_meaning_ar:'هذا مقدار الهيموغلوبين الحامل للأكسجين في كل كرية حمراء. وهو لديك منخفض قليلاً، بما يتوافق مع نقص الحديد.',
           source_text:'MCH 23 pg (27-32)' },
-        { plain_name:'Iron stores (ferritin)', analyte_raw:'Ferritin', analyte_key:'ferritin',
+        { plain_name:'Iron stores (ferritin)', plain_name_ar:'مخزون الحديد (الفيريتين)', analyte_raw:'Ferritin', analyte_key:'ferritin',
           value:'8', unit:'ng/mL', ref_range_text:'30-300', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'low', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:"Ferritin is your body's stored iron — its reserve tank. Yours is low, which is usually the root of this kind of anemia.", source_text:'Ferritin 8 ng/mL (30-300)' },
-        { plain_name:'Red-cell variation (RDW)', analyte_raw:'RDW', analyte_key:'rdw',
+          plain_meaning:"Ferritin is your body's stored iron — its reserve tank. Yours is low, which is usually the root of this kind of anemia.",
+          plain_meaning_ar:'الفيريتين هو مخزون الحديد في جسمك — خزّانه الاحتياطي. وهو لديك منخفض، وغالباً ما يكون أصل هذا النوع من فقر الدم.', source_text:'Ferritin 8 ng/mL (30-300)' },
+        { plain_name:'Red-cell variation (RDW)', plain_name_ar:'تفاوت حجم الكريات (RDW)', analyte_raw:'RDW', analyte_key:'rdw',
           value:'17.7', unit:'%', ref_range_text:'11.5-14.5', range_type:'two_sided_numeric', status:'high',
           severity_phrase:'high', confidence:'Confirmed', clarity:0.95, page_index:0,
-          plain_meaning:'This measures how much your red cells vary in size. A higher value often shows up when iron is low.', source_text:'RDW 17.7 % (11.5-14.5)' },
-        { plain_name:'Vitamin D', analyte_raw:'25-hydroxyvitamin D', analyte_key:'vitamin_d',
+          plain_meaning:'This measures how much your red cells vary in size. A higher value often shows up when iron is low.',
+          plain_meaning_ar:'هذا يقيس مدى تفاوت أحجام كرياتك الحمراء. وارتفاع القيمة كثيراً ما يظهر عند نقص الحديد.', source_text:'RDW 17.7 % (11.5-14.5)' },
+        { plain_name:'Vitamin D', plain_name_ar:'فيتامين د', analyte_raw:'25-hydroxyvitamin D', analyte_key:'vitamin_d',
           value:'18', unit:'ng/mL', ref_range_text:'30-100', range_type:'two_sided_numeric', status:'low',
           severity_phrase:'a bit low', confidence:'Likely', clarity:0.92, page_index:0,
-          plain_meaning:'Vitamin D supports your bones and energy. Yours is a bit low — common, and easy to follow up on with your doctor.', source_text:'Vitamin D (25-OH) 18 ng/mL (30-100)' },
+          plain_meaning:'Vitamin D supports your bones and energy. Yours is a bit low — common, and easy to follow up on with your doctor.',
+          plain_meaning_ar:'يدعم فيتامين د عظامك وطاقتك. وهو لديك منخفض قليلاً — وهذا شائع ويسهل متابعته مع طبيبك.', source_text:'Vitamin D (25-OH) 18 ng/mL (30-100)' },
       ];
       const lowClarity = { plain_name:'Handwritten note', analyte_raw:'', analyte_key:'', value:'', unit:'', ref_range_text:null,
         range_type:'qualitative', status:'unknown', severity_phrase:'', confidence:'Possible',
@@ -4582,6 +4592,8 @@
             advice_ar:'خبر جيد — هذا شائع وقابل للعلاج تماماً. الأطعمة الغنية بالحديد مثل اللحم الأحمر والعدس والفاصولياء والخضروات الورقية الداكنة تساعد جسمك على تعويض الحديد.',
             supporting:['Hemoglobin','Red-cell size (MCV)',
               'Hemoglobin per cell (MCH)','Iron stores (ferritin)'],
+            supporting_ar:['الهيموغلوبين','حجم الكرية الحمراء (MCV)',
+              'الهيموغلوبين لكل خلية (MCH)','مخزون الحديد (الفيريتين)'],
             lead_key:'consistent_with', source_indices:[0,2,3,4],
           },
         },

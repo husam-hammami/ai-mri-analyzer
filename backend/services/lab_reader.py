@@ -281,6 +281,7 @@ def _parse_lab_json(raw_text: str) -> dict:
             akey = mk if mk in _ANALYTE_ALIASES else ""
         norm_results.append({
             "plain_name": r.get("plain_name") or r.get("analyte_raw") or "",
+            "plain_name_ar": r.get("plain_name_ar") or "",       # Arabic per-row (model-provided); EN fallback in UI
             "analyte_raw": r.get("analyte_raw") or "",
             "analyte_key": akey,
             "value": r.get("value"),
@@ -291,6 +292,7 @@ def _parse_lab_json(raw_text: str) -> dict:
             "severity_phrase": r.get("severity_phrase") or "",
             "confidence": conf,
             "plain_meaning": r.get("plain_meaning") or "",
+            "plain_meaning_ar": r.get("plain_meaning_ar") or "",  # Arabic per-row meaning (model-provided)
             "clarity": max(0.0, min(1.0, clarity)),
             "page_index": page_index,
             "source_text": r.get("source_text") or "",
@@ -1054,7 +1056,7 @@ def compose_assessment(results: list, signals: dict = None, proposal: Optional[d
     # (richer than one-per-clause → a fuller "X and Y and Z"), in report order, deduped.
     pattern_opts = {(k, d) for clause in entry["pattern"] for (k, d) in clause}
     flagged_ids = {id(x) for x in flagged}
-    supporting, source_indices, seen = [], [], set()
+    supporting, supporting_ar, source_indices, seen = [], [], [], set()
     for i, r in enumerate(results):
         if id(r) not in flagged_ids or id(r) in seen:
             continue
@@ -1064,6 +1066,7 @@ def compose_assessment(results: list, signals: dict = None, proposal: Optional[d
             nm = r.get("plain_name") or r.get("analyte_raw") or ""
             if nm:
                 supporting.append(nm)
+                supporting_ar.append(r.get("plain_name_ar") or nm)  # Arabic chip label; EN fallback
             source_indices.append(i)
 
     advice = _CONDITION_ADVICE.get(entry["key"], {})
@@ -1076,6 +1079,7 @@ def compose_assessment(results: list, signals: dict = None, proposal: Optional[d
         "advice_en": advice.get("en", ""),
         "advice_ar": advice.get("ar", ""),
         "supporting": supporting,
+        "supporting_ar": supporting_ar,
         "lead_key": "consistent_with",
         "source_indices": source_indices,
     }

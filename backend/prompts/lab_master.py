@@ -96,6 +96,10 @@ each analyte broadly is. You do NOT give a verdict, diagnosis, cause, or treatme
   (for "Hemoglobin"), "Red-cell size (MCV)" (for "MCV"), "Iron stores (ferritin)" (for "Ferritin"). Do
   NOT expand into a phrase like "oxygen-carrying level in blood" — keep it short and scannable. Keep
   `analyte_raw` as the exact printed term. If you genuinely can't simplify, reuse `analyte_raw`.
+- `plain_name_ar` and `plain_meaning_ar`: the ARABIC of `plain_name` and `plain_meaning` — same content
+  and same plainness, in natural Arabic (not transliteration). ALWAYS provide both (the report is shown
+  in Arabic too). Keep units and lab abbreviations as-is (e.g. mg/dL, MCV). Empty `plain_meaning_ar` only
+  when `plain_meaning` is empty.
 - `analyte_key`: a short normalized lowercase slug for COMMON analytes, used to match well-known
   patterns. Use one of: hemoglobin, hematocrit, mcv, mch, rdw, ferritin, iron, tibc, transferrin_sat,
   vitamin_b12, folate, vitamin_d, ldl, hdl, total_cholesterol, triglycerides, glucose, hba1c, tsh, ft4,
@@ -130,6 +134,7 @@ Return ONE JSON object and NOTHING ELSE (no commentary, no markdown prose around
   "results": [
     {
       "plain_name": "Vitamin D",
+      "plain_name_ar": "فيتامين د",
       "analyte_raw": "25-hydroxyvitamin D",
       "analyte_key": "vitamin_d",
       "value": "18",
@@ -140,6 +145,7 @@ Return ONE JSON object and NOTHING ELSE (no commentary, no markdown prose around
       "severity_phrase": "a bit low",
       "confidence": "Likely",
       "plain_meaning": "vitamin D supports bone and immune health; low readings are common and can leave you tired",
+      "plain_meaning_ar": "يدعم فيتامين د صحة العظام والمناعة؛ والقراءات المنخفضة شائعة وقد تسبّب الشعور بالتعب",
       "clarity": 0.92,
       "page_index": 0,
       "source_text": "Vitamin D 18 (30-100)"
@@ -178,6 +184,7 @@ LAB_OUTPUT_SCHEMA = {
     "results": [
         {
             "plain_name": "str",
+            "plain_name_ar": "str",
             "analyte_raw": "str",
             "analyte_key": "str",
             "value": "str|null",
@@ -188,6 +195,7 @@ LAB_OUTPUT_SCHEMA = {
             "severity_phrase": "str",
             "confidence": "Confirmed|Likely|Possible",
             "plain_meaning": "str",
+            "plain_meaning_ar": "str",
             "clarity": "float 0-1",
             "page_index": "int",
             "source_text": "str",
