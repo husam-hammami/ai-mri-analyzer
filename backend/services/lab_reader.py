@@ -671,7 +671,11 @@ _ANALYTE_ALIASES = {
     "hemoglobin": ["hemoglobin", "haemoglobin", "hgb", "hb"],
     "hematocrit": ["hematocrit", "haematocrit", "hct", "pcv"],
     "mcv": ["mean corpuscular volume", "mcv"],
-    "mch": ["mean corpuscular hemoglobin concentration", "mchc", "mean corpuscular hemoglobin", "mch"],
+    # MCH/MCHC names CONTAIN "hemoglobin", so they MUST carry aliases longer than the bare "hemoglobin"
+    # key (longest-alias-wins) — otherwise "Hemoglobin per cell (MCH)" mis-maps to hemoglobin and fakes a
+    # low Hgb (→ false anemia). Keep the multi-word forms ahead of the short "mch"/"mchc".
+    "mch": ["mean corpuscular hemoglobin concentration", "red cell hemoglobin concentration",
+            "mean corpuscular hemoglobin", "hemoglobin per cell", "red cell hemoglobin", "mchc", "mch"],
     "rdw": ["red cell distribution width", "rdw"],
     "ferritin": ["ferritin"],
     "iron": ["serum iron", "iron"],
@@ -697,7 +701,10 @@ _ANALYTE_ALIASES = {
     "alp": ["alkaline phosphatase", "alp"],
     "bilirubin": ["total bilirubin", "bilirubin"],
     "wbc": ["white blood cell", "white cell count", "leukocyte", "leucocyte", "wbc"],
-    "platelets": ["platelet count", "platelets", "platelet", "plt"],
+    # NOTE: NO bare "platelet" alias — it greedily matched "Platelet size (MPV)" and mis-mapped a low
+    # platelet SIZE to the platelet COUNT key (→ a false "low platelet count" verdict). MPV is its own key.
+    "platelets": ["platelet count", "platelets", "plt"],
+    "mpv": ["mean platelet volume", "platelet size", "mpv"],
     "potassium": ["potassium"],
     "sodium": ["sodium"],
     "calcium": ["calcium"],
@@ -740,6 +747,18 @@ _CONDITION_WHITELIST = [
         "name_ar": "فقر الدم الناتج عن نقص الحديد",
         "expl_en": "This usually means the blood is low on iron, which can leave you feeling tired.",
         "expl_ar": "يعني هذا عادةً أن الدم منخفض في الحديد، وقد يسبّب الشعور بالتعب.",
+    },
+    {
+        # Small + low-hemoglobin red cells WITHOUT a low hemoglobin (microcytosis/hypochromia on their own).
+        # Ranks BELOW iron-deficiency anemia (90) so a true low-Hgb picture still wins; ABOVE the generic
+        # single-marker conditions. Both MCV-low AND MCH-low required (a specific pairing, not MCV alone).
+        "key": "microcytic_hypochromic", "priority": 80,
+        "aliases": ["microcytic", "microcytosis", "microcytic hypochromic", "small red cells", "hypochromic"],
+        "pattern": [[("mcv", "low")], [("mch", "low")]],
+        "name_en": "small, low-hemoglobin red cells",
+        "name_ar": "كريات دم حمراء صغيرة ومنخفضة الهيموغلوبين",
+        "expl_en": "Your red cells read smaller and carry less hemoglobin than the printed range — a pattern that's usually followed up with iron studies.",
+        "expl_ar": "تظهر كريات دمك الحمراء أصغر حجماً وتحمل هيموغلوبيناً أقل من النطاق المطبوع — وهو نمط تتم متابعته عادةً بفحوصات الحديد.",
     },
     {
         "key": "anemia", "priority": 50,
@@ -890,6 +909,7 @@ _CONDITION_AR_ALIASES = {
     "high_white_cells": ["ارتفاع كريات الدم البيضاء", "ارتفاع خلايا الدم البيضاء"],
     "low_white_cells": ["انخفاض كريات الدم البيضاء", "انخفاض خلايا الدم البيضاء"],
     "low_platelets": ["نقص الصفائح", "انخفاض الصفائح"],
+    "microcytic_hypochromic": ["كريات حمراء صغيرة", "صغر حجم الكريات الحمراء"],
 }
 
 # CURATED, SAFE per-condition "what can help" notes — concise + reassuring general lifestyle info ONLY.
@@ -936,6 +956,11 @@ _CONDITION_ADVICE = {
     "low_platelets": {
         "en": "This is best understood alongside your other results and how you're feeling.",
         "ar": "يُفهَم هذا بشكل أفضل مع بقية نتائجك وكيف تشعر."},
+    # Reassurance ONLY (no "eat iron") — this pattern can also be a harmless inherited trait where iron
+    # isn't the cause, so point to the work-up (iron studies), never a self-treatment.
+    "microcytic_hypochromic": {
+        "en": "This is a common pattern and usually straightforward to look into — iron studies help tell apart the likely causes.",
+        "ar": "هذا نمط شائع وعادةً ما يسهل متابعته — تساعد فحوصات الحديد على التمييز بين الأسباب المحتملة."},
 }
 
 

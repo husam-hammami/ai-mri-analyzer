@@ -78,6 +78,44 @@ def test_presence_is_deterministic_across_calls():
     assert out == {"iron_deficiency_anemia"}, out
 
 
+# ── regression: analyte mis-normalization (the false "low platelet count" + false anemia bugs) ──
+
+def test_mpv_is_not_platelet_count():
+    """'Platelet size (MPV)' must normalize to its own key, NOT the platelet-COUNT key — a low platelet
+    SIZE must never surface as 'a low platelet count' (the size↔count category error)."""
+    assert normalize_analyte_key("MPV", "Platelet size (MPV)") == "mpv"
+    assert normalize_analyte_key("Platelet Count", "Platelet Count") == "platelets"
+    # low MPV alone (via normalization fallback) → never the low-platelet-count condition
+    a = compose_assessment([_r("Platelet size (MPV)", "", "low", analyte_raw="MPV")], {}, None)
+    assert a is None or a["condition_key"] != "low_platelets", a
+
+
+def test_mch_is_not_hemoglobin():
+    """MCH/MCHC names contain 'hemoglobin' but must normalize to 'mch' — else they fake a low Hgb."""
+    assert normalize_analyte_key("MCH", "Hemoglobin per cell (MCH)") == "mch"
+    assert normalize_analyte_key("MCHC", "Red-cell hemoglobin concentration (MCHC)") == "mch"
+    assert normalize_analyte_key("Hemoglobin", "Hemoglobin") == "hemoglobin"  # real Hgb still maps right
+
+
+def test_microcytic_without_low_hemoglobin_is_not_anemia():
+    """Low MCV + low MCH with a NORMAL hemoglobin → the microcytic pattern, NOT anemia (which would
+    overclaim a low Hgb the patient doesn't have). Forces the normalization fallback (analyte_key='')."""
+    res = [_r("Red-cell size (MCV)", "", "low", analyte_raw="MCV"),
+           _r("Hemoglobin per cell (MCH)", "", "low", analyte_raw="MCH")]
+    a = compose_assessment(res, {}, None)
+    assert a and a["condition_key"] == "microcytic_hypochromic", a
+    assert "anemia" not in a["name_en"].lower()
+
+
+def test_iron_deficiency_anemia_still_wins_when_hemoglobin_low():
+    """When hemoglobin IS low too, the microcytic pattern defers to iron-deficiency anemia (priority)."""
+    res = [_r("Hemoglobin", "", "low", analyte_raw="Hemoglobin"),
+           _r("Red-cell size (MCV)", "", "low", analyte_raw="MCV"),
+           _r("Hemoglobin per cell (MCH)", "", "low", analyte_raw="MCH")]
+    a = compose_assessment(res, {}, None)
+    assert a and a["condition_key"] == "iron_deficiency_anemia", a
+
+
 # ── model is advisory only ──
 
 def test_model_cannot_add_unsupported_condition():
