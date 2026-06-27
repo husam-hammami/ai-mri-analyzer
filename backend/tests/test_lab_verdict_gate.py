@@ -64,10 +64,16 @@ def test_several_flags():
     assert v["flagged_count"] == 4
 
 
-def test_low_extraction_confidence_forces_neutral():
+def test_low_extraction_confidence_still_surfaces_confident_flag():
+    """Low OVERALL extraction confidence must NOT bury a confidently-read abnormal — that was the real
+    false-negative (a clear low Hemoglobin hidden behind a vague NEUTRAL line). A Confirmed/Likely flag
+    drives the headline (FEW/SEVERAL); the separate confidence pill carries the 'low confidence' caveat.
+    Only an UNREADABLE render (test below) overrides flags."""
     results = [_result(status="high", confidence="Confirmed", clarity=0.95)]
     v = compose_verdict(results, _signals(extraction_confidence=0.5, n_results=1), lang="en")
-    assert v["verdict_key"] == "NEUTRAL", v
+    assert v["verdict_key"] == "FEW", v
+    assert v["flagged_count"] == 1
+    assert v["confidence"] == "low"  # the caveat still surfaces in the confidence pill
 
 
 def test_low_parsed_ratio_forces_neutral():
@@ -138,7 +144,7 @@ def test_en_and_ar_both_return_nonempty_fixed_strings():
         ([_result(status="high", confidence="Confirmed", clarity=0.95)], _signals(n_results=1)),  # FEW
         ([_result(status="high", confidence="Confirmed", clarity=0.95) for _ in range(4)], _signals(n_results=4)),  # SEVERAL
         ([_result(status="normal", clarity=0.95) for _ in range(5)], _signals(analytes_parsed=5)),  # ALL_CLEAN
-        ([_result(status="high", confidence="Confirmed", clarity=0.95)], _signals(extraction_confidence=0.4, n_results=1)),  # NEUTRAL
+        ([_result(status="normal", confidence="Possible", clarity=0.4)], _signals(extraction_confidence=0.4, n_results=1)),  # NEUTRAL (n==0, shaky read)
     ]
     for results, sig in cases:
         en = compose_verdict(results, sig, lang="en")

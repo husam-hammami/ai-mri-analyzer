@@ -19,37 +19,37 @@ Eye lands: **takeaway sentence → confidence → "N to review" count → the on
 > blood cells), not a CSS/SVG figure. Three deciding calls: (1) **drop per-organ localization** — the artifact is
 > UNIFIED across ALL medical-report types, atmospheric not a body-map (the Verdict header + cards carry all meaning,
 > so the marker↔organ linking below is no longer needed); (2) palette resolved with **maroon** blood (deep, not
-> alarm-red) on dusk navy + the single blue accent; (3) it's an **image asset like the body figure**, so the earlier
+> alarm-red), rendered in the house LIGHT register (#F8FAFC, Netter) as natural deep-red cells with the subtle single
+> blue accent — matching the existing anatomical artifact set; (3) it's an **image asset like the body figure**, so the earlier
 > 3D/WebGL/perf objection is moot. Sits in the hero slot (portrait) or as a full-bleed backdrop behind the Verdict.
-> **Image-gen prompt** ("The Stream") lives in the chat handoff / to be saved beside the asset; key craft lock = a
-> single restrained cool-blue (#2563EB) rim-light on maroon cells so it reads as one product with the imaging figure.
+> **Image-gen prompt** ("The Stream") saved below, in the **house light-gallery register** so it sits in the same
+> family as the brain/hip/head-neck artifacts — subtle single blue accent, pale non-purple white cells, markers on clean plasma.
 > Drop the PNG at `frontend/assets/brand/` and wire it as the report-page hero.
 
-**Image-gen prompt ("The Stream") — feed to the image model, drop the PNG beside the body figure:**
+**Image-gen prompt ("The Stream") — house register, matching the anatomical artifact set (light #F8FAFC, Netter):**
 ```
-A cinematic, ultra-detailed 3D render looking into the inside of a translucent blood vessel — a calm, slow river of
-blood drifting into deep space. Suspended in the flow: many red blood cells as smooth biconcave discs in deep,
-desaturated MAROON (#6E1423 to #7B1E2B) with soft subsurface translucency and slightly darker rims, plus a few larger
-WHITE blood cells as pale, gently glowing translucent spheres (#EAF0F8) with subtle textured surfaces. The cells flow
-with real depth — crisp and detailed in the foreground, melting into soft bokeh and haze as the stream recedes into a
-near-black dusk-navy void (#0A0F1D).
-Lighting: a warm maroon glow from within the plasma, met by a single restrained COOL BLUE accent rim-light (#2563EB)
-that catches the edges of the cells and forms a faint volumetric haze deep in the frame — the only cool color, the
-signature that ties it to a premium blue-accent medical brand. Crisp near-white speculars on wet cell surfaces, gentle
-god-rays through the plasma, soft particulate drift.
-Mood: premium, futuristic, clinical-trust — microscopy meets a high-end Octane/Redshift product render. Calm, elegant,
-alive. NOT alarming, NOT gory; maroon stays deep and sophisticated, never bright primary red.
-Composition: vertical portrait, stream flowing top-to-bottom; edges/corners fall off softly into the dusk-navy void
-(#0A0F1D) to composite onto a dark app surface; generous balanced negative space.
-Strict palette: dusk navy #0A0F1D · maroon blood #6E1423–#7B1E2B · pale cells #EAF0F8 · one cool-blue accent #2563EB ·
-near-white speculars. No other hues.
-Style: photoreal 3D, volumetric, subsurface scattering, ray-traced, shallow DoF, 8k detail.
-Avoid: bright primary red, gore, wounds, needles, syringes, anatomical diagrams, organs, human figures/faces, any
-text/numbers/labels/watermark, UI/HUD/gauges, purple/violet/indigo/cyan/teal/neon-green, glassmorphism, cartoon/flat
-illustration, clinical stock-photo look, clutter.
-Aspect ratio 3:4 portrait, ~1024×1536, dusk-navy background (or transparent PNG if supported), no border.
+Generate ONE refined biological artifact — no UI, text, or logo — a focused BLOOD reference for MIKA.
+Vertical 4:5, ~1600px.
+STYLE: realistic, dignified, semi-translucent medical illustration (Netter / cinematic-volumetric
+register), biologically accurate — NOT a hologram, sci-fi, or wireframe. Soft gallery-grade lighting;
+clean soft light background (#F8FAFC). Single accent #2563EB, used subtly on cell-edge rim-light and
+plasma depth cues only; no purple, no rainbow tissue.
+SUBJECT: a microscopic field of flowing blood — red blood cells as smooth biconcave discs in natural
+deep crimson-to-maroon, a few white blood cells as pale, neutral, gently translucent spheres (NOT
+purple-nucleated), and scattered platelets, suspended in soft translucent plasma with gentle depth,
+clearly resolvable.
+PURPOSE: a calm, uncluttered cellular field with evenly distributed cells and generous clean plasma
+space, ready to host certainty-coded markers in the app. NO baked-in labels.
+AVOID: hologram/sci-fi; purple/violet (including white-cell nuclei — keep them pale neutral); rainbow
+tissue; gory/cadaver; needles/syringes; baked-in text; busy effects; any UI/logo.
+Match the locked MIKA figure (frontend/assets/b04c4ae8-…png) so all artifacts feel like one set.
+Render the single most accurate, elegant version.
 ```
-(For a full-width backdrop variant: regenerate at 16:9 and change "vertical portrait, top-to-bottom" → "wide cinematic, left-to-right.")
+- Markers sit on CLEAN PLASMA, not on specific cells — avoids the false "this cell = your LDL" pinning while keeping
+  the numbered-anchor look.
+- 4:5 vertical matches the family; for the circular dish slot from the Codex mockup, regenerate at **1:1 square** (same prompt).
+- Fallback: a darker **dusk-cinematic** variant (deep maroon cells on #0A0F1D with a cool-blue rim-light, 3:4) if a
+  dramatic dark hero is ever wanted instead of this calm gallery register.
 
 ### Parked alternative — "Inner Constellation" (the body lit from within)
 > Forged in a second /daedalus invent-army (unanimous pick at the time). SUPERSEDED by The Stream above, but kept as
