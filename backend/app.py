@@ -1456,11 +1456,15 @@ def _list_reports() -> list[dict]:
             # Lab reports build the Recent entry from meta ALONE — never run _normalize_loaded_report
             # (DICOM-shaped) on a lab dir. The frontend Recent renderer tolerates a null thumb.
             if meta.get("kind") == "lab":
+                # Patient name lives in report.json (kept out of meta for PII) — read it lightly so the
+                # Recent list can show whose report it is. report.json load only; no DICOM normalization.
+                _lab_pt = (_load_report(d.name) or {}).get("patient") or {}
                 out.append({
                     "job_id": meta.get("job_id", d.name),
                     "status": meta.get("status", "complete"),
                     "kind": "lab",
                     "title": meta.get("title") or "Lab report",
+                    "patient_name": (_lab_pt.get("name") or "") if isinstance(_lab_pt, dict) else "",
                     "detected_anatomy": "lab",
                     "anatomy_subregion": "",
                     "modality": "lab",
@@ -1479,10 +1483,13 @@ def _list_reports() -> list[dict]:
             raw_report = _load_report(d.name) or {}
             report = _normalize_loaded_report(d.name, raw_report) if raw_report else {}
             study = report.get("study") or {}
+            _img_demo = raw_report.get("demographics") if isinstance(raw_report.get("demographics"), dict) else {}
+            _img_pt = report.get("patient") if isinstance(report.get("patient"), dict) else {}
             out.append({
                 "job_id": meta.get("job_id", d.name),
                 "status": meta.get("status", "complete"),
                 "title": meta.get("title") or study.get("description") or study.get("body_part") or report.get("study_description") or "",
+                "patient_name": _img_demo.get("name") or _img_demo.get("patient_name") or _img_pt.get("name") or "",
                 "detected_anatomy": meta.get("detected_anatomy") or study.get("detected_anatomy") or "unknown",
                 "anatomy_subregion": meta.get("anatomy_subregion") or study.get("anatomy_subregion") or "",
                 "modality": meta.get("modality") or study.get("modality") or "",

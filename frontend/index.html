@@ -2385,6 +2385,7 @@
           const server = d.reports.map(r => ({
             jobId: r.job_id,
             label: r.title || ANATOMY_TITLE[r.detected_anatomy] || 'Scan',
+            patientName: r.patient_name || '',
             anatomy: r.detected_anatomy, modality: r.modality,
             date: r.completed_at || r.created_at, thumb: r.thumb,
             referenceReview: !!r.reference_reconciliation_available,
@@ -2412,7 +2413,9 @@
                               : I.reading({ width:18, height:18 })}
                   </span>
                   <span className="recent-name">
-                    {it.label || L('Scan')}{it.modality ? <span className="recent-meta"> - {it.modality}</span> : null}
+                    {it.patientName
+                      ? <>{it.patientName}<span className="recent-meta"> · {it.label || L('Scan')}{it.modality && it.modality !== 'lab' ? ` - ${it.modality}` : ''}</span></>
+                      : <>{it.label || L('Scan')}{it.modality && it.modality !== 'lab' ? <span className="recent-meta"> - {it.modality}</span> : null}</>}
                     {it.referenceReview ? <span className="recent-ref">{L('Reference-assisted review')}</span> : null}
                   </span>
                   <span className="recent-date">{it.date ? new Date(it.date).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : ''}</span>
