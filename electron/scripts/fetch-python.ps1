@@ -68,14 +68,13 @@ Write-Host "Installing requirements.lock into the embeddable ..."
 Write-Host "Verifying imports ..."
 & $pyExe -c "import numpy,scipy,fitz,pydicom,PIL,bidi,arabic_reshaper,fastapi,uvicorn; assert numpy.__version__.startswith('1.26'), numpy.__version__; print('bundle python OK:', numpy.__version__, 'fitz', fitz.__doc__.splitlines()[0])"
 
-# 6) verify the REAL run mode: resolve the backend app graph from the backend dir, exactly as main.js
-#    launches it (`uvicorn app:app`, cwd=backend). Catches first-party deps / import-time errors that
-#    the bare imports above can't see — a green here means the sidecar will actually boot.
-Write-Host "Verifying backend app:app (real run mode) ..."
-Push-Location (Join-Path $root "backend")
-try {
-  & $pyExe -c "import uvicorn.importer as u; u.import_from_string('app:app'); print('backend app:app OK')"
-  if ($LASTEXITCODE -ne 0) { throw "backend app:app failed to import under the bundled interpreter" }
-} finally { Pop-Location }
+# 6) verify the backend app graph imports under the BUNDLED interpreter, with the backend dir on
+#    sys.path exactly as the sidecar runs it (main.js spawns uvicorn with --app-dir=<backend>). The
+#    embeddable's ._pth does NOT auto-add cwd, so we insert the path explicitly — same as --app-dir.
+#    Catches first-party deps / import-time errors the bare imports above can't see.
+Write-Host "Verifying backend app graph ..."
+$backendDir = Join-Path $root "backend"
+& $pyExe -c "import sys; sys.path.insert(0, r'$backendDir'); import app; print('backend app graph OK')"
+if ($LASTEXITCODE -ne 0) { throw "backend app graph failed to import under the bundled interpreter" }
 
 Write-Host "`nDone. Bundled Python is at $dest — electron-builder will ship it as resources/python."

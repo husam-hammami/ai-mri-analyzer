@@ -329,7 +329,9 @@ async function start() {
     MIKA_DATA_DIR: path.join(app.getPath('userData'), 'data'),   // writable per-user dir
     PYTHONUNBUFFERED: '1',
   };
-  py = spawn(PY, ['-m', 'uvicorn', 'app:app', '--host', '127.0.0.1', '--port', String(port)],
+  // --app-dir puts BACKEND on sys.path explicitly, so `import app` resolves regardless of cwd or the
+  // python-embeddable's isolated ._pth mode (don't depend on uvicorn's implicit cwd insert).
+  py = spawn(PY, ['-m', 'uvicorn', 'app:app', '--app-dir', BACKEND, '--host', '127.0.0.1', '--port', String(port)],
              { cwd: BACKEND, env });
   py.stdout.on('data', (d) => process.stdout.write(`[sidecar] ${d}`));
   py.stderr.on('data', (d) => { const s = `${d}`; tail.push(s); if (tail.length > 40) tail.shift(); process.stderr.write(`[sidecar] ${s}`); });
